@@ -217,7 +217,8 @@ export class CounterSettlementService {
     });
 
     this.logger.log({ msg: 'counter_debt_settled', paymentId, settlementPaymentId: out.part.id, amountCents: dto.amountCents, outstandingCents: out.remaining, fromDeposit: !!dto.fromDepositId });
-    if (out.statusChanged) this.state.emitUpdated(out.debt);
+    // Quitado (mesmo `failed` que só ganha `debtSettledAt`, sem mudar de status): o painel e o app precisam do saldo novo.
+    if (out.statusChanged || out.remaining === 0) this.state.emitUpdated(out.debt);
     if (out.remaining === 0) {
       await this.billing
         .clearDelinquencyIfSettled(out.debt.customerId)

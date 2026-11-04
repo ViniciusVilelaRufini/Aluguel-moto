@@ -53,14 +53,32 @@ const isCounterDebt = (p: DebtFields): boolean => p.kind === 'rental' && p.statu
 
 export const isOpenDebt = (p: DebtFields): boolean => isFailedDebt(p) || isCounterDebt(p);
 
-/** Há ao menos uma dívida em aberto: `failed` de aluguel/assinatura ou excedente do balcão, ainda não quitada. */
-export async function hasOpenDebt(db: DebtDb, customerId: string): Promise<boolean> {
-  return (await db.payment.count({ where: openDebtWhere(customerId) })) > 0;
+/**
+ * Há excedente do balcão com saldo a acertar. Débito `pending` de balcão com saldo zero (tudo já quitado em partes, sem
+ * `debtSettledAt`) não é "a acertar": não aparece no saldo nem bloqueia nada. Mesmo cálculo do `outstandingMap`
+ * (valor − carteira − Σ quitações pagas; sem caução no débito de balcão).
+ */
+export async function hasCounterDebt(db: DebtDb, customerId: string): Promise<boolean> {
+  const debts = await db.payment.findMany({ where: counterDebtWhere(customerId), select: { id: true, amountCents: true, walletCents: true } });
+  if (!debts.length) return false;
+  const parts = await db.payment.findMany({
+    where: { kind: 'debt_settlement', status: 'paid', settlesPaymentId: { in: debts.map((d) => d.id) } },
+    select: { settlesPaymentId: true, amountCents: true },
+  });
+  const settled = new Map<string, number>();
+  for (const s of parts) if (s.settlesPaymentId) settled.set(s.settlesPaymentId, (settled.get(s.settlesPaymentId) ?? 0) + s.amountCents);
+  return debts.some((d) => d.amountCents - (d.walletCents ?? 0) - (settled.get(d.id) ?? 0) > 0);
 }
 
-/** Há excedente do balcão ainda não acertado no galpão. */
-export async function hasCounterDebt(db: DebtDb, customerId: string): Promise<boolean> {
-  return (await db.payment.count({ where: counterDebtWhere(customerId) })) > 0;
+/** Há ao menos uma dívida em aberto: `failed` de aluguel/assinatura ou excedente do balcão com saldo, ainda não quitada. */
+export async function hasOpenDebt(db: DebtDb, customerId: string): Promise<boolean> {
+  // Caminho comum (cliente em dia): uma contagem só. Com candidatos, o que sobra além do balcão é dívida `failed`; só o
+  // balcão precisa do saldo (saldo zero não conta).
+  const open = await db.payment.count({ where: openDebtWhere(customerId) });
+  if (!(open > 0)) return false;
+  const counter = await db.payment.count({ where: counterDebtWhere(customerId) });
+  if (open - counter > 0) return true;
+  return hasCounterDebt(db, customerId);
 }
 
 /**

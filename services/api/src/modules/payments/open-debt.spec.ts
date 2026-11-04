@@ -47,3 +47,17 @@ describe('open-debt — débito do balcão', () => {
     expect(await blocksAccountDeletion(db as any, C)).toBe(true);
   });
 });
+
+describe('open-debt — débito do balcão com saldo zero', () => {
+  it('quitado em partes sem debtSettledAt não é "a acertar" nem bloqueia; com saldo, bloqueia', async () => {
+    const db = createInMemoryPrisma();
+    const counter = await db.payment.create({ data: { customerId: C, kind: 'rental', status: 'pending', method: 'cash', amountCents: 6000 } });
+    expect(await hasOpenDebt(db as any, C)).toBe(true);
+    await db.payment.create({ data: { customerId: C, kind: 'debt_settlement', status: 'paid', method: 'cash', amountCents: 2000, settlesPaymentId: counter.id } });
+    expect(await hasCounterDebt(db as any, C)).toBe(true);
+    await db.payment.create({ data: { customerId: C, kind: 'debt_settlement', status: 'paid', method: 'cash', amountCents: 4000, settlesPaymentId: counter.id } });
+    expect(await hasCounterDebt(db as any, C)).toBe(false);
+    expect(await hasOpenDebt(db as any, C)).toBe(false);
+    expect(await blocksAccountDeletion(db as any, C)).toBe(false);
+  });
+});

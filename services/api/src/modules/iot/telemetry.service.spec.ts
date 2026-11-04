@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EV } from '../../common/events';
 import { MemoryRedisStore } from '../../redis/redis-store';
@@ -223,5 +224,26 @@ describe('TelemetryService', () => {
       await svc.telemetry(T, msg({ timestamp: '2026-10-21T15:00:05.000Z' }));
       expect(zoneSpeed.onSample).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('TelemetryService: rastreador não cadastrado', () => {
+  it('descarta sempre, mas loga no máximo 1 vez por thingName a cada 5 min', async () => {
+    const { svc, clock, emitted } = setup();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const unknownLogs = () => warn.mock.calls.filter((c) => (c[0] as any)?.msg === 'telemetry_unknown_thing');
+      await svc.telemetry('moto-0060', msg());
+      await clock.advance(5_000);
+      await svc.telemetry('moto-0060', msg());
+      await svc.telemetry('moto-0061', msg());
+      expect(unknownLogs().map((c) => (c[0] as any).thingName)).toEqual(['moto-0060', 'moto-0061']);
+      await clock.advance(5 * 60_000);
+      await svc.telemetry('moto-0060', msg());
+      expect(unknownLogs()).toHaveLength(3);
+      expect(emitted[EV.IOT_TELEMETRY]).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

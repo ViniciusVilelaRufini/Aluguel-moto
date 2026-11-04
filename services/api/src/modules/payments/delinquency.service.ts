@@ -12,7 +12,7 @@ import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError } from './provider/payment-provider';
 import { debtInCollection, isOpenDebt, openDebtWhere, rentalSettlementRetrying } from './open-debt';
 import { applyEffectsOnce } from './effects-once';
-import { isCounterMethod } from './counter-methods';
+import { COUNTER_METHODS, isCounterMethod } from './counter-methods';
 import { BILLING_OPTIONS, type BillingOptions, RentalBillingService } from './rental-billing.service';
 import { ReceiptService } from './receipts/receipt.service';
 
@@ -95,10 +95,14 @@ export class DelinquencyService {
     return debtInCollection(this.prisma, customerId, debt);
   }
 
-  /** R2-01: dívida de aluguel quitada → o recibo (PDF + NFS-e) do aluguel fica pronto. Falha não derruba a quitação. */
+  /**
+   * R2-01: dívida de aluguel quitada → o recibo (PDF + NFS-e) do aluguel fica pronto. Falha não derruba a quitação.
+   * Débito de balcão fica de fora: o balcão não chama o `ReceiptService` (nem o acerto, `counter-settle`), então a quitação
+   * manual também não emite; o documento fiscal do balcão segue pendente (Interpretação 16 de docs/decisoes.md).
+   */
   private async issueReceipts(paymentIds: string[]): Promise<void> {
     if (!this.receipts || !paymentIds.length) return;
-    const rentals = await this.prisma.payment.findMany({ where: { id: { in: paymentIds }, kind: 'rental' }, select: { id: true } });
+    const rentals = await this.prisma.payment.findMany({ where: { id: { in: paymentIds }, kind: 'rental', method: { notIn: [...COUNTER_METHODS] } }, select: { id: true } });
     for (const p of rentals) {
       await this.receipts.issueForPayment(p.id).catch((err) => this.logger.error({ msg: 'receipt_failed', paymentId: p.id, error: (err as Error).message }));
     }

@@ -58,7 +58,7 @@ async function setup() {
   const billing = { clearDelinquencyIfSettled: jest.fn(async () => undefined) };
   const delinquency = new DelinquencyService(db as any, {} as any, state, {} as any, billing as any, audit as any, {} as any, {} as any);
   const svc = new CounterSettlementService(db as any, delinquency, state, billing as any, audit as any);
-  return { db, svc, audit, billing, locked };
+  return { db, svc, audit, billing, locked, events };
 }
 
 /** Excedente do balcão: `rental` `pending` com método de balcão. */
@@ -160,6 +160,39 @@ describe('CounterSettlementService.settle', () => {
       const err = await problem(svc.settle(staff, p.id, { amountCents: 1000, method: 'cash' }));
       expect([err.getStatus(), err.slug]).toEqual([409, 'debt-not-payable']);
     }
+  });
+
+  it('fromDepositId com caução captured ou released → 422, nada gravado', async () => {
+    const { db, svc } = await setup();
+    const debt = await counterDebt(db);
+    const captured = await counterDeposit(db, { status: 'captured', capturedCents: 10000 });
+    const released = await counterDeposit(db, { status: 'released', refundedCents: 10000 });
+    for (const dep of [captured, released]) {
+      const err = await problem(svc.settle(staff, debt.id, { amountCents: 1000, fromDepositId: dep.id }));
+      expect([err.getStatus(), err.slug]).toEqual([422, 'counter-amount-mismatch']);
+    }
+    expect(await db.payment.count({ where: { kind: 'debt_settlement' } })).toBe(0);
+    expect(await db.deposit.findUnique({ where: { id: captured.id } })).toMatchObject({ capturedCents: 10000 });
+  });
+
+  it('débito failed quitado emite payment.updated mesmo sem mudar de status; quitação parcial não emite', async () => {
+    const { db, svc, events } = await setup();
+    const seen: any[] = [];
+    events.on('payment.updated', (e: any) => seen.push(e));
+    const debt = await db.payment.create({ data: { customerId: CUSTOMER, rentalId: RENTAL, kind: 'rental', method: 'card', status: 'failed', amountCents: 3000, failureReason: 'cc_rejected' } });
+    await svc.settle(staff, debt.id, { amountCents: 1000, method: 'cash' });
+    expect(seen).toEqual([]);
+    await svc.settle(staff, debt.id, { amountCents: 2000, method: 'cash' });
+    expect(seen).toEqual([{ paymentId: debt.id, status: 'failed', rentalId: RENTAL }]);
+  });
+
+  it('débito failed já coberto por quitações pagas, mas sem debtSettledAt: sem saldo (fora do balance) e quitar → 422', async () => {
+    const { db, svc } = await setup();
+    const debt = await db.payment.create({ data: { customerId: CUSTOMER, rentalId: RENTAL, kind: 'rental', method: 'card', status: 'failed', amountCents: 3000, failureReason: 'cc_rejected' } });
+    await db.payment.create({ data: { customerId: CUSTOMER, kind: 'debt_settlement', method: 'cash', status: 'paid', amountCents: 3000, settlesPaymentId: debt.id } });
+    expect((await svc.balance(RENTAL)).debts).toEqual([]);
+    const err = await problem(svc.settle(staff, debt.id, { amountCents: 1, method: 'cash' }));
+    expect([err.getStatus(), err.slug]).toEqual([422, 'counter-amount-mismatch']);
   });
 
   it('caução de um aluguel ainda aberto não abate dívida → 409, nada gravado', async () => {
@@ -268,6 +301,12 @@ describe('CounterSettlementService.refund', () => {
     const err = await problem(svc.refund(staff, dep.id, { amountCents: 1000 }));
     expect([err.getStatus(), err.slug, err.detail]).toEqual([409, 'conflict', 'A caução só é devolvida depois do encerramento do aluguel.']);
     expect(await db.deposit.findUnique({ where: { id: dep.id } })).toMatchObject({ refundedCents: 0 });
+  });
+
+  it('caução sem rentalId (avulsa) é devolvida mesmo sem aluguel para checar', async () => {
+    const { db, svc } = await setup();
+    const dep = await counterDeposit(db, { rentalId: null });
+    expect(await svc.refund(staff, dep.id, { amountCents: 10000 })).toMatchObject({ refundedCents: 10000, status: 'released' });
   });
 
   it('caução que não é do balcão → 409; acima do disponível → 422; inexistente → 404', async () => {

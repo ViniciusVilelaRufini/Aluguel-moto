@@ -17,7 +17,7 @@ export interface CounterCloseInput {
  * Fechamento do aluguel do balcão (pré-reserva/balcão, decisão 12): nunca usa o gateway.
  * - resíduo > 0 → `Payment` `rental` `pending` com o método do balcão (débito acertado no galpão), chave estável
  *   `counter-excess:<rentalId>` (repetição reaproveita), **sem** `depositId` (preflight C1: o abatimento da caução conta só
- *   pelo `debt_settlement`); ele vira o `rental.paymentId`;
+ *   pelo `debt_settlement`); ele vira o `rental.paymentId` e o cliente fica `delinquent` (como nos débitos do gateway);
  * - resíduo 0 → `rental.paymentId` fica o pré-pago;
  * - caução do balcão com valor 0 ainda `held` → `released` (não há o que devolver).
  * Chamado dentro da transação que fecha o aluguel (cliente travado), então não há corrida na chave.
@@ -27,9 +27,9 @@ export async function recordCounterClose(db: Prisma.TransactionClient | PrismaSe
   if (input.residualCents > 0) {
     const idempotencyKey = `counter-excess:${input.rentalId}`;
     const existing = await db.payment.findUnique({ where: { idempotencyKey }, select: { id: true } });
-    paymentId =
-      existing?.id ??
-      (
+    if (existing) paymentId = existing.id;
+    else {
+      paymentId = (
         await db.payment.create({
           data: {
             kind: 'rental', status: 'pending', method: input.method, amountCents: input.residualCents,
@@ -37,6 +37,9 @@ export async function recordCounterClose(db: Prisma.TransactionClient | PrismaSe
           },
         })
       ).id;
+      // Débito novo em aberto: mesma flag de inadimplência dos débitos do gateway (sai em `clearDelinquencyIfSettled`).
+      await db.customer.updateMany({ where: { id: input.customerId }, data: { delinquent: true } });
+    }
   }
   if (paymentId) await db.rental.update({ where: { id: input.rentalId }, data: { paymentId } });
   await db.deposit.updateMany({

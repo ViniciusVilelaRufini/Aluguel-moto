@@ -511,3 +511,15 @@ describe('Balcão: débito de excedente acertado no galpão', () => {
     expect(await svc.outstanding(d)).toBe(7000);
   });
 });
+
+describe('DelinquencyService — quitação manual de débito do balcão', () => {
+  it('não emite recibo/NFS-e para o débito do balcão (como o counter-settle), mas emite para o do gateway', async () => {
+    const { db, svc, receipts } = await setup();
+    const counter = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'rental', method: 'cash', status: 'pending', amountCents: 6000 } });
+    const gateway = await debt(db, 3000);
+    await svc.clearManually(STAFF, CUSTOMER, 'Pago por fora');
+    expect(await db.payment.findUnique({ where: { id: counter.id } })).toMatchObject({ status: 'pending', debtSettlement: 'manual', debtSettledAt: expect.any(Date) });
+    expect(receipts.issueForPayment).toHaveBeenCalledTimes(1);
+    expect(receipts.issueForPayment).toHaveBeenCalledWith(gateway.id);
+  });
+});
