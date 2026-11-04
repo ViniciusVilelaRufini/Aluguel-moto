@@ -401,7 +401,9 @@ void main() {
       await t.tap(find.widgetWithText(VoltiButton, 'Pré-reservar'));
       await t.pumpAndSettle();
       expect(find.text('Permitir localização durante o aluguel'), findsOneWidget);
-      expect(plan.startCalls, 0);
+      // Nenhuma pre-reserva criada sem o consentimento.
+      expect(plan.creates, 0);
+      expect(plan.sent, isNull);
     });
 
     testWidgets('recusado: refaz os dados e o passo de documentos pede novo envio', (t) async {

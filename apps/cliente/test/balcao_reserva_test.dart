@@ -153,10 +153,11 @@ Future<GoRouter> _pump(
   _Hub? hub,
   AppChannel channel = AppChannel.store,
   bool reduceMotion = false,
+  SessionState? initialSession,
 }) async {
   final router = GoRouter(initialLocation: initial, initialExtra: extra, routes: appRoutes());
   addTearDown(router.dispose);
-  _session = FakeSession(session(location: location));
+  _session = FakeSession(initialSession ?? session(location: location));
   if (reduceMotion) {
     t.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
     addTearDown(t.platformDispatcher.clearAccessibilityFeaturesTestValue);
@@ -277,6 +278,37 @@ void main() {
       expect(b.creates, 1);
     });
 
+    testWidgets('consentimento: termos e marketing vêm do servidor, nunca revogados', (t) async {
+      _phone(t);
+      final b = _BalcaoBackend()
+        ..consentsNow = Consents((c) => c
+          ..termsAccepted = true
+          ..locationTracking = false
+          ..marketing = true);
+      // Sessao sem consentimentos carregados (falha engolida no carregamento): nao pode virar "termos falso".
+      await _pump(t, b, extra: _selection(), initialSession: SessionState(signedIn: true, customer: customer()));
+      await _tapKey(t, 'pickup-pre-reserve');
+      await _tapText(t, 'Permitir e continuar');
+      expect(b.consentsCalls, 1);
+      final c = _session.state.value!.consents!;
+      expect(c.locationTracking, isTrue);
+      expect(c.termsAccepted, isTrue);
+      expect(c.marketing, isTrue);
+      expect(b.creates, 1);
+    });
+
+    testWidgets('consentimento: falha ao ler os consentimentos mostra o erro e não envia nada', (t) async {
+      _phone(t);
+      final b = _BalcaoBackend()..consentsError = AppFailure(kind: FailureKind.api, status: 500, detail: 'Não deu para ler seus consentimentos.');
+      final router = await _pump(t, b, extra: _selection(), location: false);
+      await _tapKey(t, 'pickup-pre-reserve');
+      await _tapText(t, 'Permitir e continuar');
+      expect(find.text('Não deu para ler seus consentimentos.'), findsOneWidget);
+      expect(_session.saved, isFalse);
+      expect(b.creates, 0);
+      expect(_where(router), '/pickup');
+    });
+
     testWidgets('403 location-consent-required da API reabre o diálogo', (t) async {
       _phone(t);
       final b = _BalcaoBackend()..createErrors.add(_problem(403, 'location-consent-required'));
@@ -363,6 +395,40 @@ void main() {
       expect(find.text('Sua moto está sendo preparada no galpão.'), findsOneWidget);
       expect(find.textContaining('Apontar problema'), findsNothing);
       expect(find.byKey(const Key('reservation-cancel')), findsNothing);
+    });
+  });
+
+  group('checkout no balcão fora da tela de preparo', () {
+    testWidgets('início: rental.updated active recarrega o aluguel e mostra "Corrida em andamento"', (t) async {
+      _phone(t);
+      final hub = _Hub();
+      final b = _BalcaoBackend()..current = _reservation();
+      await _pump(t, b, initial: '/home', hub: hub);
+      expect(find.text('Pré-reserva confirmada'), findsOneWidget);
+      expect(find.text('Corrida em andamento'), findsNothing);
+      b
+        ..current = null
+        ..rentalNow = sampleRental();
+      hub.emit(const RentalUpdated(rentalId: 'r1', status: 'active', elapsedSeconds: 0, costCents: 0));
+      await _settle(t);
+      expect(find.text('Corrida em andamento'), findsOneWidget);
+      expect(find.text('Pré-reserva confirmada'), findsNothing);
+    });
+
+    testWidgets('início: handover.updated accepted também recarrega o aluguel', (t) async {
+      _phone(t);
+      final hub = _Hub();
+      final b = _BalcaoBackend()..current = _reservation(status: ReservationStatus.handover, handoverId: 'h1');
+      final router = await _pump(t, b, initial: '/home', hub: hub);
+      // O vigia abriu a entrega; o cliente voltou ao inicio.
+      if (_where(router) == '/handover/h1') await _tapKey(t, 'handover-back');
+      expect(_where(router), '/home');
+      b
+        ..current = null
+        ..rentalNow = sampleRental();
+      hub.emit(const HandoverUpdated(handoverId: 'h1', status: 'accepted'));
+      await _settle(t);
+      expect(find.text('Corrida em andamento'), findsOneWidget);
     });
   });
 

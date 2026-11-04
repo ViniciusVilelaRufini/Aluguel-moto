@@ -136,6 +136,21 @@ class GalpaoBackend extends FakeBackend {
   /// Caucao Pix aguardando pagamento na resposta da criacao.
   bool pixDeposit = false;
 
+  /// `GET /lgpd/consents`: a pre-reserva le de novo antes de gravar a localizacao.
+  Consents consentsNow = Consents((b) => b
+    ..termsAccepted = true
+    ..locationTracking = false
+    ..marketing = false);
+  Object? consentsError;
+  int consentsCalls = 0;
+
+  @override
+  Future<Consents> consents() async {
+    consentsCalls++;
+    if (consentsError != null) throw toFailure(consentsError!);
+    return consentsNow;
+  }
+
   @override
   Future<List<Depot>> depots({double? lat, double? lng}) async => depotList;
   @override

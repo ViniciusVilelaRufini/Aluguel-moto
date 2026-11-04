@@ -80,7 +80,9 @@ final reservationPollerProvider = Provider.autoDispose<void>((ref) {
 /// - `handover.pending` da reserva atual abre `/handover/:id`;
 /// - reserva ja em `handover` (app aberto depois do evento) tambem abre;
 /// - `handover.updated` e a consulta compartilhada ([reservationPollerProvider])
-///   atualizam a reserva, para o app seguir mesmo sem tempo real.
+///   atualizam a reserva, para o app seguir mesmo sem tempo real;
+/// - checkout no balcao (`handover.updated` `accepted` ou `rental.updated` `active`)
+///   tambem recarrega o aluguel atual: o inicio mostra "Corrida em andamento".
 class HandoverWatcher extends ConsumerStatefulWidget {
   const HandoverWatcher({super.key, required this.reservation});
   final Reservation reservation;
@@ -124,6 +126,11 @@ class _HandoverWatcherState extends ConsumerState<HandoverWatcher> {
         _open(e.handoverId);
       } else if (e is HandoverUpdated) {
         ref.invalidate(currentReservationProvider);
+        // Checkout no balcao com o cliente no inicio ou na pre-reserva: o aluguel ja comecou.
+        if (e.status == 'accepted') ref.invalidate(currentRentalStateProvider);
+      } else if (e is RentalUpdated && e.status == 'active') {
+        ref.invalidate(currentReservationProvider);
+        ref.invalidate(currentRentalStateProvider);
       }
     });
     return const SizedBox.shrink();

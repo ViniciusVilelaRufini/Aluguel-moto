@@ -105,10 +105,13 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
     );
     if (ok != true) return false;
     try {
-      // Termos e marketing ficam como estavam; so a localizacao muda.
+      // Termos e marketing ficam como estao no servidor (LGPD): le de novo antes de gravar,
+      // para uma sessao sem consentimentos carregados nunca revogar termos ou marketing.
+      // Se a leitura falha, nada e gravado nem enviado.
+      final current = await ref.read(backendProvider).consents();
       await ref
           .read(sessionProvider.notifier)
-          .saveConsents(terms: session.termsAccepted, location: true, marketing: session.consents?.marketing ?? false);
+          .saveConsents(terms: current.termsAccepted, location: true, marketing: current.marketing);
       return true;
     } catch (e) {
       if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
