@@ -103,7 +103,11 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
         ],
       ),
     );
-    if (ok != true) return false;
+    if (ok != true) {
+      // Pedido novo depois do 403: sem isto a recusa nao diria por que nada aconteceu.
+      if (force && mounted) VoltiToast.show(context, l.pickupConsentRequired, tone: VoltiToastTone.warning);
+      return false;
+    }
     try {
       // Termos e marketing ficam como estao no servidor (LGPD): le de novo antes de gravar,
       // para uma sessao sem consentimentos carregados nunca revogar termos ou marketing.
@@ -443,7 +447,9 @@ class _ReferencePrices extends ConsumerWidget {
     final plans = ref.watch(plansProvider);
     final coverages = ref.watch(coveragesProvider);
     final Widget body;
-    if (plans.hasError && !plans.hasValue) {
+    if (coverages.hasError && !coverages.hasValue) {
+      body = ErrorState(error: coverages.error!, onRetry: () => ref.invalidate(coveragesProvider));
+    } else if (plans.hasError && !plans.hasValue) {
       body = ErrorState(error: plans.error!, onRetry: () => ref.invalidate(plansProvider));
     } else if (!plans.hasValue) {
       body = VoltiSkeleton.card(height: 96, label: l.loading);

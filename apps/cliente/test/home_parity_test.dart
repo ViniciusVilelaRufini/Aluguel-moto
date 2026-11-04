@@ -1,4 +1,5 @@
 import 'package:built_collection/built_collection.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volti_api/volti_api.dart';
@@ -95,6 +96,27 @@ void main() {
     expect(find.byKey(const Key('home-avatar-dot')), findsNothing);
     expect(t.takeException(), isNull);
   });
+
+  // Emulador 2026-11-04: rotulo do mapa aparecendo por baixo da pilula e cartao "Planos no galpao" estourando a tela.
+  for (final width in [360.0, 412.0]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('home ${width.round()}px a ${(scale * 100).round()}%: um rotulo na pilula (vidro com blur) e cartao de planos dentro do respiro', (t) async {
+        phone(t, scale: scale);
+        t.view.physicalSize = Size(width, 915);
+        await pump(t, ParityBackend());
+        expect(find.text('Retire em'), findsOneWidget);
+        final pill = find.byKey(const Key('home-location'));
+        expect(find.descendant(of: pill, matching: find.byType(BackdropFilter)), findsOneWidget);
+        final card = t.getRect(find.byKey(const Key('home-counter-plans')));
+        expect(card.left, VoltiSpacing.screenGutter);
+        expect(card.right, lessThanOrEqualTo(width - VoltiSpacing.screenGutter));
+        for (final txt in [find.text('Planos no galpão'), find.textContaining('Diária, semanal e mensal')]) {
+          expect(t.getRect(txt).right, lessThanOrEqualTo(card.right));
+        }
+        expect(t.takeException(), isNull);
+      });
+    }
+  }
 
   testWidgets('mensagem nao lida do suporte: bolinha no avatar da Conta, sem sino', (t) async {
     phone(t);

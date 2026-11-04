@@ -41,14 +41,11 @@ class GapBackend extends FakeBackend {
   GapBackend({this.reservation, this.vehicles = const []});
   Reservation? reservation;
   final List<VehicleSummary> vehicles;
-  final rings = <String>[];
   final incidents = <(IncidentCategory, String, String?, String?)>[];
   final canceled = <String>[];
   final quotes = <(PlanCode, InsuranceCoverage, String?)>[];
   final codes = <String>[];
 
-  @override
-  Future<void> ring(String vehicleId) async => rings.add(vehicleId);
   @override
   Future<Incident> reportIncident(IncidentCategory category, String description, {String? rentalId, String? vehicleId}) async {
     incidents.add((category, description, rentalId, vehicleId));

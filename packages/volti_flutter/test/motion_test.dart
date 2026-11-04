@@ -261,6 +261,11 @@ void main() {
       expect(n, 1);
       expect(find.text('sub'), findsOneWidget);
     });
+
+    testWidgets('PassCard sem onTap e informacao, nao botao desabilitado', (t) async {
+      await t.pumpWidget(_wrap(const PassCard(title: 'Passe', subtitle: 'sub')));
+      expect(t.getSemantics(find.text('Passe')), isSemantics(label: 'Passe. sub', isButton: false, hasEnabledState: false));
+    });
   });
 
   group('VoltiPageTransitions', () {

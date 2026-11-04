@@ -53,7 +53,6 @@ abstract class Backend {
   /// Estacoes de troca de bateria (mapa da home).
   Future<List<SwapStation>> swapStations({double? lat, double? lng});
   Future<Vehicle> vehicleByCode(String code);
-  Future<void> ring(String vehicleId);
 
   // troca de bateria na estacao (QR)
   /// `POST /swap-stations/{id}/swaps`. [idempotencyKey]: uma por tentativa de
@@ -88,8 +87,6 @@ abstract class Backend {
   Future<List<InsuranceCoverageOption>> coverages();
   /// [vehicleId]: preco por minuto do modelo da moto (plano `minute`).
   Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon, String? vehicleId});
-  /// `POST /me/coupons/validate`: regra do cupom (valor fixo ou percentual) para o resumo da retirada.
-  Future<CouponValidation> validateCoupon(String code, {PlanCode? plan});
   Future<List<PaymentCard>> cards();
   Future<PaymentCard> addCard(String token);
   /// `PUT /payments/cards/{id}/default`: cartao usado quando a cobranca nao escolhe um.
@@ -259,11 +256,6 @@ class ApiBackend implements Backend {
       _run(() async => (await _api.getVehiclesApi().getVehicleByCode(code: code)).data!);
 
   @override
-  Future<void> ring(String vehicleId) => _run(() async {
-        await _api.getVehiclesApi().ringVehicle(id: vehicleId);
-      });
-
-  @override
   Future<StationSwap> createStationSwap({
     required String stationId,
     required String stationCode,
@@ -336,15 +328,6 @@ class ApiBackend implements Backend {
           .data!);
 
   @override
-  Future<CouponValidation> validateCoupon(String code, {PlanCode? plan}) =>
-      _run(() async => (await _api.getPricingApi().validateMyCoupon(
-            couponCodeRequest: CouponCodeRequest((b) => b
-              ..code = code
-              ..planCode = plan),
-          ))
-          .data!);
-
-  @override
   Future<List<PaymentCard>> cards() =>
       _run(() async => (await _api.getPaymentsApi().listPaymentCards()).data!.items.toList());
 
@@ -388,8 +371,9 @@ class ApiBackend implements Backend {
   Future<List<Payment>> openDebts() => _run(() async {
         // Todas as paginas: o aviso da home soma todas as dividas em aberto.
         // `pending` so conta quando e debito de balcao: Pix/cartao `pending` ainda e cobranca em curso.
-        final debts = <Payment>[];
-        for (final status in const [PaymentStatus.failed, PaymentStatus.pending]) {
+        // Um status por vez dentro de cada lista (paginacao), os dois status em paralelo.
+        Future<List<Payment>> debtsOf(PaymentStatus status) async {
+          final debts = <Payment>[];
           String? cursor;
           for (var i = 0; i < 20; i++) {
             final page = (await _api.getPaymentsApi().listPayments(status: status, limit: 100, cursor: cursor)).data!;
@@ -397,8 +381,11 @@ class ApiBackend implements Backend {
             cursor = page.nextCursor;
             if (cursor == null || cursor.isEmpty) break;
           }
+          return debts;
         }
-        return debts..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+        final lists = await Future.wait([debtsOf(PaymentStatus.failed), debtsOf(PaymentStatus.pending)]);
+        return lists.expand((l) => l).toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
       });
 
   @override
