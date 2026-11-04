@@ -1,4 +1,4 @@
-// Cartao "Sua reserva" da home (retirada em galpao): substitui a faixa escura
+// Cartao "Pré-reserva confirmada" da home (retirada em galpao): substitui a faixa escura
 // "Moto reservada · Ver reserva" e o cartao do galpao enquanto ha reserva.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -145,7 +145,7 @@ void main() {
     });
   });
 
-  group('cartao "Sua reserva"', () {
+  group('cartao "Pré-reserva confirmada"', () {
     testWidgets('ativa agora: modelo, codigo, "Retire até 15:28" com contagem ao vivo, galpao e QR', (t) async {
       phone(t);
       var now = DateTime.utc(2026, 10, 22, 17);
@@ -153,7 +153,7 @@ void main() {
       final router = await pumpHome(t, b, clock: () => now);
       expect(card, findsOneWidget);
       expect(depotCard, findsNothing);
-      expect(find.text('Sua reserva'), findsOneWidget);
+      expect(find.text('Pré-reserva confirmada'), findsOneWidget);
       expect(find.text('Volti Urbana'), findsOneWidget);
       expect(find.text('VLT-0026'), findsOneWidget);
       expect(find.text('Retire até 15:28'), findsOneWidget);
@@ -196,15 +196,15 @@ void main() {
       expect(find.text('Ver QR da reserva'), findsOneWidget);
     });
 
-    testWidgets('em entrega: "Sua moto está sendo entregue" e "Conferir moto" abre /handover/:id', (t) async {
+    testWidgets('em entrega: "Sua moto está sendo preparada" e "Acompanhar a vistoria" abre /handover/:id', (t) async {
       phone(t);
       final b = HandoverBackend()..current = res(status: ReservationStatus.handover, handoverId: 'h1');
       final router = await pumpHome(t, b, clock: () => DateTime.utc(2026, 10, 22, 17));
       expect(router.state.uri.path, '/home');
-      expect(find.text('Sua moto está sendo entregue'), findsOneWidget);
+      expect(find.text('Sua moto está sendo preparada'), findsOneWidget);
       expect(countdown, findsNothing);
       expect(find.text('Ver QR da reserva'), findsNothing);
-      await t.tap(find.text('Conferir moto'));
+      await t.tap(find.text('Acompanhar a vistoria'));
       await settle(t);
       expect(router.state.uri.path, '/handover/h1');
     });
@@ -342,7 +342,7 @@ void main() {
         HandoverBackend()..current = res(status: ReservationStatus.handover, handoverId: 'h1'),
         clock: () => DateTime.utc(2026, 10, 22, 17),
       );
-      expect(find.bySemanticsLabel('Reserva da Volti Urbana VLT-0026, sua moto está sendo entregue'), findsOneWidget);
+      expect(find.bySemanticsLabel('Pré-reserva da Volti Urbana VLT-0026, sua moto está sendo preparada'), findsOneWidget);
       h.dispose();
     });
 

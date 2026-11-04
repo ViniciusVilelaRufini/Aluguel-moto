@@ -374,7 +374,7 @@ void main() {
       expect(s.signedOut, isTrue);
     });
 
-    testWidgets('LGPD: sem marcar a localizacao nada e consentido e o Plano pede antes do aluguel', (t) async {
+    testWidgets('LGPD: sem marcar a localizacao nada e consentido e a pre-reserva pede antes do aluguel', (t) async {
       tallScreen(t);
       final backend = _ProfileBackend();
       await t.pumpWidget(testApp(const OnboardingScreen(), overrides: [
@@ -389,18 +389,18 @@ void main() {
       expect(backend.location, isFalse, reason: 'caixa intocada nao vira consentimento');
       expect(find.text('Verificação de identidade'), findsOneWidget);
 
-      // Com o consentimento gravado como falso, o Plano pede antes de iniciar.
+      // Com o consentimento gravado como falso, a pre-reserva pede antes de enviar.
       final plan = PlanBackend();
       await t.pumpWidget(const SizedBox());
-      await t.pumpWidget(testApp(PickupScreen(selection: selection(p: dayPlan())), overrides: [
+      await t.pumpWidget(testApp(PickupScreen(selection: selection()), overrides: [
         backendProvider.overrideWithValue(plan),
         sessionProvider.overrideWith(() => FakeSession(session(location: backend.location!))),
         clockProvider.overrideWithValue(() => thu10),
       ]));
       await t.pumpAndSettle();
-      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar reserva'));
+      await t.tap(find.widgetWithText(VoltiButton, 'Pré-reservar'));
       await t.pumpAndSettle();
-      expect(find.text('Permitir localização?'), findsOneWidget);
+      expect(find.text('Permitir localização durante o aluguel'), findsOneWidget);
       expect(plan.startCalls, 0);
     });
 
@@ -484,4 +484,3 @@ void main() {
   });
 }
 
-PricingPlan dayPlan() => plan(PlanCode.day, 'Diário', PlanUnit.day, 8900);

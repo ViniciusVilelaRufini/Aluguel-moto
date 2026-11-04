@@ -9,17 +9,15 @@ import 'package:volti_flutter/volti_flutter.dart';
 /// - [VoltiScreenTransition.fadeThrough]: trocas de raiz (boas-vindas, cadastro,
 ///   inicio, corrida).
 /// - [VoltiScreenTransition.modal]: telas de "momento" que sobem de baixo (QR da
-///   reserva, confira sua moto, recibo).
-/// - [VoltiScreenTransition.push]: o funil (escolher moto -> plano -> seguro ->
-///   retirada), a devolucao e a conta.
+///   reserva, moto sendo preparada, recibo).
+/// - [VoltiScreenTransition.push]: o funil (escolher moto -> pre-reserva), a
+///   devolucao e a conta.
 const routeTransitions = <String, VoltiScreenTransition>{
   '/welcome': VoltiScreenTransition.fadeThrough,
   '/login': VoltiScreenTransition.push,
   '/onboarding': VoltiScreenTransition.fadeThrough,
   '/home': VoltiScreenTransition.fadeThrough,
   '/pick': VoltiScreenTransition.push,
-  '/plan': VoltiScreenTransition.push,
-  '/insurance': VoltiScreenTransition.push,
   '/pickup': VoltiScreenTransition.push,
   '/reservation/:id': VoltiScreenTransition.modal,
   '/handover/:id': VoltiScreenTransition.modal,

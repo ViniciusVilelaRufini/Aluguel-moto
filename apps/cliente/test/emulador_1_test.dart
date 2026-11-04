@@ -11,7 +11,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
-import 'package:volti_cliente/core/clock.dart';
 import 'package:volti_cliente/features/account/account_common.dart';
 import 'package:volti_cliente/features/account/account_screen.dart';
 import 'package:volti_cliente/features/account/wallet_screen.dart';
@@ -19,15 +18,12 @@ import 'package:volti_cliente/core/geo.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/plan/pix_sheet.dart';
-import 'package:volti_cliente/features/pickup/pickup_screen.dart';
-import 'package:volti_cliente/features/plan/insurance_screen.dart';
 import 'package:volti_cliente/features/return_flow/return_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';
 import 'package:volti_cliente/features/summary/summary_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'account_gap_c_test.dart' show AccountBackend;
-import 'galpao_fixtures.dart';
 import 'helpers.dart';
 import 'zone_fixtures.dart';
 
@@ -53,83 +49,6 @@ void _screen(WidgetTester t, {Size size = const Size(412, 915), double scale = 1
   t.platformDispatcher.textScaleFactorTestValue = scale;
   addTearDown(t.view.reset);
   addTearDown(t.platformDispatcher.clearTextScaleFactorTestValue);
-}
-
-/// Galpao com cotacao que ja traz a linha do seguro (como a API real).
-class _PlanBackend extends GalpaoBackend {
-  _PlanBackend({this.withInsuranceLine = true, this.savedCards = const []});
-  final bool withInsuranceLine;
-  final List<PaymentCard> savedCards;
-
-  @override
-  Future<List<PaymentCard>> cards() async => savedCards;
-
-  @override
-  Future<List<InsuranceCoverageOption>> coverages() async => [
-        InsuranceCoverageOption((b) => b
-          ..coverage = InsuranceCoverage.basic
-          ..name = 'Básico'
-          ..description = 'Obrigatório. Danos a terceiros e acidentes pessoais.'
-          ..premiumCents = 200
-          ..mandatory = true
-          ..active = true),
-      ];
-
-  @override
-  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon, String? vehicleId}) async => Quote((b) => b
-    ..planCode = plan
-    ..coverage = coverage
-    ..depositCents = 15000
-    ..couponApplied = false
-    ..breakdown = PriceBreakdown((p) => p
-      ..lines = ListBuilder<PriceLine>([
-        PriceLine((l) => l
-          ..code = 'unlock'
-          ..description = 'Desbloqueio'
-          ..amountCents = 300),
-        PriceLine((l) => l
-          ..code = 'time'
-          ..description = 'Tempo de uso (por minuto)'
-          ..amountCents = 79),
-        if (withInsuranceLine)
-          PriceLine((l) => l
-            ..code = 'insurance_basic'
-            ..description = 'Seguro básico'
-            ..amountCents = 200),
-      ])
-      ..subtotalCents = 379
-      ..discountCents = 0
-      ..insuranceCents = 200
-      ..feesCents = 0
-      ..totalCents = 579).toBuilder());
-}
-
-PaymentCard _card() => PaymentCard((b) => b
-  ..id = 'card1'
-  ..brand = 'visa'
-  ..last4 = '4242'
-  ..expMonth = 12
-  ..expYear = 2030
-  ..isDefault = true
-  ..createdAt = DateTime.utc(2026));
-
-Future<void> _pumpPickup(WidgetTester t, _PlanBackend b) async {
-  tallScreen(t);
-  await t.pumpWidget(testApp(PickupScreen(selection: selection(p: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900))), overrides: [
-    backendProvider.overrideWithValue(b),
-    sessionProvider.overrideWith(() => FakeSession(session())),
-    clockProvider.overrideWithValue(() => thu10),
-  ]));
-  await t.pumpAndSettle();
-}
-
-Future<void> _pumpInsurance(WidgetTester t, _PlanBackend b) async {
-  tallScreen(t);
-  await t.pumpWidget(testApp(InsuranceScreen(selection: selection(p: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900))), overrides: [
-    backendProvider.overrideWithValue(b),
-    sessionProvider.overrideWith(() => FakeSession(session())),
-  ]));
-  await t.pumpAndSettle();
 }
 
 Deposit _deposit(String b64) => Deposit((d) => d
@@ -206,55 +125,6 @@ class _ReturnBackend extends FakeBackend {
 
 void main() {
   setUpAll(_loadFonts);
-
-  group('seguro e retirada (P)', () {
-    testWidgets('seguro aparece uma vez so no resumo da retirada (a linha da API ja traz)', (t) async {
-      await _pumpPickup(t, _PlanBackend());
-      expect(find.text('Seguro básico'), findsOneWidget);
-      expect(find.text('Seguro'), findsNothing);
-      await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('sem linha do seguro na API: mostra a partir de insuranceCents', (t) async {
-      await _pumpPickup(t, _PlanBackend(withInsuranceLine: false));
-      expect(find.text('Seguro'), findsOneWidget);
-      await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('"Obrigatório" so no selo, nao repetido na descricao', (t) async {
-      await _pumpInsurance(t, _PlanBackend());
-      expect(find.textContaining('Obrigatório'), findsOneWidget);
-      expect(find.text('Danos a terceiros e acidentes pessoais.'), findsOneWidget);
-      await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('sem cartao salvo: Pix ja vem escolhido e da para confirmar', (t) async {
-      await _pumpPickup(t, _PlanBackend());
-      expect(t.widget<OptionCard>(find.byKey(const Key('pickup-pix'))).selected, isTrue);
-      expect(t.widget<OptionCard>(find.byKey(const Key('pickup-card'))).selected, isFalse);
-      expect(t.widget<VoltiButton>(find.byKey(const Key('pickup-confirm'))).onPressed, isNotNull);
-      await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('com cartao salvo: cartao continua o padrao', (t) async {
-      await _pumpPickup(t, _PlanBackend(savedCards: [_card()]));
-      expect(t.widget<OptionCard>(find.byKey(const Key('pickup-card'))).selected, isTrue);
-      expect(find.byKey(const Key('plan-confirm-reason')), findsNothing);
-      await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('cartao escolhido sem cartao: botao desligado mostra o motivo', (t) async {
-      final h = t.ensureSemantics();
-      await _pumpPickup(t, _PlanBackend());
-      await t.tap(find.byKey(const Key('pickup-card')));
-      await t.pumpAndSettle();
-      expect(t.widget<VoltiButton>(find.byKey(const Key('pickup-confirm'))).onPressed, isNull);
-      expect(find.text('Adicione um cartão ou escolha Pix para a caução.'), findsOneWidget);
-      expect(t.getSemantics(find.byKey(const Key('plan-confirm-reason'))), isSemantics(isLiveRegion: true));
-      h.dispose();
-      await t.pumpWidget(const SizedBox());
-    });
-  });
 
   group('folha do Pix', () {
     for (final (name, b64) in [('PNG 1x1 do fake', _png1x1), ('imagem vazia', '')]) {

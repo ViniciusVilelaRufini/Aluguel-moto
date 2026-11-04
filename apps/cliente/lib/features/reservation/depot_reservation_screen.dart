@@ -18,15 +18,14 @@ import '../home/depot_providers.dart';
 import '../home/providers.dart';
 import '../pickup/depot_hours.dart';
 import '../pickup/depot_labels.dart';
-import '../plan/pix_sheet.dart';
 
-/// Reserva confirmada (spec 2026-10-22 §3.6): QR do `pickupCode` para o
-/// operador ler no galpao, moto, horario ou prazo, endereco com "Como chegar"
-/// (o app de mapas so abre quando o cliente toca) e **Cancelar reserva** (gratis).
-/// Com a entrega aberta (`handover`) a API recusa o cancelamento: o botao some e
-/// o aviso manda usar "Apontar problema", com **Conferir moto** para abrir a
-/// entrega. O [HandoverWatcher] abre "Confira sua moto" quando o operador cria a
-/// entrega (`handover.pending`).
+/// Pre-reserva confirmada (pre-reserva/balcao, 2026-11-04): QR do `pickupCode`
+/// para o atendente ler no galpao, moto, horario ou prazo, endereco com "Como
+/// chegar" (o app de mapas so abre quando o cliente toca) e **Cancelar (grátis)**.
+/// Sem caucao, plano nem Pix: tudo e acertado no balcao. Com a entrega aberta
+/// (`handover`) a API recusa o cancelamento: o botao some e o aviso diz que a moto
+/// esta sendo preparada, com **Acompanhar a vistoria**. O [HandoverWatcher] abre
+/// "Sua moto está sendo preparada" quando o operador cria a entrega (`handover.pending`).
 class DepotReservationScreen extends ConsumerStatefulWidget {
   const DepotReservationScreen({super.key, required this.reservationId});
   final String reservationId;
@@ -89,8 +88,8 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
     }
   }
 
-  /// "Retirar moto (teste)" (so no canal beta): a API simula a equipe do galpao e
-  /// a entrega abre direto em "Confira sua moto".
+  /// "Retirar moto (teste)" (so no canal beta): a API simula a equipe e o checkout
+  /// do balcao e devolve a entrega ja `accepted` (com `rentalId`): abre a corrida.
   Future<void> _testHandover(Reservation r) async {
     if (_testHandoverBusy) return;
     setState(() => _testHandoverBusy = true);
@@ -98,6 +97,12 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
       final h = await ref.read(backendProvider).createTestHandover(r.id);
       if (!mounted) return;
       ref.invalidate(currentReservationProvider);
+      if (h.status == HandoverStatus.accepted) {
+        ref.read(createdReservationProvider.notifier).set(null);
+        ref.invalidate(currentRentalStateProvider);
+        context.go('/ride');
+        return;
+      }
       // So abre se o HandoverWatcher (evento handover.pending ou nova consulta) ainda nao abriu esta entrega.
       if (ref.read(autoOpenedHandoversProvider.notifier).claim(h.id)) context.push('/handover/${h.id}');
     } catch (e) {
@@ -112,11 +117,6 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
   Future<void> _directions(Depot d) async {
     final ok = await openDirections(ref.read(urlLauncherProvider), d.lat, d.lng);
     if (!ok && mounted) VoltiToast.show(context, context.l.navigateFailed, tone: VoltiToastTone.danger);
-  }
-
-  Future<void> _payPix(Deposit d) async {
-    await PixDepositSheet.show(context, d);
-    ref.invalidate(currentReservationProvider);
   }
 
   @override
@@ -157,8 +157,6 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
     DateTime wall(DateTime utc) => utc.toUtc().add(offset);
     final handover = r.status == ReservationStatus.handover;
     final testHandover = r.status == ReservationStatus.active && ref.watch(appChannelProvider) == AppChannel.beta;
-    final deposit = r.deposit;
-    final pixPending = r.depositMethod == DepositMethod.pix && deposit?.pix != null && deposit!.status == DepositStatus.awaitingPix;
     final v = r.vehicle;
 
     final String when;
@@ -206,12 +204,6 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
                         onPressed: () => context.push('/handover/${r.handoverId}'),
                       ),
                     ],
-                    const SizedBox(height: VoltiSpacing.s12),
-                  ],
-                  if (pixPending) ...[
-                    NoticeBanner(icon: LucideIcons.qrCode, message: l.reservationPixPending),
-                    const SizedBox(height: VoltiSpacing.s8),
-                    VoltiButton(label: l.payPixDeposit, icon: LucideIcons.qrCode, fullWidth: true, onPressed: () => _payPix(deposit)),
                     const SizedBox(height: VoltiSpacing.s12),
                   ],
                   // QR sempre em preto sobre branco (leitura pelo operador, tambem no tema escuro).
@@ -333,7 +325,7 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
                     const SizedBox(height: VoltiSpacing.s16),
                     VoltiButton(
                       key: const Key('reservation-cancel'),
-                      label: l.cancelReservation,
+                      label: l.cancelPreReservationFree,
                       icon: LucideIcons.x,
                       variant: VoltiButtonVariant.ghost,
                       fullWidth: true,

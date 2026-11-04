@@ -2322,13 +2322,53 @@ class AppLocalizationsPt extends AppLocalizations {
       'Confirmar bloqueia só a caução. O plano é acertado no fim do aluguel; a caução fica como garantia.';
 
   @override
+  String get pickupPreReserveTitle => 'Pré-reserva';
+
+  @override
+  String get pickupPreReserve => 'Pré-reservar';
+
+  @override
+  String get pickupVehicleLine => 'Moto';
+
+  @override
+  String get pickupDepotLine => 'Galpão';
+
+  @override
+  String get pickupCounterNote =>
+      'Leve documento com foto. O contrato e o pagamento são feitos no galpão.';
+
+  @override
+  String get pickupReferencePrices =>
+      'Preços de referência; o plano é escolhido no galpão';
+
+  @override
+  String pickupInsuranceLine(String name) {
+    return 'Seguro $name';
+  }
+
+  @override
+  String get pickupLocationConsentTitle =>
+      'Permitir localização durante o aluguel';
+
+  @override
+  String get cancelPreReservationFree => 'Cancelar (grátis)';
+
+  @override
+  String get handoverCounterNote =>
+      'O atendente inicia o aluguel depois do contrato e do pagamento no balcão. A corrida abre aqui sozinha.';
+
+  @override
+  String get pickupDebtAtCounter =>
+      'Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.';
+
+  @override
   String get confirmReservation => 'Confirmar reserva';
 
   @override
   String get vehicleJustTaken => 'Essa moto acabou de ser reservada';
 
   @override
-  String get depotReservationTitle => 'Reserva confirmada';
+  String get depotReservationTitle => 'Pré-reserva confirmada';
 
   @override
   String get reservationQrHint => 'Mostre este código no galpão';
@@ -2355,7 +2395,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get howToGetThere => 'Como chegar';
 
   @override
-  String get cancelReservation => 'Cancelar reserva';
+  String get cancelReservation => 'Cancelar pré-reserva';
 
   @override
   String get reservationTestHandover => 'Retirar moto (teste)';
@@ -2365,18 +2405,17 @@ class AppLocalizationsPt extends AppLocalizations {
       'Simula a equipe do galpão · só na versão de teste';
 
   @override
-  String get cancelReservationTitle => 'Cancelar reserva?';
+  String get cancelReservationTitle => 'Cancelar a pré-reserva?';
 
   @override
-  String get cancelReservationText =>
-      'O cancelamento é grátis e a caução é liberada.';
+  String get cancelReservationText => 'O cancelamento é grátis.';
 
   @override
-  String get keepReservation => 'Manter reserva';
+  String get keepReservation => 'Manter pré-reserva';
 
   @override
   String get reservationInHandover =>
-      'Sua moto já está sendo entregue. Use Apontar problema.';
+      'Sua moto está sendo preparada no galpão.';
 
   @override
   String get reservationPixPending =>
@@ -2422,16 +2461,16 @@ class AppLocalizationsPt extends AppLocalizations {
       'Não conseguimos carregar o QR da reserva. Tente de novo antes de ir ao galpão.';
 
   @override
-  String get handoverTitle => 'Confira sua moto';
+  String get handoverTitle => 'Sua moto está sendo preparada';
 
   @override
   String handoverIntro(String operator, String code) {
-    return '$operator separou a $code para você. Confira as fotos e o checklist antes de aceitar.';
+    return '$operator está preparando a $code para você. Confira a vistoria enquanto faz o contrato no balcão.';
   }
 
   @override
   String handoverIntroNoOperator(String code) {
-    return 'A $code está pronta. Confira as fotos e o checklist antes de aceitar.';
+    return 'A $code está sendo preparada para você. Confira a vistoria enquanto faz o contrato no balcão.';
   }
 
   @override
@@ -2550,7 +2589,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get handoverCanceledText => 'Fale com o operador no galpão.';
 
   @override
-  String get reservationSeeHandover => 'Conferir moto';
+  String get reservationSeeHandover => 'Acompanhar a vistoria';
 
   @override
   String get swapBattery => 'Trocar bateria';
@@ -2751,7 +2790,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get stationsCloseSemantics => 'Fechar pontos de troca';
 
   @override
-  String get homeReservationTitle => 'Sua reserva';
+  String get homeReservationTitle => 'Pré-reserva confirmada';
 
   @override
   String homeReservationScheduled(String day, String time) {
@@ -2759,7 +2798,7 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get homeReservationHandover => 'Sua moto está sendo entregue';
+  String get homeReservationHandover => 'Sua moto está sendo preparada';
 
   @override
   String get homeReservationExpired => 'O prazo de retirada acabou';
@@ -2791,7 +2830,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String homeReservationA11yHandover(String vehicle) {
-    return 'Reserva da $vehicle, sua moto está sendo entregue';
+    return 'Pré-reserva da $vehicle, sua moto está sendo preparada';
   }
 
   @override

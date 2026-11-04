@@ -12,8 +12,6 @@ import '../features/onboarding/onboarding_screen.dart';
 import '../features/pick/depot_selection.dart';
 import '../features/pick/pick_screen.dart';
 import '../features/pickup/pickup_screen.dart';
-import '../features/plan/insurance_screen.dart';
-import '../features/plan/plan_screen.dart';
 import '../features/reservation/depot_reservation_screen.dart';
 import '../features/return_flow/return_screen.dart';
 import '../features/station_swap/swap_progress_screen.dart';
@@ -68,11 +66,12 @@ List<RouteBase> appRoutes() => [
       // Retirada em galpao: o cliente nao escaneia moto (nem para alugar nem para trocar
       // no meio da corrida, docs/decisoes.md 2026-10-22). Links antigos voltam ao inicio.
       GoRoute(path: '/scan', redirect: (_, _) => '/home'),
-      GoRoute(path: '/plan', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, PlanScreen(selection: state.extra! as DepotSelection))),
-      GoRoute(path: '/insurance', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, InsuranceScreen(selection: state.extra! as DepotSelection))),
+      // Plano e seguro sao escolhidos no balcao (pre-reserva, 2026-11-04): links antigos voltam ao inicio.
+      GoRoute(path: '/plan', redirect: (_, _) => '/home'),
+      GoRoute(path: '/insurance', redirect: (_, _) => '/home'),
       GoRoute(path: '/pickup', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, PickupScreen(selection: state.extra! as DepotSelection))),
       GoRoute(path: '/reservation/:id', pageBuilder: (c, state) => voltiPage(c, state, DepotReservationScreen(reservationId: state.pathParameters['id']!))),
-      // "Confira sua moto": aberta pelo evento `handover.pending` ou pela reserva em `handover`.
+      // "Sua moto está sendo preparada": aberta pelo evento `handover.pending` ou pela reserva em `handover`.
       GoRoute(path: '/handover/:id', pageBuilder: (c, state) => voltiPage(c, state, HandoverScreen(handoverId: state.pathParameters['id']!))),
       GoRoute(path: '/ride', pageBuilder: (c, state) => voltiPage(c, state, const RideScreen())),
       GoRoute(

@@ -4042,6 +4042,72 @@ abstract class AppLocalizations {
   /// **'Confirmar bloqueia só a caução. O plano é acertado no fim do aluguel; a caução fica como garantia.'**
   String get pickupDepositNote;
 
+  /// No description provided for @pickupPreReserveTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pré-reserva'**
+  String get pickupPreReserveTitle;
+
+  /// No description provided for @pickupPreReserve.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pré-reservar'**
+  String get pickupPreReserve;
+
+  /// No description provided for @pickupVehicleLine.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto'**
+  String get pickupVehicleLine;
+
+  /// No description provided for @pickupDepotLine.
+  ///
+  /// In pt, this message translates to:
+  /// **'Galpão'**
+  String get pickupDepotLine;
+
+  /// No description provided for @pickupCounterNote.
+  ///
+  /// In pt, this message translates to:
+  /// **'Leve documento com foto. O contrato e o pagamento são feitos no galpão.'**
+  String get pickupCounterNote;
+
+  /// No description provided for @pickupReferencePrices.
+  ///
+  /// In pt, this message translates to:
+  /// **'Preços de referência; o plano é escolhido no galpão'**
+  String get pickupReferencePrices;
+
+  /// No description provided for @pickupInsuranceLine.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seguro {name}'**
+  String pickupInsuranceLine(String name);
+
+  /// No description provided for @pickupLocationConsentTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Permitir localização durante o aluguel'**
+  String get pickupLocationConsentTitle;
+
+  /// No description provided for @cancelPreReservationFree.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelar (grátis)'**
+  String get cancelPreReservationFree;
+
+  /// No description provided for @handoverCounterNote.
+  ///
+  /// In pt, this message translates to:
+  /// **'O atendente inicia o aluguel depois do contrato e do pagamento no balcão. A corrida abre aqui sozinha.'**
+  String get handoverCounterNote;
+
+  /// No description provided for @pickupDebtAtCounter.
+  ///
+  /// In pt, this message translates to:
+  /// **'Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.'**
+  String get pickupDebtAtCounter;
+
   /// No description provided for @confirmReservation.
   ///
   /// In pt, this message translates to:
@@ -4057,7 +4123,7 @@ abstract class AppLocalizations {
   /// No description provided for @depotReservationTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Reserva confirmada'**
+  /// **'Pré-reserva confirmada'**
   String get depotReservationTitle;
 
   /// No description provided for @reservationQrHint.
@@ -4099,7 +4165,7 @@ abstract class AppLocalizations {
   /// No description provided for @cancelReservation.
   ///
   /// In pt, this message translates to:
-  /// **'Cancelar reserva'**
+  /// **'Cancelar pré-reserva'**
   String get cancelReservation;
 
   /// No description provided for @reservationTestHandover.
@@ -4117,25 +4183,25 @@ abstract class AppLocalizations {
   /// No description provided for @cancelReservationTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Cancelar reserva?'**
+  /// **'Cancelar a pré-reserva?'**
   String get cancelReservationTitle;
 
   /// No description provided for @cancelReservationText.
   ///
   /// In pt, this message translates to:
-  /// **'O cancelamento é grátis e a caução é liberada.'**
+  /// **'O cancelamento é grátis.'**
   String get cancelReservationText;
 
   /// No description provided for @keepReservation.
   ///
   /// In pt, this message translates to:
-  /// **'Manter reserva'**
+  /// **'Manter pré-reserva'**
   String get keepReservation;
 
   /// No description provided for @reservationInHandover.
   ///
   /// In pt, this message translates to:
-  /// **'Sua moto já está sendo entregue. Use Apontar problema.'**
+  /// **'Sua moto está sendo preparada no galpão.'**
   String get reservationInHandover;
 
   /// No description provided for @reservationPixPending.
@@ -4213,19 +4279,19 @@ abstract class AppLocalizations {
   /// No description provided for @handoverTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Confira sua moto'**
+  /// **'Sua moto está sendo preparada'**
   String get handoverTitle;
 
   /// No description provided for @handoverIntro.
   ///
   /// In pt, this message translates to:
-  /// **'{operator} separou a {code} para você. Confira as fotos e o checklist antes de aceitar.'**
+  /// **'{operator} está preparando a {code} para você. Confira a vistoria enquanto faz o contrato no balcão.'**
   String handoverIntro(String operator, String code);
 
   /// No description provided for @handoverIntroNoOperator.
   ///
   /// In pt, this message translates to:
-  /// **'A {code} está pronta. Confira as fotos e o checklist antes de aceitar.'**
+  /// **'A {code} está sendo preparada para você. Confira a vistoria enquanto faz o contrato no balcão.'**
   String handoverIntroNoOperator(String code);
 
   /// No description provided for @handoverPhotos.
@@ -4435,7 +4501,7 @@ abstract class AppLocalizations {
   /// No description provided for @reservationSeeHandover.
   ///
   /// In pt, this message translates to:
-  /// **'Conferir moto'**
+  /// **'Acompanhar a vistoria'**
   String get reservationSeeHandover;
 
   /// No description provided for @swapBattery.
@@ -4771,7 +4837,7 @@ abstract class AppLocalizations {
   /// No description provided for @homeReservationTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Sua reserva'**
+  /// **'Pré-reserva confirmada'**
   String get homeReservationTitle;
 
   /// No description provided for @homeReservationScheduled.
@@ -4783,7 +4849,7 @@ abstract class AppLocalizations {
   /// No description provided for @homeReservationHandover.
   ///
   /// In pt, this message translates to:
-  /// **'Sua moto está sendo entregue'**
+  /// **'Sua moto está sendo preparada'**
   String get homeReservationHandover;
 
   /// No description provided for @homeReservationExpired.
@@ -4819,7 +4885,7 @@ abstract class AppLocalizations {
   /// No description provided for @homeReservationA11yHandover.
   ///
   /// In pt, this message translates to:
-  /// **'Reserva da {vehicle}, sua moto está sendo entregue'**
+  /// **'Pré-reserva da {vehicle}, sua moto está sendo preparada'**
   String homeReservationA11yHandover(String vehicle);
 
   /// No description provided for @homeReservationA11yExpired.

@@ -243,17 +243,16 @@ void main() {
       expect(find.byKey(const Key('home-pending-payment')), findsNothing);
     });
 
-    testWidgets('reserva com divida: 409 payment-pending → aviso "Pague o valor pendente" e volta a home com a pendencia', (t) async {
+    testWidgets('pre-reserva com divida: 409 payment-pending → aviso do acerto no galpao e volta a home com a pendencia', (t) async {
       _screen(t);
       final b = _DebtBackend(debts: [debt])..createError = conflict('payment-pending');
-      final dayPlan = plan(PlanCode.day, 'Diário', PlanUnit.day, 8900);
-      final router = await _app(t, b, initial: '/pickup', extra: selection(p: dayPlan));
-      await t.ensureVisible(find.text('Confirmar reserva').last);
+      final router = await _app(t, b, initial: '/pickup', extra: selection());
+      await t.ensureVisible(find.text('Pré-reservar').last);
       await t.pump();
-      await t.tap(find.text('Confirmar reserva').last);
+      await t.tap(find.text('Pré-reservar').last);
       await t.pump();
       await t.pump(const Duration(milliseconds: 300));
-      expect(find.text('Pague o valor pendente para alugar de novo.'), findsOneWidget);
+      expect(find.text('Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.'), findsOneWidget);
       await _settle(t);
       expect(router.state.uri.path, '/home');
       expect(find.byKey(const Key('home-pay-now')), findsOneWidget);

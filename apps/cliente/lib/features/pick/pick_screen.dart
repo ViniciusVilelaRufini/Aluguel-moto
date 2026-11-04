@@ -22,7 +22,7 @@ import 'pick_logic.dart';
 /// "Escolha sua moto" do galpao (spec 2026-10-22 §3.2): motos livres do galpao
 /// ativo (`GET /depots/{id}/vehicles`) com foto e categoria do modelo, codigo,
 /// bateria/autonomia e preco por modelo; sem distancia a pe. Filtro por modelo e
-/// **Continuar com (modelo) · (codigo)** (nao reserva ainda: segue para o plano).
+/// **Continuar com (modelo) · (codigo)** (nao reserva ainda: segue para a pre-reserva).
 class PickScreen extends ConsumerStatefulWidget {
   const PickScreen({super.key});
   @override
@@ -253,7 +253,7 @@ class _PickScreenState extends ConsumerState<PickScreen> with WidgetsBindingObse
                         onContinue: selected == null || depot == null
                             ? null
                             : () => context.push(
-                                '/plan',
+                                '/pickup',
                                 extra: DepotSelection(depot: depot, vehicle: selected!),
                               ),
                       ),
@@ -488,7 +488,7 @@ class _PickCardState extends State<_PickCard> {
                 children: [
                   Row(
                     children: [
-                      // Mesmo elemento compartilhado do cabecalho do plano (E-15); sem voo em reduced motion.
+                      // Mesmo elemento compartilhado do cabecalho da pre-reserva (E-15); sem voo em reduced motion.
                       VehicleHero(
                         code: v.code,
                         child: VehicleThumb(

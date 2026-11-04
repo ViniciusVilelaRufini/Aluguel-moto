@@ -21,7 +21,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import 'galpao_fixtures.dart' show bike, GalpaoBackend;
 import 'galpao_flow_test.dart' as galpao show phone, pumpApp, settle;
-import 'handover_test.dart' show HandoverBackend, RtHub, handoverFixture, problem, pumpApp, settle, phone;
+import 'handover_test.dart' show problem;
 import 'helpers.dart';
 
 PricingPlan _plan({int pause = 20}) => PricingPlan((b) => b
@@ -409,27 +409,7 @@ void main() {
     });
   });
 
-  group('aceite da entrega', () {
-    testWidgets('409 em processamento: "Destravando a moto…", recarrega e abre a corrida aceita', (t) async {
-      phone(t);
-      final b = HandoverBackend();
-      b.acceptErrors.add(problem(409, 'conflict', detail: 'Requisição com esta Idempotency-Key ainda em processamento.'));
-      final hub = RtHub();
-      await pumpApp(t, b, hub, initial: '/handover/h1');
-      await settle(t);
-      await t.tap(find.byKey(const Key('handover-accept')));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
-      expect(find.text('Destravando a moto… pode levar até 30 s'), findsOneWidget);
-      expect(find.textContaining('Sem conexão'), findsNothing);
-      // O servidor terminou o aceite em segundo plano.
-      b.handovers['h1'] = handoverFixture(status: HandoverStatus.accepted);
-      await t.pump(const Duration(seconds: 3));
-      await settle(t);
-      expect(find.byKey(const Key('handover-accepted')), findsOneWidget);
-      expect(find.textContaining('Sem conexão'), findsNothing);
-    });
-
+  group('prazos e espera do servidor', () {
     test('prazo de resposta no aceite, inicio e fim do aluguel', () {
       expect(kLongReceiveTimeout, const Duration(seconds: 45));
     });
@@ -539,57 +519,6 @@ void main() {
       expect(find.text('Sem conexão em tempo real'), findsOneWidget);
       expect(find.text('Sem sinal de GPS da moto'), findsNothing);
       await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('entrega: lastError antigo nao encerra a espera do destravamento', (t) async {
-      phone(t);
-      final b = HandoverBackend();
-      b.handovers['h1'] = handoverFixture(lastError: 'payment-declined');
-      b.acceptErrors.add(problem(409, 'conflict', detail: 'Requisição com esta Idempotency-Key ainda em processamento.'));
-      final hub = RtHub();
-      await pumpApp(t, b, hub, initial: '/handover/h1');
-      await settle(t);
-      await t.tap(find.byKey(const Key('handover-accept')));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
-      await t.pump(const Duration(seconds: 3));
-      await t.pump(const Duration(milliseconds: 100));
-      // A entrega ainda traz o erro da tentativa anterior: segue destravando.
-      expect(find.text('Destravando a moto… pode levar até 30 s'), findsOneWidget);
-      b.handovers['h1'] = handoverFixture(status: HandoverStatus.accepted);
-      await t.pump(const Duration(seconds: 3));
-      await settle(t);
-      expect(find.byKey(const Key('handover-accepted')), findsOneWidget);
-    });
-
-    testWidgets('entrega: erro novo durante a espera encerra e mostra o motivo', (t) async {
-      phone(t);
-      final b = HandoverBackend();
-      b.acceptErrors.add(problem(409, 'conflict', detail: 'Requisição com esta Idempotency-Key ainda em processamento.'));
-      final hub = RtHub();
-      await pumpApp(t, b, hub, initial: '/handover/h1');
-      await settle(t);
-      await t.tap(find.byKey(const Key('handover-accept')));
-      await t.pump();
-      b.handovers['h1'] = handoverFixture(lastError: 'vehicle-offline');
-      await t.pump(const Duration(seconds: 3));
-      await settle(t);
-      expect(find.text('Destravando a moto… pode levar até 30 s'), findsNothing);
-      expect(find.byKey(const Key('handover-error')), findsOneWidget);
-    });
-
-    testWidgets('entrega: sair da tela durante a espera nao quebra (sem setState depois do dispose)', (t) async {
-      phone(t);
-      final b = HandoverBackend();
-      b.acceptErrors.add(problem(409, 'conflict', detail: 'Requisição com esta Idempotency-Key ainda em processamento.'));
-      final hub = RtHub();
-      await pumpApp(t, b, hub, initial: '/handover/h1');
-      await settle(t);
-      await t.tap(find.byKey(const Key('handover-accept')));
-      await t.pump();
-      await t.pumpWidget(const SizedBox());
-      await t.pump(const Duration(seconds: 60));
-      expect(t.takeException(), isNull);
     });
 
     testWidgets('devolucao: sair durante a espera da trava nao quebra; espera tem "Falar com o suporte"', (t) async {

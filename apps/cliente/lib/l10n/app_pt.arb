@@ -1346,9 +1346,21 @@
   "pickupChooseTime": "Escolha um horário",
   "pickupPlan": "Plano",
   "pickupDepositNote": "Confirmar bloqueia só a caução. O plano é acertado no fim do aluguel; a caução fica como garantia.",
+  "pickupPreReserveTitle": "Pré-reserva",
+  "pickupPreReserve": "Pré-reservar",
+  "pickupVehicleLine": "Moto",
+  "pickupDepotLine": "Galpão",
+  "pickupCounterNote": "Leve documento com foto. O contrato e o pagamento são feitos no galpão.",
+  "pickupReferencePrices": "Preços de referência; o plano é escolhido no galpão",
+  "pickupInsuranceLine": "Seguro {name}",
+  "@pickupInsuranceLine": {"placeholders": {"name": {"type": "String"}}},
+  "pickupLocationConsentTitle": "Permitir localização durante o aluguel",
+  "cancelPreReservationFree": "Cancelar (grátis)",
+  "handoverCounterNote": "O atendente inicia o aluguel depois do contrato e do pagamento no balcão. A corrida abre aqui sozinha.",
+  "pickupDebtAtCounter": "Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.",
   "confirmReservation": "Confirmar reserva",
   "vehicleJustTaken": "Essa moto acabou de ser reservada",
-  "depotReservationTitle": "Reserva confirmada",
+  "depotReservationTitle": "Pré-reserva confirmada",
   "reservationQrHint": "Mostre este código no galpão",
   "reservationQrLabel": "QR da reserva",
   "reservationPickupUntil": "Retire até {time}",
@@ -1379,13 +1391,13 @@
     }
   },
   "howToGetThere": "Como chegar",
-  "cancelReservation": "Cancelar reserva",
+  "cancelReservation": "Cancelar pré-reserva",
   "reservationTestHandover": "Retirar moto (teste)",
   "reservationTestHandoverHint": "Simula a equipe do galpão · só na versão de teste",
-  "cancelReservationTitle": "Cancelar reserva?",
-  "cancelReservationText": "O cancelamento é grátis e a caução é liberada.",
-  "keepReservation": "Manter reserva",
-  "reservationInHandover": "Sua moto já está sendo entregue. Use Apontar problema.",
+  "cancelReservationTitle": "Cancelar a pré-reserva?",
+  "cancelReservationText": "O cancelamento é grátis.",
+  "keepReservation": "Manter pré-reserva",
+  "reservationInHandover": "Sua moto está sendo preparada no galpão.",
   "reservationPixPending": "Pague a caução por Pix para garantir a moto.",
   "payPixDeposit": "Pagar caução Pix",
   "reservationNotFound": "Reserva não encontrada",
@@ -1398,8 +1410,8 @@
   "returnGoDepot": "Devolver no galpão",
   "handoverVehicleOffline": "Não conseguimos falar com a moto agora. Tente de novo em instantes ou fale com o operador. Nada foi cobrado.",
   "reservationNoCode": "Não conseguimos carregar o QR da reserva. Tente de novo antes de ir ao galpão.",
-  "handoverTitle": "Confira sua moto",
-  "handoverIntro": "{operator} separou a {code} para você. Confira as fotos e o checklist antes de aceitar.",
+  "handoverTitle": "Sua moto está sendo preparada",
+  "handoverIntro": "{operator} está preparando a {code} para você. Confira a vistoria enquanto faz o contrato no balcão.",
   "@handoverIntro": {
     "placeholders": {
       "operator": {
@@ -1410,7 +1422,7 @@
       }
     }
   },
-  "handoverIntroNoOperator": "A {code} está pronta. Confira as fotos e o checklist antes de aceitar.",
+  "handoverIntroNoOperator": "A {code} está sendo preparada para você. Confira a vistoria enquanto faz o contrato no balcão.",
   "@handoverIntroNoOperator": {
     "placeholders": {
       "code": {
@@ -1486,7 +1498,7 @@
   "handoverGoToRide": "Ir para a corrida",
   "handoverCanceledTitle": "Entrega cancelada",
   "handoverCanceledText": "Fale com o operador no galpão.",
-  "reservationSeeHandover": "Conferir moto",
+  "reservationSeeHandover": "Acompanhar a vistoria",
   "swapBattery": "Trocar bateria",
   "swapBatteryText": "Troque no galpão, com o operador, ou numa estação. Toque para abrir a rota.",
   "swapAtDepot": "Troca com o operador",
@@ -1606,7 +1618,7 @@
     }
   },
   "stationsCloseSemantics": "Fechar pontos de troca",
-  "homeReservationTitle": "Sua reserva",
+  "homeReservationTitle": "Pré-reserva confirmada",
   "homeReservationScheduled": "Retirada agendada · {day} às {time}",
   "@homeReservationScheduled": {
     "placeholders": {
@@ -1618,7 +1630,7 @@
       }
     }
   },
-  "homeReservationHandover": "Sua moto está sendo entregue",
+  "homeReservationHandover": "Sua moto está sendo preparada",
   "homeReservationExpired": "O prazo de retirada acabou",
   "homeReservationShowQr": "Ver QR da reserva",
   "homeReservationRemaining": "{minutes, plural, =0{Falta menos de 1 minuto} =1{Falta 1 minuto} other{Faltam {minutes} minutos}}",
@@ -1654,7 +1666,7 @@
       }
     }
   },
-  "homeReservationA11yHandover": "Reserva da {vehicle}, sua moto está sendo entregue",
+  "homeReservationA11yHandover": "Pré-reserva da {vehicle}, sua moto está sendo preparada",
   "@homeReservationA11yHandover": {
     "placeholders": {
       "vehicle": {

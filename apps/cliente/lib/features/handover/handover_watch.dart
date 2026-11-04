@@ -10,8 +10,8 @@ import '../../core/services.dart';
 import '../../core/session.dart';
 import '../home/providers.dart';
 
-/// Entregas que o app ja abriu sozinho nesta sessao: voltar de "Confira sua
-/// moto" para o inicio nao empurra o cliente de novo para a mesma entrega.
+/// Entregas que o app ja abriu sozinho nesta sessao: voltar de "Sua moto está sendo
+/// preparada" para o inicio nao empurra o cliente de novo para a mesma entrega.
 final autoOpenedHandoversProvider = NotifierProvider<AutoOpenedHandovers, Set<String>>(AutoOpenedHandovers.new);
 
 class AutoOpenedHandovers extends Notifier<Set<String>> {

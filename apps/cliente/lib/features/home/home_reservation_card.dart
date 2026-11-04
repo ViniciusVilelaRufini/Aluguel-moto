@@ -43,11 +43,11 @@ String formatCountdown(Duration d) {
   return h > 0 ? '$h:${two(m)}:${two(s)}' : '${two(m)}:${two(s)}';
 }
 
-/// Cartao "Sua reserva" da home (spec 2026-10-22 §3.1, no lugar da faixa escura
+/// Cartao "Pré-reserva confirmada" da home (spec 2026-10-22 §3.1, no lugar da faixa escura
 /// "Moto reservada"): foto do modelo (ou icone), nome e codigo, o status
 /// ("Retire até 15:28" com a contagem, "Retirada agendada · amanhã às 09:00" ou
-/// "Sua moto está sendo entregue"), o galpao com "Como chegar" (so ao tocar) e
-/// **Ver QR da reserva** / **Conferir moto**.
+/// "Sua moto está sendo preparada"), o galpao com "Como chegar" (so ao tocar) e
+/// **Ver QR da reserva** / **Acompanhar a vistoria**. Sem caucao, plano nem Pix (tudo no balcao).
 ///
 /// A contagem anda de segundo em segundo so com a tela visivel ([TickerMode]:
 /// coberta por outra rota, para) e o app em primeiro plano. Ao zerar recarrega a

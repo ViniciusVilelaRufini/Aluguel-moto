@@ -10,7 +10,7 @@ import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/account/account_screens.dart';
 import 'package:volti_cliente/core/geo.dart';
 import 'package:volti_cliente/features/home/home_screen.dart';
-import 'package:volti_cliente/features/plan/plan_screen.dart';
+import 'package:volti_cliente/features/plan/plan_common.dart';
 import 'package:volti_cliente/features/summary/summary_screen.dart';
 import 'package:volti_cliente/features/reservation/depot_reservation_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';

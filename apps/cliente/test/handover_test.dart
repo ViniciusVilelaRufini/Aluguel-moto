@@ -1,5 +1,4 @@
-// Task 10 do galpao: "Confira sua moto", trocar bateria e devolucao no galpao.
-import 'dart:async';
+// Task 10 do galpao: entrega no balcao ("Sua moto está sendo preparada"), trocar bateria e devolucao no galpao.
 
 import 'package:built_collection/built_collection.dart';
 import 'package:dio/dio.dart';
@@ -112,18 +111,11 @@ class HandoverBackend extends GalpaoBackend {
 
   final handovers = <String, Handover>{'h1': handoverFixture()};
   int handoverCalls = 0;
+  /// Chamadas ao aceite antigo (o app nao aceita mais: o atendente inicia no balcao).
   final acceptKeys = <String>[];
-  final disputeReasons = <String>[];
-
-  /// Segura o aceite ate o teste completar (toque duplo).
-  Completer<void>? acceptGate;
-
-  /// Erros do aceite, um por chamada (vazio = sucesso).
-  final acceptErrors = <Object>[];
   Rental? rentalNow;
   List<SwapStation> stations = [];
   Object? stationsError;
-  Object? disputeError;
 
   /// Status devolvido por `GET /rentals/{id}` (a consulta da devolucao no galpao).
   RentalStatus rentalStatus = RentalStatus.active;
@@ -144,23 +136,7 @@ class HandoverBackend extends GalpaoBackend {
   @override
   Future<Rental> acceptHandover(String id, String idempotencyKey) async {
     acceptKeys.add(idempotencyKey);
-    if (acceptGate != null) await acceptGate!.future;
-    if (acceptErrors.isNotEmpty) throw toFailure(acceptErrors.removeAt(0));
-    handovers[id] = handovers[id]!.rebuild((b) => b.status = HandoverStatus.accepted);
-    current = null;
-    rentalNow = sampleRental();
-    return rentalNow!;
-  }
-
-  @override
-  Future<Handover> disputeHandover(String id, String reason) async {
-    disputeReasons.add(reason);
-    if (disputeError != null) throw toFailure(disputeError!);
-    final h = handovers[id]!.rebuild((b) => b
-      ..status = HandoverStatus.disputed
-      ..disputeReason = reason);
-    handovers[id] = h;
-    return h;
+    throw toFailure(problem(409, 'handover-counter-checkout'));
   }
 
   @override
@@ -266,8 +242,8 @@ Future<void> tapKey(WidgetTester t, String key) async {
 void main() {
   setUp(opened.clear);
 
-  group('Confira sua moto', () {
-    testWidgets('handover.pending da reserva atual abre a tela com fotos, checklist e bateria', (t) async {
+  group('Sua moto está sendo preparada', () {
+    testWidgets('handover.pending da reserva atual abre a tela com fotos, checklist e bateria, so leitura', (t) async {
       phone(t);
       final b = HandoverBackend()..current = reservationFixture();
       final hub = RtHub();
@@ -282,7 +258,8 @@ void main() {
       hub.emit(const HandoverPending(handoverId: 'h1', reservationId: 'res1'));
       await settle(t);
       expect(where(router), '/handover/h1');
-      expect(find.text('Confira sua moto'), findsWidgets);
+      expect(find.text('Sua moto está sendo preparada'), findsOneWidget);
+      expect(find.text('Carlos está preparando a VLT-001 para você. Confira a vistoria enquanto faz o contrato no balcão.'), findsOneWidget);
       expect(find.bySemanticsLabel('Foto 1 de 2 da moto'), findsOneWidget);
       expect(find.bySemanticsLabel('Foto 2 de 2 da moto'), findsOneWidget);
       expect(find.text('Freios'), findsOneWidget);
@@ -291,11 +268,11 @@ void main() {
       expect(find.text('Risco na lateral'), findsOneWidget);
       expect(find.textContaining('96%'), findsWidgets);
       expect(find.textContaining('BAT-0042'), findsOneWidget);
-      expect(find.text('Aceitar e destravar'), findsOneWidget);
-      expect(find.text('Apontar problema'), findsOneWidget);
-      // O plano nao e cobrado no aceite: o aluguel comeca agora.
-      expect(find.textContaining('cobrado agora'), findsNothing);
-      expect(find.textContaining('o aluguel começa agora'), findsOneWidget);
+      // O aluguel e iniciado pelo atendente no balcao: sem aceitar nem apontar problema.
+      expect(find.byKey(const Key('handover-accept')), findsNothing);
+      expect(find.byKey(const Key('handover-report')), findsNothing);
+      expect(find.byKey(const Key('handover-counter-note')), findsOneWidget);
+      expect(b.acceptKeys, isEmpty);
       expect(t.takeException(), isNull);
     });
 
@@ -304,7 +281,7 @@ void main() {
       final b = HandoverBackend()..current = reservationFixture(status: ReservationStatus.handover, handoverId: 'h1');
       final router = await pumpApp(t, b, RtHub());
       expect(where(router), '/handover/h1');
-      expect(find.text('Aceitar e destravar'), findsOneWidget);
+      expect(find.text('Sua moto está sendo preparada'), findsOneWidget);
 
       // Voltou para o inicio: nao e empurrado de novo para a mesma entrega.
       await tapKey(t, 'handover-back');
@@ -313,7 +290,7 @@ void main() {
       expect(where(router), '/home');
     });
 
-    testWidgets('reserva em handover: o aviso tem "Conferir moto" e nao ha cancelar', (t) async {
+    testWidgets('reserva em handover: o aviso tem "Acompanhar a vistoria" e nao ha cancelar', (t) async {
       phone(t);
       final b = HandoverBackend()..current = reservationFixture(status: ReservationStatus.handover, handoverId: 'h1');
       final router = await pumpApp(t, b, RtHub(), initial: '/reservation/res1');
@@ -323,62 +300,20 @@ void main() {
       }
       router.go('/reservation/res1');
       await settle(t);
-      expect(find.text('Sua moto já está sendo entregue. Use Apontar problema.'), findsOneWidget);
+      expect(find.text('Sua moto está sendo preparada no galpão.'), findsOneWidget);
       expect(find.byKey(const Key('reservation-cancel')), findsNothing);
       await tapKey(t, 'reservation-see-handover');
       expect(where(router), '/handover/h1');
     });
 
-    testWidgets('"Aceitar e destravar" com toque duplo chama o aceite uma vez e abre a corrida', (t) async {
-      phone(t);
-      final b = HandoverBackend()
-        ..current = reservationFixture(status: ReservationStatus.handover, handoverId: 'h1')
-        ..acceptGate = Completer<void>();
-      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      final accept = find.byKey(const Key('handover-accept'));
-      await t.ensureVisible(accept);
-      await t.pump();
-      await t.tap(accept);
-      await t.pump();
-      await t.tap(accept, warnIfMissed: false);
-      await t.pump();
-      expect(b.acceptKeys, hasLength(1));
-      b.acceptGate!.complete();
-      await settle(t);
-      expect(b.acceptKeys, hasLength(1));
-      expect(where(router), '/ride');
-    });
-
-    testWidgets('"Aceitar e destravar": haptica leve no toque e check de sucesso no botao antes da corrida', (t) async {
+    testWidgets('checkout no balcao (handover.updated accepted): provedores invalidados e abre a corrida', (t) async {
       phone(t);
       final haptics = <VoltiHapticKind>[];
       VoltiHaptics.debugHandler = (k) async => haptics.add(k);
       addTearDown(() => VoltiHaptics.debugHandler = null);
-      final b = HandoverBackend()..acceptGate = Completer<void>();
-      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      final accept = find.byKey(const Key('handover-accept'));
-      await t.ensureVisible(accept);
-      await t.pump();
-      await t.tap(accept);
-      await t.pump();
-      expect(haptics, [VoltiHapticKind.tap]);
-      b.acceptGate!.complete();
-      await t.pump();
-      await t.pump();
-      expect(find.descendant(of: accept, matching: find.byType(VoltiSuccessCheck)), findsOneWidget);
-      expect(haptics, [VoltiHapticKind.tap, VoltiHapticKind.success]);
-      expect(where(router), '/handover/h1');
-      await settle(t);
-      expect(where(router), '/ride');
-    });
-
-    testWidgets('durante o check de sucesso: voltar fica bloqueado, sem excecao nem haptica de aviso, provedores ja invalidados', (t) async {
-      phone(t);
-      final haptics = <VoltiHapticKind>[];
-      VoltiHaptics.debugHandler = (k) async => haptics.add(k);
-      addTearDown(() => VoltiHaptics.debugHandler = null);
-      final b = _CountingHandoverBackend()..acceptGate = Completer<void>();
-      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
+      final b = _CountingHandoverBackend();
+      final hub = RtHub();
+      final router = await pumpApp(t, b, hub, initial: '/handover/h1');
       final container = ProviderScope.containerOf(t.element(find.byType(HandoverScreen)));
       container.read(createdReservationProvider.notifier).set(reservationFixture());
       final subs = [
@@ -394,31 +329,37 @@ void main() {
       await settle(t);
       final rental0 = b.currentRentalCalls, reservation0 = b.currentReservationCalls, depots0 = b.depotsCalls;
 
-      final accept = find.byKey(const Key('handover-accept'));
-      await t.ensureVisible(accept);
-      await t.pump();
-      await t.tap(accept);
-      await t.pump();
-      // Aceitando: o voltar da tela e o do sistema nao saem.
-      expect(t.widget<VoltiIconButton>(find.byKey(const Key('handover-back'))).onPressed, isNull);
-      b.acceptGate!.complete();
+      b
+        ..handovers['h1'] = handoverFixture(status: HandoverStatus.accepted, rentalId: 'r1')
+        ..rentalNow = sampleRental()
+        ..current = null;
+      hub.emit(const HandoverUpdated(handoverId: 'h1', status: 'accepted'));
       await t.pump();
       await t.pump();
-      expect(find.descendant(of: accept, matching: find.byType(VoltiSuccessCheck)), findsOneWidget);
-      // Estado global ja atualizado antes da espera.
       expect(container.read(createdReservationProvider), isNull);
-      await t.pump(const Duration(milliseconds: 50));
+      await settle(t);
+      expect(where(router), '/ride');
       expect(b.currentRentalCalls, greaterThan(rental0));
       expect(b.currentReservationCalls, greaterThan(reservation0));
       expect(b.depotsCalls, greaterThan(depots0));
-      await t.tap(find.byKey(const Key('handover-back')), warnIfMissed: false);
-      await t.binding.handlePopRoute();
-      await t.pump();
-      expect(where(router), '/handover/h1');
-      await settle(t);
+      expect(haptics, [VoltiHapticKind.success]);
       expect(t.takeException(), isNull);
-      expect(haptics, isNot(contains(VoltiHapticKind.warning)));
+    });
+
+    testWidgets('handover.updated e rental.updated juntos abrem a corrida uma vez so', (t) async {
+      phone(t);
+      final hub = RtHub();
+      final b = HandoverBackend();
+      final router = await pumpApp(t, b, hub, initial: '/handover/h1');
+      b
+        ..handovers['h1'] = handoverFixture(status: HandoverStatus.accepted, rentalId: 'r1')
+        ..rentalNow = sampleRental();
+      hub.emit(const RentalUpdated(rentalId: 'r1', status: 'active', elapsedSeconds: 0, costCents: 0));
+      hub.emit(const HandoverUpdated(handoverId: 'h1', status: 'accepted'));
+      await settle(t);
       expect(where(router), '/ride');
+      // Voltar da corrida nao cai de novo na entrega aceita.
+      expect(router.canPop(), isFalse);
     });
 
     testWidgets('botao de voltar da entrega tem alvo de 44 px', (t) async {
@@ -429,177 +370,67 @@ void main() {
       expect(s.height, greaterThanOrEqualTo(44));
     });
 
-    testWidgets('"Aceitar e destravar" anuncia "Carregando…" e "Concluído"', (t) async {
-      phone(t);
-      final h = t.ensureSemantics();
-      final b = HandoverBackend()..acceptGate = Completer<void>();
-      await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      final accept = find.byKey(const Key('handover-accept'));
-      await t.ensureVisible(accept);
-      await t.pump();
-      await t.tap(accept);
-      await t.pump();
-      expect(t.getSemantics(accept), isSemantics(label: 'Aceitar e destravar', value: 'Carregando…', isLiveRegion: true));
-      b.acceptGate!.complete();
-      await t.pump();
-      await t.pump();
-      expect(t.getSemantics(accept), isSemantics(label: 'Aceitar e destravar', value: 'Concluído', isLiveRegion: true));
-      await settle(t);
-      h.dispose();
-    });
-
-    testWidgets('pagamento recusado mostra o motivo, mantem a tela e a nova tentativa usa a mesma chave', (t) async {
-      phone(t);
-      final b = HandoverBackend()..acceptErrors.add(problem(422, 'payment-declined', detail: 'Cartão recusado'));
-      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      // O servidor grava o motivo na entrega.
-      b.handovers['h1'] = handoverFixture(lastError: 'payment-declined');
-      await tapKey(t, 'handover-accept');
-      expect(where(router), '/handover/h1');
-      expect(find.text('O pagamento não foi aprovado. Tente de novo ou fale com o operador.'), findsOneWidget);
-      expect(find.text('Aceitar e destravar'), findsOneWidget);
-
-      await tapKey(t, 'handover-accept');
-      expect(b.acceptKeys, hasLength(2));
-      expect(b.acceptKeys[0], b.acceptKeys[1]);
-      expect(where(router), '/ride');
-    });
-
-    testWidgets('E-05 moto sem conexao: nao manda escolher outra (a moto ja foi separada)', (t) async {
-      phone(t);
-      final b = HandoverBackend()..acceptErrors.add(problem(409, 'vehicle-offline', detail: 'A moto está sem conexão agora. Escolha outra moto; nada foi cobrado.'));
-      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      await tapKey(t, 'handover-accept');
-      expect(where(router), '/handover/h1');
-      expect(find.text('Não conseguimos falar com a moto agora. Tente de novo em instantes ou fale com o operador. Nada foi cobrado.'), findsOneWidget);
-      expect(find.textContaining('Escolha outra moto'), findsNothing);
-    });
-
-    testWidgets('caução não retida mostra o aviso e mantem a tela', (t) async {
-      phone(t);
-      final b = HandoverBackend()..acceptErrors.add(problem(422, 'deposit-not-held'));
-      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      await tapKey(t, 'handover-accept');
-      expect(where(router), '/handover/h1');
-      expect(find.text('A caução da reserva não está retida. Fale com o suporte.'), findsOneWidget);
-    });
-
-    testWidgets('entrega que deixou de estar pendente: recarrega e mostra o estado novo', (t) async {
-      phone(t);
-      final b = HandoverBackend()..acceptErrors.add(problem(422, 'handover-not-pending'));
-      await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      final before = b.handoverCalls;
-      b.handovers['h1'] = handoverFixture(status: HandoverStatus.canceled);
-      await tapKey(t, 'handover-accept');
-      expect(b.handoverCalls, greaterThan(before));
-      expect(find.text('Entrega cancelada'), findsOneWidget);
-      expect(find.text('Aceitar e destravar'), findsNothing);
-    });
-
-    testWidgets('404 no aceite: nao e sua, volta ao inicio', (t) async {
-      phone(t);
-      final b = HandoverBackend()..acceptErrors.add(problem(404, 'not-found'));
-      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      await tapKey(t, 'handover-accept');
-      expect(where(router), '/home');
-    });
-
     testWidgets('entrega inexistente ao abrir: volta ao inicio', (t) async {
       phone(t);
       final router = await pumpApp(t, HandoverBackend(), RtHub(), initial: '/handover/nao-existe');
       expect(where(router), '/home');
     });
 
-    testWidgets('"Apontar problema" envia o motivo e mostra "O suporte vai falar com você"', (t) async {
+    testWidgets('handover.updated cancelada recarrega e mostra o estado novo', (t) async {
       phone(t);
       final b = HandoverBackend();
+      final hub = RtHub();
+      final router = await pumpApp(t, b, hub, initial: '/handover/h1');
+      b.handovers['h1'] = handoverFixture(status: HandoverStatus.canceled);
+      hub.emit(const HandoverUpdated(handoverId: 'h1', status: 'canceled'));
+      await settle(t);
+      expect(where(router), '/handover/h1');
+      expect(find.text('Entrega cancelada'), findsOneWidget);
+    });
+
+    testWidgets('entrega disputada (app antigo): suporte, sem corrida', (t) async {
+      phone(t);
+      final b = HandoverBackend()..handovers['h1'] = handoverFixture(status: HandoverStatus.disputed, disputeReason: 'Retrovisor quebrado');
       final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      await tapKey(t, 'handover-report');
-      final send = find.byKey(const Key('handover-dispute-send'));
-      expect(t.widget<VoltiButton>(send).onPressed, isNull, reason: 'motivo curto demais');
-      await t.enterText(find.byKey(const Key('handover-dispute-reason')), 'Retrovisor quebrado');
-      await t.pump();
-      await tapKey(t, 'handover-dispute-send');
-      expect(b.disputeReasons, ['Retrovisor quebrado']);
       expect(find.text('O suporte vai falar com você.'), findsOneWidget);
-      expect(find.text('Aceitar e destravar'), findsNothing);
       await tapKey(t, 'handover-support');
       expect(where(router), '/account/support');
     });
 
-    testWidgets('handover.updated da entrega aberta recarrega a tela', (t) async {
-      phone(t);
-      final b = HandoverBackend();
-      final hub = RtHub();
-      await pumpApp(t, b, hub, initial: '/handover/h1');
-      b.handovers['h1'] = handoverFixture(lastError: 'payment-declined');
-      hub.emit(const HandoverUpdated(handoverId: 'h1', status: 'pending_customer', lastError: 'payment-declined'));
-      await settle(t);
-      expect(find.text('O pagamento não foi aprovado. Tente de novo ou fale com o operador.'), findsOneWidget);
-    });
-
-    for (final status in [HandoverStatus.pendingCustomer, HandoverStatus.disputed, HandoverStatus.accepted]) {
+    for (final status in [HandoverStatus.pendingCustomer, HandoverStatus.disputed, HandoverStatus.canceled]) {
       testWidgets('200% em 360x740 sem overflow ($status)', (t) async {
         phone(t, scale: 2, size: const Size(360, 740));
-        final b = HandoverBackend()
-          ..handovers['h1'] = handoverFixture(status: status, lastError: 'payment-declined', disputeReason: 'Retrovisor quebrado');
+        final b = HandoverBackend()..handovers['h1'] = handoverFixture(status: status, disputeReason: 'Retrovisor quebrado');
         await pumpApp(t, b, RtHub(), initial: '/handover/h1');
         expect(t.takeException(), isNull);
-        if (status == HandoverStatus.pendingCustomer) {
-          await tapKey(t, 'handover-report');
-          expect(t.takeException(), isNull);
-        }
       });
     }
 
-    testWidgets('reduced motion: abre e aceita sem animacao pendente', (t) async {
+    testWidgets('reduced motion: abre e segue para a corrida pelo evento', (t) async {
       phone(t);
       final b = HandoverBackend();
-      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1', reduceMotion: true);
-      expect(find.text('Aceitar e destravar'), findsOneWidget);
-      await tapKey(t, 'handover-accept');
+      final hub = RtHub();
+      final router = await pumpApp(t, b, hub, initial: '/handover/h1', reduceMotion: true);
+      expect(find.text('Sua moto está sendo preparada'), findsOneWidget);
+      b
+        ..handovers['h1'] = handoverFixture(status: HandoverStatus.accepted, rentalId: 'r1')
+        ..rentalNow = sampleRental();
+      hub.emit(const HandoverUpdated(handoverId: 'h1', status: 'accepted'));
+      await settle(t);
       expect(where(router), '/ride');
     });
 
-    testWidgets('semantica: botoes com rotulo e acao de toque', (t) async {
+    testWidgets('semantica: voltar com rotulo, titulo como cabecalho e checklist por item', (t) async {
       phone(t);
       final handle = t.ensureSemantics();
       await pumpApp(t, HandoverBackend(), RtHub(), initial: '/handover/h1');
       expect(
-        t.getSemantics(find.byKey(const Key('handover-accept'))),
-        matchesSemantics(label: 'Aceitar e destravar', isButton: true, hasTapAction: true, isEnabled: true, hasEnabledState: true),
+        t.getSemantics(find.byKey(const Key('handover-back'))),
+        matchesSemantics(label: 'Voltar', isButton: true, hasTapAction: true, isEnabled: true, hasEnabledState: true),
       );
+      expect(find.bySemanticsLabel('Sua moto está sendo preparada'), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp(r'^Carenagem: Com problema')), findsOneWidget);
       handle.dispose();
-    });
-    testWidgets('aviso antigo de lastError some enquanto aceita', (t) async {
-      phone(t);
-      final b = HandoverBackend()
-        ..handovers['h1'] = handoverFixture(lastError: 'payment-declined')
-        ..acceptGate = Completer<void>();
-      await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      expect(find.byKey(const Key('handover-error')), findsOneWidget);
-      final accept = find.byKey(const Key('handover-accept'));
-      await t.ensureVisible(accept);
-      await t.pump();
-      await t.tap(accept);
-      await t.pump();
-      expect(find.byKey(const Key('handover-error')), findsNothing);
-      b.acceptGate!.complete();
-      await settle(t);
-    });
-
-    testWidgets('apontar problema com a entrega ja nao pendente fecha a folha e recarrega', (t) async {
-      phone(t);
-      final b = HandoverBackend()..disputeError = problem(422, 'handover-not-pending');
-      await pumpApp(t, b, RtHub(), initial: '/handover/h1');
-      await tapKey(t, 'handover-report');
-      await t.enterText(find.byKey(const Key('handover-dispute-reason')), 'Retrovisor quebrado');
-      await t.pump();
-      b.handovers['h1'] = handoverFixture(status: HandoverStatus.canceled);
-      await tapKey(t, 'handover-dispute-send');
-      expect(find.byKey(const Key('handover-dispute-reason')), findsNothing);
-      expect(find.text('Entrega cancelada'), findsOneWidget);
     });
   });
 

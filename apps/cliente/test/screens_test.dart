@@ -9,7 +9,6 @@ import 'package:volti_cliente/features/account/account_screens.dart';
 import 'package:volti_cliente/features/onboarding/onboarding_screen.dart';
 import 'package:volti_cliente/core/clock.dart';
 import 'package:volti_cliente/features/pickup/pickup_screen.dart';
-import 'package:volti_cliente/features/plan/insurance_screen.dart';
 import 'package:volti_cliente/features/return_flow/return_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
@@ -22,9 +21,6 @@ import 'zone_fixtures.dart';
 class PlanBackend extends GalpaoBackend {
   int get startCalls => creates;
 }
-
-Finder coverageCard(String c) => find.byKey(Key('coverage-$c'));
-bool isSelected(WidgetTester t, String c) => t.widget<OptionCard>(coverageCard(c)).selected;
 
 void main() {
   group('onboarding', () {
@@ -63,57 +59,30 @@ void main() {
       expect(cta().onPressed, isNotNull, reason: 'marcar a localizacao nao muda a regra');
       await t.tap(find.byKey(const Key('consent-location')));
       await t.pump();
-      expect(cta().onPressed, isNotNull, reason: 'localizacao desmarcada nao bloqueia (o Plano pede antes do aluguel)');
+      expect(cta().onPressed, isNotNull, reason: 'localizacao desmarcada nao bloqueia (a pre-reserva pede antes)');
     });
   });
 
-  group('seguro e retirada', () {
-    testWidgets('exige seguro: basico pre-selecionado e nao removivel', (t) async {
-      tallScreen(t);
-      await t.pumpWidget(testApp(InsuranceScreen(selection: selection(p: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900))), overrides: [
-        backendProvider.overrideWithValue(PlanBackend()),
-        sessionProvider.overrideWith(() => FakeSession(session())),
-      ]));
-      await t.pumpAndSettle();
-      expect(isSelected(t, 'basic'), isTrue, reason: 'basico vem pre-selecionado');
-      expect(isSelected(t, 'full'), isFalse);
-      expect(find.text('Obrigatório'), findsOneWidget);
-
-      await t.tap(coverageCard('basic'));
-      await t.pump();
-      expect(isSelected(t, 'basic'), isTrue, reason: 'tocar no basico nao o remove');
-
-      await t.tap(coverageCard('full'));
-      await t.pumpAndSettle();
-      expect(isSelected(t, 'full'), isTrue);
-      expect(isSelected(t, 'basic'), isFalse);
-
-      // voltar: sempre existe uma cobertura selecionada
-      await t.tap(coverageCard('full'));
-      await t.pumpAndSettle();
-      expect(isSelected(t, 'basic'), isTrue);
-      expect(t.widget<VoltiButton>(find.byKey(const Key('insurance-continue'))).onPressed, isNotNull);
-    });
-
+  group('pre-reserva', () {
     testWidgets('sem consentimento de localizacao a reserva e bloqueada (decisao #8)', (t) async {
       tallScreen(t);
       final backend = PlanBackend();
-      await t.pumpWidget(testApp(PickupScreen(selection: selection(p: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900))), overrides: [
+      await t.pumpWidget(testApp(PickupScreen(selection: selection()), overrides: [
         backendProvider.overrideWithValue(backend),
         sessionProvider.overrideWith(() => FakeSession(session(location: false))),
         clockProvider.overrideWithValue(() => thu10),
       ]));
       await t.pumpAndSettle();
-      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar reserva'));
+      await t.tap(find.widgetWithText(VoltiButton, 'Pré-reservar'));
       await t.pumpAndSettle();
-      expect(find.text('Permitir localização?'), findsOneWidget);
+      expect(find.text('Permitir localização durante o aluguel'), findsOneWidget);
       expect(backend.startCalls, 0);
 
       await t.tap(find.text('Agora não'));
       await t.pumpAndSettle();
       expect(backend.startCalls, 0, reason: 'recusou o consentimento: nao reserva');
 
-      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar reserva'));
+      await t.tap(find.widgetWithText(VoltiButton, 'Pré-reservar'));
       await t.pumpAndSettle();
       await t.tap(find.text('Permitir e continuar'));
       await t.pumpAndSettle();

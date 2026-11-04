@@ -19,8 +19,6 @@ import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/pick/depot_selection.dart';
 import 'package:volti_cliente/features/pick/pick_screen.dart';
 import 'package:volti_cliente/features/pickup/pickup_screen.dart';
-import 'package:volti_cliente/features/plan/insurance_screen.dart';
-import 'package:volti_cliente/features/plan/plan_screen.dart';
 import 'package:volti_cliente/features/return_flow/return_screen.dart';
 import 'package:volti_cliente/l10n/app_localizations_pt.dart';
 import 'package:volti_flutter/volti_flutter.dart';
@@ -30,8 +28,6 @@ import 'helpers.dart';
 import 'qa_cliente_test.dart' show phone, settle;
 import 'swap_fixtures.dart' show apiError;
 import 'zone_fixtures.dart';
-
-DepotSelection _selection() => DepotSelection(depot: depotFixture(), vehicle: bike('v1', 'VLT-001', 'Volti Urbana'));
 
 /// Opacidade efetiva: o esqueleto so conta como visivel sem nenhum fade pela metade por cima.
 double _opacityOf(WidgetTester t, Finder f) {
@@ -95,31 +91,6 @@ void main() {
   for (final scale in [1.0, 2.0]) {
     final pct = (scale * 100).round();
 
-    testWidgets('E-01 plano e seguro: esqueleto opaco no 1o quadro e conteudo sem fade em branco a $pct%', (t) async {
-      phone(t, scale: scale);
-      final b = _Slow();
-      await t.pumpWidget(testApp(PlanScreen(selection: _selection()), overrides: [backendProvider.overrideWithValue(b)]));
-      await t.pump();
-      expect(find.byType(VoltiSkeleton), findsOneWidget);
-      expect(_opacityOf(t, find.byType(VoltiSkeleton)), 1.0, reason: 'sem Opacity < 1 por cima do esqueleto');
-      b.plansGate.complete(await GalpaoBackend().plans());
-      await t.pump();
-      await t.pump();
-      expect(find.byType(VoltiSkeleton), findsNothing);
-      expect(_opacityOf(t, find.byKey(const Key('plan-minute'))), 1.0, reason: 'o plano aparece direto, sem fade em branco');
-      await t.pumpWidget(const SizedBox());
-
-      await t.pumpWidget(testApp(InsuranceScreen(selection: _selection()), overrides: [backendProvider.overrideWithValue(b)]));
-      await t.pump();
-      expect(find.byType(VoltiSkeleton), findsOneWidget);
-      expect(_opacityOf(t, find.byType(VoltiSkeleton)), 1.0);
-      b.coveragesGate.complete(await GalpaoBackend().coverages());
-      await t.pump();
-      await t.pump();
-      expect(_opacityOf(t, find.byKey(const Key('coverage-basic'))), 1.0);
-      await t.pumpWidget(const SizedBox());
-    });
-
     testWidgets('E-01 escolher moto: esqueleto opaco no 1o quadro e cartoes sem fade em branco a $pct%', (t) async {
       phone(t, scale: scale);
       final b = _Slow();
@@ -140,11 +111,7 @@ void main() {
       // O galpao que veio da lista estava fechado (sem horario); a API ja o devolve aberto.
       final stale = depotFixture().rebuild((b) => b.openingHours = ListBuilder<DepotOpeningHours>());
       final b = _DepotCalls();
-      final sel = DepotSelection(
-        depot: stale,
-        vehicle: bike('v1', 'VLT-001', 'Volti Urbana'),
-        plan: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900),
-      );
+      final sel = DepotSelection(depot: stale, vehicle: bike('v1', 'VLT-001', 'Volti Urbana'));
       await t.pumpWidget(testApp(PickupScreen(selection: sel), overrides: [
         backendProvider.overrideWithValue(b),
         sessionProvider.overrideWith(() => FakeSession(session())),
@@ -191,27 +158,6 @@ void main() {
       expect(find.textContaining('A moto precisa estar dentro'), findsNothing);
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());
-    });
-  }
-
-  for (final scale in [1.0, 2.0]) {
-    testWidgets('E-01 plano e seguro: cartoes do esqueleto tem largura (3 planos, 2 coberturas) e Continuar desabilitado a ${(scale * 100).round()}%', (t) async {
-      phone(t, scale: scale);
-      final b = _Slow();
-      Future<void> check(Widget screen, int cards, String continueKey) async {
-        await t.pumpWidget(testApp(screen, overrides: [backendProvider.overrideWithValue(b)]));
-        await t.pump();
-        final boxes = find.byType(VoltiSkeletonBox);
-        expect(boxes, findsNWidgets(cards));
-        for (final e in boxes.evaluate()) {
-          expect((e.renderObject! as RenderBox).size.width, greaterThan(200), reason: 'bloco do esqueleto visivel, nao 0 px');
-        }
-        expect(t.widget<VoltiButton>(find.byKey(Key(continueKey))).onPressed, isNull);
-        await t.pumpWidget(const SizedBox());
-      }
-
-      await check(PlanScreen(selection: _selection()), 3, 'plan-continue');
-      await check(InsuranceScreen(selection: _selection()), 2, 'insurance-continue');
     });
   }
 

@@ -259,13 +259,7 @@ class GalpaoBackend extends FakeBackend {
   }
 }
 
-DepotSelection selection({PricingPlan? p, InsuranceCoverage c = InsuranceCoverage.basic}) => DepotSelection(
-      depot: depotFixture(),
-      vehicle: bike('v1', 'VLT-001', 'Volti Urbana'),
-      plan: p,
-      coverage: c,
-      coverageName: c == InsuranceCoverage.basic ? 'Básico' : 'Completo',
-    );
+DepotSelection selection() => DepotSelection(depot: depotFixture(), vehicle: bike('v1', 'VLT-001', 'Volti Urbana'));
 
 Deposit pixDepositFixture() => Deposit((d) => d
   ..id = 'dep-pix'

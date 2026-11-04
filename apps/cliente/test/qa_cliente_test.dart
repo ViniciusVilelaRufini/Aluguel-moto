@@ -20,10 +20,8 @@ import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/account/account_screen.dart';
 import 'package:volti_cliente/features/account/history_screen.dart';
 import 'package:volti_cliente/features/account/privacy_screen.dart';
-import 'package:volti_cliente/features/home/providers.dart';
 import 'package:volti_cliente/features/onboarding/onboarding_screen.dart';
 import 'package:volti_cliente/features/pickup/pickup_screen.dart';
-import 'package:volti_cliente/features/plan/insurance_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
@@ -141,23 +139,7 @@ void main() {
     });
   });
 
-  group('Q-08 seguro: selo "Obrigatório" cresce com o texto', () {
-    for (final scale in [1.0, 2.0]) {
-      testWidgets('selo inteiro a ${(scale * 100).round()}%', (t) async {
-        phone(t, scale: scale);
-        await t.pumpWidget(testApp(InsuranceScreen(selection: selection(p: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900))), overrides: [
-          backendProvider.overrideWithValue(GalpaoBackend()),
-        ]));
-        await settle(t);
-        final text = find.text('Obrigatório');
-        expect(text, findsOneWidget);
-        final pill = find.ancestor(of: text, matching: find.byType(Container)).first;
-        expect(t.getSize(pill).height, greaterThanOrEqualTo(t.getSize(text).height));
-        expect(t.getSize(pill).width, greaterThanOrEqualTo(t.getSize(text).width));
-        expect(t.takeException(), isNull);
-      });
-    }
-
+  group('Q-08 selo cresce com o texto', () {
     testWidgets('VoltiBadge a 200%: a altura acompanha o texto', (t) async {
       phone(t, scale: 2);
       await t.pumpWidget(testApp(const Scaffold(body: Center(child: VoltiBadge('Verificada 18+')))));
@@ -166,16 +148,13 @@ void main() {
     });
   });
 
-  group('Q-02 / Q-06 retirada: resumo', () {
-    final dayPlan = plan(PlanCode.day, 'Diário', PlanUnit.day, 8900);
-
-    Future<void> pumpPickup(WidgetTester t, GalpaoBackend b, {double scale = 1, String coupon = '', PricingPlan? p, DateTime? now}) async {
+  group('Q-02 / Q-06 pré-reserva: resumo', () {
+    Future<void> pumpPickup(WidgetTester t, GalpaoBackend b, {double scale = 1, DateTime? now}) async {
       phone(t, scale: scale);
-      await t.pumpWidget(testApp(PickupScreen(selection: selection(p: p ?? dayPlan)), overrides: [
+      await t.pumpWidget(testApp(PickupScreen(selection: selection()), overrides: [
         backendProvider.overrideWithValue(b),
         sessionProvider.overrideWith(() => FakeSession(session())),
         clockProvider.overrideWithValue(() => now ?? thu10),
-        if (coupon.isNotEmpty) pendingCouponProvider.overrideWith(() => _Coupon(coupon)),
       ]));
       await settle(t);
     }
@@ -183,53 +162,23 @@ void main() {
     for (final scale in [1.0, 2.0]) {
       final pct = (scale * 100).round();
 
-      testWidgets('cupom de valor fixo no plano por minuto: "até -R\$ 10,00" e a nota do fechamento a $pct%', (t) async {
-        final b = _CouponBackend(quotedDiscount: 399, rule: _rule(fixed: 1000));
-        await pumpPickup(t, b, scale: scale, coupon: 'BEMVINDO10', p: plan(PlanCode.minute, 'Por minuto', PlanUnit.minute, 79));
-        expect(find.byKey(const Key('pickup-coupon-discount')), findsOneWidget);
-        expect(t.widget<Text>(find.byKey(const Key('pickup-coupon-discount'))).data, 'até -R\$ 10,00');
-        expect(find.text('-R\$ 3,99'), findsNothing);
-        expect(find.text('Desconto'), findsNothing, reason: 'uma unica linha de cupom');
-        expect(find.text('Cupom BEMVINDO10'), findsOneWidget);
-        expect(find.byKey(const Key('pickup-coupon-note')), findsOneWidget);
-        expect(t.takeException(), isNull);
-      });
-
-      testWidgets('cupom percentual: "-10% do tempo" a $pct%', (t) async {
-        final b = _CouponBackend(quotedDiscount: 890, rule: _rule(percent: 10));
-        await pumpPickup(t, b, scale: scale, coupon: 'DEZ');
-        expect(t.widget<Text>(find.byKey(const Key('pickup-coupon-discount'))).data, '-10% do tempo');
-        expect(find.byKey(const Key('pickup-coupon-note')), findsOneWidget);
-        expect(t.takeException(), isNull);
-      });
-
-      testWidgets('cupom que ja cabe inteiro na cotacao: valor exato, sem nota a $pct%', (t) async {
-        final b = _CouponBackend(quotedDiscount: 1000, rule: _rule(fixed: 1000));
-        await pumpPickup(t, b, scale: scale, coupon: 'BEMVINDO10');
-        expect(t.widget<Text>(find.byKey(const Key('pickup-coupon-discount'))).data, '-R\$ 10,00');
-        expect(find.byKey(const Key('pickup-coupon-note')), findsNothing);
-      });
-
-      testWidgets('valores do resumo alinhados na mesma borda direita a $pct%', (t) async {
-        final b = _CouponBackend(quotedDiscount: 1000, rule: _rule(fixed: 1000));
-        await pumpPickup(t, b, scale: scale, coupon: 'BEMVINDO10');
-        final plan_ = find.byKey(const Key('pickup-plan-price')), deposit = find.byKey(const Key('pickup-deposit'));
-        final card = t.getRect(find.ancestor(of: plan_, matching: find.byType(Container)).first);
+      testWidgets('valores do resumo e dos precos alinhados na mesma borda direita a $pct%', (t) async {
+        await pumpPickup(t, GalpaoBackend(), scale: scale);
+        final vehicle = find.byKey(const Key('pickup-vehicle')), depot = find.byKey(const Key('pickup-depot'));
+        final card = t.getRect(find.ancestor(of: vehicle, matching: find.byType(Container)).first);
         // Valor colado a direita do cartao (menos o respiro de 16), nao no meio.
-        expect(t.getTopRight(plan_).dx, closeTo(card.right - VoltiSpacing.s16, 1));
-        expect(t.getTopRight(deposit).dx, closeTo(card.right - VoltiSpacing.s16, 1));
+        expect(t.getTopRight(vehicle).dx, closeTo(card.right - VoltiSpacing.s16, 1));
+        expect(t.getTopRight(depot).dx, closeTo(card.right - VoltiSpacing.s16, 1));
+        final day = find.byKey(const Key('pickup-price-day'));
+        await t.scrollUntilVisible(day, 200, scrollable: find.byType(Scrollable).first);
+        await t.pump();
+        final prices = t.getRect(find.byKey(const Key('pickup-reference-prices')));
+        expect(t.getTopRight(day).dx, closeTo(prices.right - VoltiSpacing.s16, 1));
         // "R$ 89,00/dia" inteiro numa linha.
-        expect(t.getSize(plan_).height, lessThan(60));
+        expect(t.getSize(day).height, lessThan(60));
         expect(t.takeException(), isNull);
       });
     }
-
-    testWidgets('sem a regra do cupom (falha), mostra o minimo cotado e a nota', (t) async {
-      final b = _CouponBackend(quotedDiscount: 399, rule: null);
-      await pumpPickup(t, b, coupon: 'BEMVINDO10');
-      expect(t.widget<Text>(find.byKey(const Key('pickup-coupon-discount'))).data, '-R\$ 3,99');
-      expect(find.byKey(const Key('pickup-coupon-note')), findsOneWidget);
-    });
 
     for (final scale in [1.0, 2.0]) {
       testWidgets('Q-12 agenda com o expediente encerrado: "Hoje · Encerrado" a ${(scale * 100).round()}%', (t) async {
@@ -401,46 +350,6 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
   });
-}
-
-class _Coupon extends PendingCouponNotifier {
-  _Coupon(this.code);
-  final String code;
-  @override
-  String build() => code;
-}
-
-CouponValidation _rule({int? fixed, int? percent}) => CouponValidation((b) => b
-  ..code = 'X'
-  ..valid = true
-  ..discountType = fixed != null ? DiscountType.fixed : DiscountType.percent
-  ..amountOffCents = fixed
-  ..percentOff = percent);
-
-/// Cotacao com a linha do cupom que a API calcula para o minimo estimado.
-class _CouponBackend extends GalpaoBackend {
-  _CouponBackend({required this.quotedDiscount, required this.rule});
-  final int quotedDiscount;
-  final CouponValidation? rule;
-
-  @override
-  Future<CouponValidation> validateCoupon(String code, {PlanCode? plan}) async {
-    if (rule == null) throw DioException(requestOptions: RequestOptions(path: '/me/coupons/validate'));
-    return rule!;
-  }
-
-  @override
-  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon, String? vehicleId}) async {
-    final base = await super.quote(plan, coverage, coupon: coupon, vehicleId: vehicleId);
-    return base.rebuild((b) {
-      b.couponApplied = true;
-      b.breakdown.discountCents = quotedDiscount; // a API devolve o total junto com a linha
-      b.breakdown.lines.add(PriceLine((l) => l
-        ..code = 'coupon'
-        ..description = 'Cupom $coupon'
-        ..amountCents = -quotedDiscount));
-    });
-  }
 }
 
 class _Picker implements PhotoPicker {

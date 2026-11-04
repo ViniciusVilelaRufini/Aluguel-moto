@@ -17,7 +17,8 @@ import 'galpao_fixtures.dart';
 import 'helpers.dart';
 
 /// "Retirar moto (teste)": no app de teste (canal beta) a reserva ativa simula a
-/// equipe do galpao (`POST /reservations/{id}/test-handover`) e abre a entrega.
+/// equipe e o checkout do balcao (`POST /reservations/{id}/test-handover`): a
+/// entrega volta `accepted` com o aluguel e o app abre a corrida.
 class _TestHandoverBackend extends GalpaoBackend {
   final calls = <String>[];
   Object? error;
@@ -30,20 +31,25 @@ class _TestHandoverBackend extends GalpaoBackend {
     calls.add(reservationId);
     if (gate != null) await gate!.future;
     if (error != null) throw toFailure(error!);
-    final h = _handover();
-    // A reserva passa a `handover` com a entrega aberta (como na API).
-    current = current!.rebuild((b) => b
-      ..status = ReservationStatus.handover
-      ..handoverId = h.id);
+    // Como na API: entrega criada e checkout do balcao simulado (reserva convertida, aluguel ativo).
+    final h = _handover(status: HandoverStatus.accepted, rentalId: 'r1');
+    current = null;
+    rentalNow = sampleRental();
     return h;
   }
+
+  Rental? rentalNow;
+
+  @override
+  Future<Rental?> currentRental() async => rentalNow;
 
   @override
   Future<Handover> handover(String id) async => _handover();
 }
 
-Handover _handover() => Handover((b) => b
+Handover _handover({HandoverStatus status = HandoverStatus.pendingCustomer, String? rentalId}) => Handover((b) => b
   ..id = 'h-teste'
+  ..rentalId = rentalId
   ..type = HandoverType.pickup
   ..depotId = 'dep1'
   ..reservationId = 'res1'
@@ -59,7 +65,7 @@ Handover _handover() => Handover((b) => b
   ..photoKeys = ListBuilder<String>()
   ..photoUrls = ListBuilder<String>()
   ..batteryPct = 90
-  ..status = HandoverStatus.pendingCustomer
+  ..status = status
   ..createdAt = thu10);
 
 Reservation _reservation({ReservationStatus status = ReservationStatus.active}) => Reservation((b) => b
@@ -139,7 +145,7 @@ void main() {
     expect(find.text('Simula a equipe do galpão · só na versão de teste'), findsNothing);
   });
 
-  testWidgets('teste com reserva ativa: botao e legenda acima de "Cancelar reserva"', (t) async {
+  testWidgets('teste com reserva ativa: botao e legenda acima de "Cancelar (grátis)"', (t) async {
     await _pump(t, _TestHandoverBackend()..current = _reservation(), AppChannel.beta);
     expect(find.byKey(button), findsOneWidget);
     expect(find.text('Retirar moto (teste)'), findsOneWidget);
@@ -153,7 +159,7 @@ void main() {
     expect(find.byKey(button), findsNothing);
   });
 
-  testWidgets('teste: tocar cria a entrega simulada e abre "Confira sua moto"', (t) async {
+  testWidgets('teste: tocar simula a equipe e o balcao e abre a corrida', (t) async {
     final b = _TestHandoverBackend()..current = _reservation();
     final router = await _pump(t, b, AppChannel.beta);
     await t.ensureVisible(find.byKey(button));
@@ -161,18 +167,15 @@ void main() {
     await t.tap(find.byKey(button));
     await _settle(t);
     expect(b.calls, ['res1']);
-    expect(router.state.uri.path, '/handover/h-teste');
-    // Uma tela de entrega so (o HandoverWatcher nao empurra de novo).
+    expect(router.state.uri.path, '/ride');
     await _settle(t);
-    expect(router.state.uri.path, '/handover/h-teste');
+    expect(router.state.uri.path, '/ride');
     expect(b.calls, ['res1']);
-    // Uma tela de entrega na pilha: voltar uma vez cai na reserva.
-    router.pop();
-    await _settle(t);
-    expect(router.state.uri.path, '/reservation/res1');
+    // A corrida e a raiz: nao volta para a pre-reserva convertida.
+    expect(router.canPop(), isFalse);
   });
 
-  testWidgets('teste: handover.pending chega antes da resposta → uma tela de entrega so', (t) async {
+  testWidgets('teste: handover.pending chega antes da resposta → abre a entrega e depois a corrida', (t) async {
     final hub = _Hub();
     final b = _TestHandoverBackend()
       ..current = _reservation()
@@ -188,10 +191,8 @@ void main() {
     expect(router.state.uri.path, '/handover/h-teste');
     b.gate!.complete();
     await _settle(t);
-    expect(router.state.uri.path, '/handover/h-teste');
-    router.pop();
-    await _settle(t);
-    expect(router.state.uri.path, '/reservation/res1');
+    expect(router.state.uri.path, '/ride');
+    expect(router.canPop(), isFalse);
   });
 
   testWidgets('teste: erro da API mostra a falha e continua na reserva', (t) async {

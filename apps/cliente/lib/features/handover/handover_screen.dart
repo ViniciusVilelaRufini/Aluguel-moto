@@ -6,7 +6,6 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
-import '../../core/clock.dart';
 import '../../core/battery.dart';
 import '../../core/errors.dart';
 import '../../core/flash.dart';
@@ -27,21 +26,13 @@ String handoverItemLabel(AppLocalizations l, String code) => switch (code) {
       _ => code,
     };
 
-/// Texto do `lastError` gravado na entrega quando o aceite falha.
-String handoverErrorText(AppLocalizations l, String code) => switch (code) {
-      'payment-declined' => l.handoverPaymentDeclined,
-      'deposit-not-held' => l.handoverDepositNotHeld,
-      'vehicle-offline' => l.handoverVehicleOffline,
-      _ => l.handoverAcceptFailed,
-    };
-
-/// "Confira sua moto" (spec 2026-10-22 §3.7): o operador separou a moto e fez o
-/// checklist de saida; o cliente ve fotos, checklist e bateria e escolhe
-/// **Aceitar e destravar** (o aluguel comeca e a moto destrava; o plano e
-/// acertado no fim, com a caucao de garantia) ou **Apontar problema** (suporte).
-///
-/// A Idempotency-Key do aceite nasce uma vez por entrega e fica no estado da
-/// tela: toque duplo e novas tentativas mandam a mesma chave.
+/// "Sua moto está sendo preparada" (pre-reserva/balcao, 2026-11-04): o operador
+/// separou a moto e fez a vistoria de saida; o cliente esta no balcao fazendo o
+/// contrato e o pagamento. A tela mostra a vistoria so para leitura (fotos,
+/// checklist e bateria), sem aceitar nem apontar problema: o atendente inicia o
+/// aluguel no balcao (`POST /handovers/{id}/counter-checkout`). Quando a entrega
+/// fica `accepted` (evento `handover.updated` ou `GET`) ou chega `rental.updated`
+/// `active`, a corrida abre sozinha.
 class HandoverScreen extends ConsumerStatefulWidget {
   const HandoverScreen({super.key, required this.handoverId});
   final String handoverId;
@@ -50,33 +41,11 @@ class HandoverScreen extends ConsumerStatefulWidget {
 }
 
 class _HandoverScreenState extends ConsumerState<HandoverScreen> {
-  late final String _acceptKey = newIdempotencyKey();
   Handover? _h;
   Object? _loadError;
-  bool _accepting = false;
 
-  /// Aceite confirmado: o botao mostra o check por [VoltiMotion.successHold].
-  bool _accepted = false;
-
-  /// O aceite ainda roda no servidor (`409` "Idempotency-Key ainda em
-  /// processamento" ou resposta atrasada): a moto esta destravando.
-  bool _unlocking = false;
-
-  /// Consultas da entrega enquanto destrava (a cada [_unlockPoll], ate ~45 s:
-  /// o servidor espera o rastreador ate 35 s).
-  static const _unlockPoll = Duration(seconds: 3);
-  static const _unlockPolls = 15;
-
-  /// Teto de relogio da espera (cada consulta pode demorar ate o prazo da rede).
-  static const _unlockMaxWait = Duration(seconds: 50);
-
-  /// `lastError` da entrega antes deste aceite: um erro antigo (de outra
-  /// tentativa) nao encerra a espera; so um status novo ou um erro diferente.
-  String? _lastErrorBeforeAccept;
-
-  /// Motivo da ultima tentativa que falhou nesta tela (o `lastError` da entrega
-  /// cobre o que aconteceu fora dela).
-  String? _error;
+  /// A corrida ja foi aberta por esta tela (evento e `GET` podem chegar juntos).
+  bool _rideOpened = false;
 
   @override
   void initState() {
@@ -87,17 +56,29 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
   Future<void> _load() async {
     try {
       final h = await ref.read(backendProvider).handover(widget.handoverId);
-      if (mounted) {
-        setState(() {
-          _h = h;
-          _loadError = null;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _h = h;
+        _loadError = null;
+      });
+      if (h.type == HandoverType.pickup && h.status == HandoverStatus.accepted) _openRide();
     } catch (e) {
       final f = toFailure(e);
       if (f.status == 404) return _notMine();
       if (mounted) setState(() => _loadError = f);
     }
+  }
+
+  /// O atendente iniciou o aluguel: atualiza o estado global e abre a corrida.
+  void _openRide() {
+    if (_rideOpened || !mounted) return;
+    _rideOpened = true;
+    VoltiHaptics.success();
+    ref.read(createdReservationProvider.notifier).set(null);
+    ref.invalidate(currentReservationProvider);
+    ref.invalidate(currentRentalStateProvider);
+    ref.invalidate(depotsProvider);
+    context.go('/ride');
   }
 
   /// 404: a entrega nao e do cliente (ou nao existe). Volta ao inicio.
@@ -116,119 +97,17 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
     }
   }
 
-  Future<void> _accept() async {
-    if (_accepting) return;
-    _lastErrorBeforeAccept = _h?.lastError;
-    setState(() {
-      _accepting = true;
-      _error = null;
-    });
-    final l = context.l;
-    try {
-      await ref.read(backendProvider).acceptHandover(widget.handoverId, _acceptKey);
-      VoltiHaptics.success();
-      if (!mounted) return;
-      // Estado global primeiro (a tela pode sair durante a espera abaixo).
-      ref.read(createdReservationProvider.notifier).set(null);
-      ref.invalidate(currentReservationProvider);
-      ref.invalidate(currentRentalStateProvider);
-      ref.invalidate(depotsProvider);
-      // Micro-animacao de sucesso no proprio botao antes de abrir a corrida.
-      setState(() => _accepted = true);
-      await Future<void>.delayed(VoltiMotion.successHoldOf(context));
-      if (mounted) context.go('/ride');
-      return;
-    } catch (e) {
-      if (!mounted) return;
-      final f = toFailure(e);
-      if (f.status == 404) return _notMine();
-      // Nao e falha: a primeira tentativa ainda destrava a moto. Nunca "Sem conexao".
-      if (f.stillProcessing || f.timedOut) {
-        await _waitUnlock();
-        return;
-      }
-      VoltiHaptics.warning();
-      if (f.slug == 'handover-not-pending') {
-        await _load();
-      } else {
-        if (mounted) {
-          setState(() => _error = switch (f.slug) {
-                'payment-declined' || 'deposit-not-held' || 'vehicle-offline' => handoverErrorText(l, f.slug!),
-                _ => f.message(l),
-              });
-        }
-        // O servidor grava o motivo na entrega (o operador tambem ve).
-        await _load();
-      }
-    } finally {
-      if (mounted) setState(() => _accepting = false);
-    }
-  }
-
-  /// Relê a entrega ate o aceite em curso terminar: aceita mostra "Moto
-  /// liberada"; falha mostra o `lastError`; sem desfecho no prazo, avisa.
-  Future<void> _waitUnlock() async {
-    final l = context.l;
-    setState(() => _unlocking = true);
-    final now = ref.read(clockProvider);
-    final deadline = now().add(_unlockMaxWait);
-    for (var i = 0; i < _unlockPolls && now().isBefore(deadline); i++) {
-      await Future<void>.delayed(_unlockPoll);
-      if (!mounted) return;
-      try {
-        final h = await ref.read(backendProvider).handover(widget.handoverId);
-        if (!mounted) return;
-        final newError = h.lastError != null && h.lastError != _lastErrorBeforeAccept;
-        final done = h.status != HandoverStatus.pendingCustomer || newError;
-        setState(() {
-          _h = h;
-          if (done) _unlocking = false;
-        });
-        if (h.status == HandoverStatus.accepted) {
-          VoltiHaptics.success();
-          ref.read(createdReservationProvider.notifier).set(null);
-          ref.invalidate(currentReservationProvider);
-          ref.invalidate(currentRentalStateProvider);
-          ref.invalidate(depotsProvider);
-        }
-        if (done) return;
-      } catch (_) {
-        // rede instavel: tenta na proxima
-      }
-    }
-    if (mounted) {
-      setState(() {
-        _unlocking = false;
-        _error = l.handoverUnlockSlow;
-      });
-    }
-  }
-
-  Future<void> _report() async {
-    final result = await VoltiBottomSheet.show<Object>(context, builder: (_) => HandoverDisputeSheet(handoverId: widget.handoverId));
-    if (!mounted) return;
-    if (identical(result, HandoverDisputeSheet.stale)) {
-      // A entrega mudou (aceita, cancelada ou ja disputada): mostra o estado novo.
-      await _load();
-      return;
-    }
-    final updated = result is Handover ? result : null;
-    if (updated != null) {
-      ref.invalidate(currentReservationProvider);
-      setState(() {
-        _h = updated;
-        _error = null;
-      });
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final l = context.l;
-    // Mudancas da entrega (aceite falhou no servidor, operador cancelou).
     ref.listen(customerEventsProvider, (_, next) {
       final e = next.value;
-      if (e is HandoverUpdated && e.handoverId == widget.handoverId && !_accepting) _load();
+      if (e is HandoverUpdated && e.handoverId == widget.handoverId) {
+        // `accepted`: checkout feito no balcao (abre a corrida). Outras mudancas recarregam a tela.
+        _load();
+      } else if (e is RentalUpdated && e.status == 'active' && _h?.status == HandoverStatus.pendingCustomer) {
+        _openRide();
+      }
     });
     final h = _h;
     final Widget body;
@@ -236,7 +115,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
       body = _loadError != null ? ErrorState(error: _loadError!, onRetry: _load) : const LoadingState();
     } else {
       body = switch (h.status) {
-        HandoverStatus.pendingCustomer => _pending(context, h),
+        HandoverStatus.pendingCustomer => _preparing(context, h),
         HandoverStatus.disputed => _Outcome(
             key: const Key('handover-disputed'),
             icon: LucideIcons.messageCircle,
@@ -270,10 +149,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
       };
     }
 
-    // Aceitando (rede ou check de sucesso): sem voltar no meio.
-    return PopScope(
-      canPop: !_accepting,
-      child: Scaffold(
+    return Scaffold(
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -286,7 +162,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
                   icon: LucideIcons.arrowLeft,
                   size: VoltiSpacing.hitMin,
                   label: l.back,
-                  onPressed: _accepting ? null : _back,
+                  onPressed: _back,
                 ),
                 const SizedBox(width: VoltiSpacing.s12),
                 Expanded(child: Semantics(header: true, child: Text(l.handoverTitle, style: VoltiTypography.heading))),
@@ -296,129 +172,80 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
           ],
         ),
       ),
-      ),
     );
   }
 
-  Widget _pending(BuildContext context, Handover h) {
+  /// Vistoria de saida so para leitura e o aviso de que o atendente inicia o aluguel.
+  Widget _preparing(BuildContext context, Handover h) {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
     final code = h.vehicleCode ?? '';
     final operator = h.operatorFirstName?.trim() ?? '';
     final photos = h.photoUrls?.toList() ?? const <String>[];
-    // Aceitando: o motivo antigo some ate a resposta nova.
-    final error = _accepting ? null : _error ?? (h.lastError == null ? null : handoverErrorText(l, h.lastError!));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, VoltiSpacing.s16),
-            children: VoltiStagger.wrap([
-              Text(
-                operator.isEmpty ? l.handoverIntroNoOperator(code) : l.handoverIntro(operator, code),
-                style: VoltiTypography.body.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              if (_unlocking) ...[
-                const SizedBox(height: VoltiSpacing.s12),
-                Semantics(
-                  liveRegion: true,
-                  child: NoticeBanner(key: const Key('handover-unlocking'), info: true, icon: LucideIcons.lockOpen, message: l.handoverUnlocking),
-                ),
-              ] else if (error != null) ...[
-                const SizedBox(height: VoltiSpacing.s12),
-                NoticeBanner(key: const Key('handover-error'), danger: true, icon: LucideIcons.circleAlert, message: error),
-              ],
-              const SizedBox(height: VoltiSpacing.s16),
-              SectionTitle(l.handoverPhotos),
-              if (photos.isEmpty)
-                Text(l.handoverNoPhotos, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant))
-              else
-                SizedBox(
-                  height: 132,
-                  child: ListView.separated(
-                    key: const Key('handover-photos'),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: photos.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: VoltiSpacing.s8),
-                    // Toque abre a foto em tela cheia com zoom (conferir um dano antes de aceitar).
-                    itemBuilder: (_, i) => VoltiPressable(
-                      key: Key('handover-photo-$i'),
-                      onTap: () => openHandoverPhoto(context, photos[i], l.handoverPhotoLabel(i + 1, photos.length)),
-                      child: VehicleThumb(
-                        size: 132,
-                        semanticLabel: l.handoverPhotoLabel(i + 1, photos.length),
-                        image: Image.network(
-                          photos[i],
-                          width: 132,
-                          height: 132,
-                          fit: BoxFit.cover,
-                          excludeFromSemantics: true,
-                          errorBuilder: (_, _, _) => Icon(LucideIcons.imageOff, color: context.palette.onSurfaceMedia),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              const SizedBox(height: VoltiSpacing.s16),
-              Container(
-                key: const Key('handover-battery'),
-                padding: const EdgeInsets.all(VoltiSpacing.s16),
-                decoration: BoxDecoration(color: scheme.surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
-                child: Row(children: [
-                  Icon(LucideIcons.batteryCharging, size: 22, color: context.palette.textBrand),
-                  const SizedBox(width: VoltiSpacing.s12),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(l.battery, style: VoltiTypography.bodyStrong.copyWith(color: scheme.onSurface)),
-                      if ((h.batterySerial ?? '').isNotEmpty)
-                        Text(l.handoverBatterySerial(h.batterySerial!), style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
-                    ]),
-                  ),
-                  const SizedBox(width: VoltiSpacing.s8),
-                  FittedBox(fit: BoxFit.scaleDown, child: BatteryPill(h.batteryPct, light: true, semanticsLabel: batteryPillSemantics(l, h.batteryPct))),
-                ]),
-              ),
-              VoltiListGroup(
-                title: l.handoverChecklist,
-                children: [for (final i in h.checklist) _ChecklistRow(item: i)],
-              ),
-              const SizedBox(height: VoltiSpacing.s16),
-              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Icon(LucideIcons.info, size: 18, color: context.palette.textBrand),
-                const SizedBox(width: VoltiSpacing.s8),
-                Expanded(child: Text(l.handoverStartsNow, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant))),
-              ]),
-            ]),
-          ),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, VoltiSpacing.s24),
+      children: VoltiStagger.wrap([
+        Text(
+          operator.isEmpty ? l.handoverIntroNoOperator(code) : l.handoverIntro(operator, code),
+          style: VoltiTypography.body.copyWith(color: scheme.onSurfaceVariant),
         ),
+        const SizedBox(height: VoltiSpacing.s12),
+        NoticeBanner(key: const Key('handover-counter-note'), info: true, icon: LucideIcons.clipboardCheck, message: l.handoverCounterNote),
+        const SizedBox(height: VoltiSpacing.s16),
+        SectionTitle(l.handoverPhotos),
+        if (photos.isEmpty)
+          Text(l.handoverNoPhotos, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant))
+        else
+          SizedBox(
+            height: 132,
+            child: ListView.separated(
+              key: const Key('handover-photos'),
+              scrollDirection: Axis.horizontal,
+              itemCount: photos.length,
+              separatorBuilder: (_, _) => const SizedBox(width: VoltiSpacing.s8),
+              // Toque abre a foto em tela cheia com zoom (conferir um dano).
+              itemBuilder: (_, i) => VoltiPressable(
+                key: Key('handover-photo-$i'),
+                onTap: () => openHandoverPhoto(context, photos[i], l.handoverPhotoLabel(i + 1, photos.length)),
+                child: VehicleThumb(
+                  size: 132,
+                  semanticLabel: l.handoverPhotoLabel(i + 1, photos.length),
+                  image: Image.network(
+                    photos[i],
+                    width: 132,
+                    height: 132,
+                    fit: BoxFit.cover,
+                    excludeFromSemantics: true,
+                    errorBuilder: (_, _, _) => Icon(LucideIcons.imageOff, color: context.palette.onSurfaceMedia),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        const SizedBox(height: VoltiSpacing.s16),
         Container(
-          padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12, VoltiSpacing.screenGutter, VoltiSpacing.s16),
-          decoration: BoxDecoration(color: scheme.surface, boxShadow: VoltiShadows.shadowSheet),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            VoltiButton(
-              key: const Key('handover-accept'),
-              label: l.handoverAccept,
-              icon: LucideIcons.lockOpen,
-              size: VoltiButtonSize.lg,
-              fullWidth: true,
-              loading: _accepting && !_accepted,
-              success: _accepted,
-              haptic: VoltiHapticKind.tap,
-              onPressed: _accepting ? null : _accept,
+          key: const Key('handover-battery'),
+          padding: const EdgeInsets.all(VoltiSpacing.s16),
+          decoration: BoxDecoration(color: scheme.surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
+          child: Row(children: [
+            Icon(LucideIcons.batteryCharging, size: 22, color: context.palette.textBrand),
+            const SizedBox(width: VoltiSpacing.s12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(l.battery, style: VoltiTypography.bodyStrong.copyWith(color: scheme.onSurface)),
+                if ((h.batterySerial ?? '').isNotEmpty)
+                  Text(l.handoverBatterySerial(h.batterySerial!), style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
+              ]),
             ),
-            const SizedBox(height: VoltiSpacing.s8),
-            VoltiButton(
-              key: const Key('handover-report'),
-              label: l.handoverReport,
-              icon: LucideIcons.circleAlert,
-              variant: VoltiButtonVariant.ghost,
-              fullWidth: true,
-              onPressed: _accepting ? null : _report,
-            ),
+            const SizedBox(width: VoltiSpacing.s8),
+            FittedBox(fit: BoxFit.scaleDown, child: BatteryPill(h.batteryPct, light: true, semanticsLabel: batteryPillSemantics(l, h.batteryPct))),
           ]),
         ),
-      ],
+        VoltiListGroup(
+          title: l.handoverChecklist,
+          children: [for (final i in h.checklist) _ChecklistRow(item: i)],
+        ),
+      ]),
     );
   }
 }
@@ -521,92 +348,6 @@ class _Outcome extends StatelessWidget {
           primary,
           if (secondary != null) ...[const SizedBox(height: VoltiSpacing.s8), secondary!],
         ],
-      ),
-    );
-  }
-}
-
-/// Folha "Apontar problema": motivo (3 a 500 caracteres) e envio. Devolve a
-/// entrega ja `disputed`, ou [stale] quando ela deixou de estar pendente (422
-/// `handover-not-pending`): a tela fecha a folha e recarrega.
-class HandoverDisputeSheet extends ConsumerStatefulWidget {
-  const HandoverDisputeSheet({super.key, required this.handoverId});
-  final String handoverId;
-
-  static const Object stale = #handoverStale;
-  @override
-  ConsumerState<HandoverDisputeSheet> createState() => _HandoverDisputeSheetState();
-}
-
-const kHandoverReasonMin = 3;
-const kHandoverReasonMax = 500;
-
-class _HandoverDisputeSheetState extends ConsumerState<HandoverDisputeSheet> {
-  final _reason = TextEditingController();
-  bool _busy = false;
-  String? _error;
-
-  @override
-  void dispose() {
-    _reason.dispose();
-    super.dispose();
-  }
-
-  Future<void> _send() async {
-    final l = context.l;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final h = await ref.read(backendProvider).disputeHandover(widget.handoverId, _reason.text.trim());
-      if (mounted) Navigator.of(context).pop(h);
-    } catch (e) {
-      final f = toFailure(e);
-      if (f.slug == 'handover-not-pending') {
-        if (mounted) Navigator.of(context).pop(HandoverDisputeSheet.stale);
-        return;
-      }
-      if (mounted) setState(() => _error = f.message(l));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l = context.l;
-    final ok = _reason.text.trim().length >= kHandoverReasonMin && !_busy;
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
-      child: SingleChildScrollView(
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Semantics(header: true, child: Text(l.handoverDisputeTitle, style: VoltiTypography.title)),
-          const SizedBox(height: VoltiSpacing.s8),
-          Text(l.handoverDisputeText, style: VoltiTypography.caption),
-          const SizedBox(height: VoltiSpacing.s12),
-          TextField(
-            key: const Key('handover-dispute-reason'),
-            controller: _reason,
-            maxLines: 3,
-            minLines: 1,
-            maxLength: kHandoverReasonMax,
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(labelText: l.handoverDisputeLabel, hintText: l.handoverDisputeHint),
-          ),
-          if (_error != null) NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _error!),
-          const SizedBox(height: VoltiSpacing.s12),
-          VoltiButton(
-            key: const Key('handover-dispute-send'),
-            label: l.handoverDisputeSend,
-            icon: LucideIcons.send,
-            fullWidth: true,
-            loading: _busy,
-            onPressed: ok ? _send : null,
-          ),
-          const SizedBox(height: VoltiSpacing.s8),
-          VoltiButton(label: l.cancel, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: () => Navigator.of(context).pop()),
-        ]),
       ),
     );
   }

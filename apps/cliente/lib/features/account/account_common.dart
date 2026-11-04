@@ -8,7 +8,7 @@ import '../../core/errors.dart';
 import '../../core/geo.dart';
 import '../onboarding/otp_flow.dart' show formatBrPhone;
 
-export '../plan/plan_screen.dart' show walletProvider;
+export '../plan/plan_common.dart' show walletProvider;
 
 // Providers compartilhados pelas telas da conta.
 

@@ -5,7 +5,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/router.dart';
 import 'package:volti_cliente/core/shared_vehicle.dart';
 import 'package:volti_cliente/features/pick/pick_screen.dart';
-import 'package:volti_cliente/features/plan/plan_screen.dart';
+import 'package:volti_cliente/features/pickup/pickup_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'galpao_fixtures.dart';
@@ -81,7 +81,7 @@ void main() {
     });
 
     test('funil empurra; momentos sobem; trocas de raiz fazem fade-through', () {
-      for (final p in ['/pick', '/plan', '/insurance', '/pickup', '/return/:id', '/login', '/account', '/account/history']) {
+      for (final p in ['/pick', '/pickup', '/return/:id', '/login', '/account', '/account/history']) {
         expect(transitionFor(p), _push, reason: p);
       }
       for (final p in ['/reservation/:id', '/handover/:id', '/summary/:id']) {
@@ -97,8 +97,6 @@ void main() {
   group('cada rota usa a sua transicao', () {
     final cases = <String, VoltiScreenTransition>{
       '/pick': _push,
-      '/plan': _push,
-      '/insurance': _push,
       '/pickup': _push,
       '/reservation/r1': _modal,
       '/handover/h1': _modal,
@@ -160,18 +158,18 @@ void main() {
       });
     }
 
-    testWidgets('voltar do sistema desfaz a pilha (plano -> lista -> inicio)', (t) async {
+    testWidgets('voltar do sistema desfaz a pilha (pre-reserva -> lista -> inicio)', (t) async {
       final router = _stubRouter();
       addTearDown(router.dispose);
       await t.pumpWidget(_stubApp(router));
       router.push('/pick');
       await t.pumpAndSettle();
-      router.push('/plan');
+      router.push('/pickup');
       await t.pumpAndSettle();
       await t.binding.handlePopRoute();
       await t.pumpAndSettle();
       expect(find.text('tela /pick'), findsOneWidget);
-      expect(find.text('tela /plan'), findsNothing);
+      expect(find.text('tela /pickup'), findsNothing);
       await t.binding.handlePopRoute();
       await t.pumpAndSettle();
       expect(find.text('tela /home'), findsOneWidget);
@@ -179,7 +177,7 @@ void main() {
   });
 
   group('fluxo real do galpao', () {
-    testWidgets('inicio -> lista (push) -> plano (push) com voo do Hero da moto; voltar volta a lista', (t) async {
+    testWidgets('inicio -> lista (push) -> pre-reserva (push) com voo do Hero da moto; voltar volta a lista', (t) async {
       phone(t);
       final router = await pumpApp(t, GalpaoBackend());
       expect(_builderOf(t), VoltiPageTransitions.fadeThrough);
@@ -187,7 +185,7 @@ void main() {
       expect(find.byType(PickScreen), findsOneWidget);
       expect(_builderOf(t), VoltiPageTransitions.push);
 
-      // Hero: mesma tag no cartao da lista e no cabecalho do plano.
+      // Hero: mesma tag no cartao da lista e no cabecalho da pre-reserva.
       final tag = vehicleHeroTag('VLT-001');
       bool isTag(Widget w) => w is Hero && w.tag == tag;
       expect(find.byWidgetPredicate(isTag), findsOneWidget);
@@ -202,18 +200,18 @@ void main() {
       await t.pump(const Duration(milliseconds: 120));
       expect(shuttles(), greaterThan(before), reason: 'a midia da moto voa no overlay durante a troca');
       await settle(t);
-      expect(find.byType(PlanScreen), findsOneWidget);
+      expect(find.byType(PickupScreen), findsOneWidget);
       expect(_builderOf(t), VoltiPageTransitions.push);
       expect(find.byWidgetPredicate(isTag), findsOneWidget);
 
       await t.binding.handlePopRoute();
       await settle(t);
       expect(router.state.uri.path, '/pick');
-      expect(find.byType(PlanScreen), findsNothing);
+      expect(find.byType(PickupScreen), findsNothing);
     });
   });
 
-  testWidgets('E-15: o cabecalho do plano mostra a mesma foto do cartao (voo foto -> foto) com a curva do design', (t) async {
+  testWidgets('E-15: o cabecalho da pre-reserva mostra a mesma foto do cartao (voo foto -> foto) com a curva do design', (t) async {
     phone(t);
     await pumpApp(t, _PhotoBackend(), initial: '/pick');
     Iterable<Hero> heroes() => t.widgetList<Hero>(find.byWidgetPredicate((w) => w is Hero && w.tag == vehicleHeroTag('VLT-001')));
@@ -236,7 +234,7 @@ void main() {
     expect(urlIn(heroes().single), 'https://exemplo.test/flash.png');
     await t.tap(find.textContaining(RegExp(r' · VLT-001')));
     await settle(t);
-    expect(find.byType(PlanScreen), findsOneWidget);
+    expect(find.byType(PickupScreen), findsOneWidget);
     final header = heroes().single;
     expect(urlIn(header), 'https://exemplo.test/flash.png');
     expect(header.createRectTween!(Rect.zero, Rect.zero), isA<VoltiHeroRectTween>());

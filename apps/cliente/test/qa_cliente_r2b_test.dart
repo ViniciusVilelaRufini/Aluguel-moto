@@ -25,7 +25,6 @@ import 'package:volti_cliente/features/ride/battery_sheet.dart';
 import 'package:volti_cliente/features/station_swap/swap_confirm_sheet.dart';
 import 'package:volti_cliente/features/onboarding/onboarding_screen.dart';
 import 'package:volti_cliente/features/pickup/pickup_screen.dart';
-import 'package:volti_cliente/features/plan/plan_screen.dart';
 import 'package:volti_cliente/features/return_flow/return_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart' show RideScreen, mapEnabledProvider;
 import 'package:volti_cliente/features/summary/summary_screen.dart';
@@ -409,21 +408,25 @@ void main() {
       expect(t.takeException(), isNull);
     });
 
-    testWidgets('R2-13 plano: esqueleto visivel logo no primeiro quadro a $pct%', (t) async {
+    testWidgets('R2-13 precos de referencia: esqueleto visivel logo no primeiro quadro a $pct%', (t) async {
       phone(t, scale: scale);
-      final b = _Slow();
-      await t.pumpWidget(testApp(PlanScreen(selection: selection()), overrides: [backendProvider.overrideWithValue(b)]));
+      await t.pumpWidget(testApp(PickupScreen(selection: selection()), overrides: [
+        backendProvider.overrideWithValue(_Slow()),
+        sessionProvider.overrideWith(() => FakeSession(session())),
+        clockProvider.overrideWithValue(() => thu10),
+      ]));
       await t.pump();
-      expect(find.byType(VoltiSkeleton), findsOneWidget);
+      await t.scrollUntilVisible(find.byKey(const Key('pickup-reference-prices')), 200, scrollable: find.byType(Scrollable).first);
+      expect(find.descendant(of: find.byKey(const Key('pickup-reference-prices')), matching: find.byType(VoltiSkeleton)), findsOneWidget);
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());
     });
 
-    testWidgets('R2-14 resumo: "Bloqueado agora" e icone de raio em "Retirar agora" a $pct%', (t) async {
+    testWidgets('R2-14 pre-reserva: icone de raio em "Retirar agora" a $pct%', (t) async {
       phone(t, scale: scale, size: const Size(412, 2200));
       await t.pumpWidget(
         testApp(
-          PickupScreen(selection: selection(p: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900))),
+          PickupScreen(selection: selection()),
           overrides: [
             backendProvider.overrideWithValue(GalpaoBackend()),
             sessionProvider.overrideWith(() => FakeSession(session())),
@@ -432,8 +435,8 @@ void main() {
         ),
       );
       await settle(t);
-      expect(find.text('Bloqueado agora (caução)'), findsOneWidget);
-      expect(t.widget<VoltiButton>(find.byKey(const Key('pickup-confirm'))).icon, LucideIcons.zap);
+      expect(find.textContaining('caução'), findsNothing);
+      expect(t.widget<VoltiButton>(find.byKey(const Key('pickup-pre-reserve'))).icon, LucideIcons.zap);
       expect(t.takeException(), isNull);
     });
 
