@@ -107,6 +107,14 @@ await (auth as DevAuthRepository).signIn(sub: 'u1', email: 'a@b.com');
 - `VoltiButtonPair`: dois botões na proporção do design; se um rótulo não cabe inteiro, divide pelo que cada um precisa ou empilha. `VoltiButton.minWidth(context)` mede o rótulo na escala de texto atual.
 - `VoltiBottomSheet` ocupa a largura toda mesmo com conteúdo estreito.
 
+## Moto de bancada (J16 GT06 `relay_only`, branch `fix/app-bancada`)
+
+- `BatteryPill(int? pct, {semanticsLabel})`: `null` = bateria desconhecida (`batteryKnown: false`) — mostra "—", sem autonomia, anel/raio neutro (`BatteryPill.unknownColor`), leitor de tela "Bateria desconhecida". `semanticsLabel` recebe o rótulo já localizado pelo app (um nó só, com a autonomia).
+- `VehicleMarker(status, int? batteryPct, {semanticLabel})`: tique neutro com a bateria desconhecida; rótulo localizado opcional.
+- `VoltiSpeedGauge(speedKmh: double?, limitKmh: int?)`: velocidade `null` mostra "—" (sem dado ou sem sinal); limite `null` = não imposto/desconhecido (arco no teto legal `kLegalMaxSpeedKmh`, nunca vermelho).
+- Prazo por requisição: `Options(extra: {kReceiveTimeoutExtra: Duration})` troca o `receiveTimeout` (15 s) só daquela chamada (`ReceiveTimeoutInterceptor`, no `buildVoltiApi`). `kLongReceiveTimeout` (45 s) é o dos POSTs que esperam o rastreador (o servidor segura até 35 s).
+- Testes: `test/bancada_test.dart`.
+
 ## Testes
 
 ```

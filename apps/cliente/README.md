@@ -307,6 +307,19 @@ Testes: `test/station_swap_test.dart` (proximidade, QR, taxa, slugs, máquina de
 - Conta: cadastro por celular mostra o telefone formatado, nunca o e-mail sintético (`@celular.volti.dev`, `@sem-email.volti.invalid`).
 - Testes em `test/emulador_1_test.dart` (carregam as fontes reais para medir texto cortado como no aparelho).
 
+## Moto de bancada (J16 GT06 `relay_only`, branch `fix/app-bancada`)
+
+Correções da auditoria confirmadas no emulador com a VLT-0059 (posição a cada 10 s, GPS muitas vezes inválido, bateria desconhecida, sem controle de velocidade).
+
+- **Bateria desconhecida** (`Vehicle.batteryKnown: false` / `vehicle.position.batteryKnown: false`): "—" na corrida (estatística, pílula, pin), na escolha da moto ("Desconhecida" na ficha) e na troca na estação (sem aviso de "bateria cheia"; "Bateria trocada" sem %). Helpers em `core/battery.dart`. Até o primeiro dado a corrida mostra "—" (sem piscar 0%) e o medidor não mostra "limite 32".
+- **Pausa** (`relay_only` trava só com a moto parada): por 30 s depois de pausar, "Pausando… mantenha a moto parada" com selo neutro; depois "Corrida pausada". Mudança de status que o cliente não pediu (pausada → ativa, encerrando → ativa, ativa → pausada) busca `GET /rentals/{id}/events` e mostra a última mensagem do sistema numa faixa (ex.: "A moto não parou; pare e peça a pausa de novo."). Pausar/Destravar com carregando.
+- **Encerramento**: a espera consulta o aluguel até ele sair de `ending` (prazo 150 s; o servidor desiste da trava sem corte em 120 s). Volta a `active` (ou `rental.updated` ativo) → formulário com a foto já enviada e a mensagem do sistema; a nova tentativa usa chave nova. Texto "Deixe a moto parada. Pode levar até 30 s.", contador e dica de GPS depois de 45 s. Prazo esgotado: "Tentar encerrar de novo" (novo POST, mesma chave), "Voltar à corrida" e suporte. Voltar do sistema bloqueado durante a espera. A corrida em `ending` mostra "Encerrando… aguardando a trava" e "Ver encerramento" (`/return/{id}?waiting=1`), sem Pausar.
+- **Destravar/travar demorado**: aceite da entrega, início e fim do aluguel com `receiveTimeout` de 45 s; `409` "Idempotency-Key ainda em processamento" (`AppFailure.stillProcessing`) ou resposta atrasada (`AppFailure.timedOut`, texto "A resposta demorou…", nunca "Sem conexão") viram espera: no aceite, "Destravando a moto… pode levar até 30 s" e releitura da entrega a cada 3 s (até ~45 s); no fim, a espera da trava.
+- **Velocidade**: `zone.notice` com `advisory` (moto não aplica o limite) mostra "Limite recomendado: X km/h", não mexe no limite do medidor (sem o vai-e-volta 20 ↔ 32) e esconde "limite" do medidor dali em diante. Sem `vehicle.position` por 30 s com o aluguel ativo: velocidade "—" e faixa "Sem sinal de GPS da moto". A Ajuda não promete redução automática ("respeite 6 km/h…").
+- **Pausa sem custo**: plano com `pausePerMinuteCents` 0 mostra "Pausa sem custo".
+- **Lacunas** (docs/decisoes.md, 2026-11-03 · App do cliente na bancada): o cliente não sabe se a moto impõe limite antes do primeiro `zone.notice` com `advisory` (o `trackerControlMode` é só staff); a bateria digitada pelo operador na entrega (`Handover.batteryPct`) não tem `batteryKnown` e segue exibida como veio.
+- Testes: `test/bancada_test.dart`.
+
 ## Pontos de integração
 
 ### Push (Firebase Cloud Messaging)

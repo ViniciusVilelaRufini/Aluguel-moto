@@ -75,7 +75,11 @@ List<RouteBase> appRoutes() => [
       // "Confira sua moto": aberta pelo evento `handover.pending` ou pela reserva em `handover`.
       GoRoute(path: '/handover/:id', pageBuilder: (c, state) => voltiPage(c, state, HandoverScreen(handoverId: state.pathParameters['id']!))),
       GoRoute(path: '/ride', pageBuilder: (c, state) => voltiPage(c, state, const RideScreen())),
-      GoRoute(path: '/return/:id', pageBuilder: (c, state) => voltiPage(c, state, ReturnScreen(rentalId: state.pathParameters['id']!))),
+      GoRoute(
+          path: '/return/:id',
+          // ?waiting=1: a corrida em `ending` reabre direto a espera da trava.
+          pageBuilder: (c, state) => voltiPage(
+              c, state, ReturnScreen(rentalId: state.pathParameters['id']!, resumeWaiting: state.uri.queryParameters['waiting'] == '1'))),
       // Troca de bateria na estacao (QR): leitor + confirmacao e progresso.
       GoRoute(
         path: '/station-swap/scan',

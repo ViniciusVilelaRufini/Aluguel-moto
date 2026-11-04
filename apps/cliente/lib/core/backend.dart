@@ -129,6 +129,10 @@ abstract class Backend {
   Future<Rental> rental(String id);
   Future<Rental> pause(String id);
   Future<Rental> resume(String id);
+
+  /// Linha do tempo do aluguel (`GET /rentals/{id}/events`): a mensagem do
+  /// sistema quando o status muda sem o cliente pedir (trava que nao cortou).
+  Future<List<RentalEvent>> rentalEvents(String id);
   Future<void> wellbeing(String id, {required bool ok, String? note});
   Future<LocationShare> shareLocation(String id);
   Future<Incident> reportIncident(IncidentCategory category, String description, {String? rentalId, String? vehicleId});
@@ -167,6 +171,10 @@ abstract class Backend {
 class ApiBackend implements Backend {
   ApiBackend(this._api);
   final VoltiApi _api;
+
+  /// POSTs que esperam o rastreador (destravar no aceite/inicio, travar no fim):
+  /// o servidor segura ate 35 s; o prazo padrao (15 s) cortava antes.
+  static const _longWait = <String, dynamic>{kReceiveTimeoutExtra: kLongReceiveTimeout};
 
   Future<T> _run<T>(Future<T> Function() call) async {
     try {
@@ -333,6 +341,7 @@ class ApiBackend implements Backend {
         id: id,
         idempotencyKey: idempotencyKey,
         validateStatus: (s) => s != null && s >= 200 && s < 300,
+        extra: _longWait,
       ))
           .data!);
 
@@ -427,6 +436,7 @@ class ApiBackend implements Backend {
             startRentalRequest: request,
             // 202 (Pix) e resposta valida.
             validateStatus: (s) => s != null && s >= 200 && s < 300,
+            extra: _longWait,
           ))
           .data!);
 
@@ -477,6 +487,10 @@ class ApiBackend implements Backend {
   Future<Rental> resume(String id) => _run(() async => (await _api.getRentalsApi().resumeRental(id: id)).data!);
 
   @override
+  Future<List<RentalEvent>> rentalEvents(String id) =>
+      _run(() async => (await _api.getRentalsApi().listRentalEvents(id: id)).data!.items.toList());
+
+  @override
   Future<void> wellbeing(String id, {required bool ok, String? note}) => _run(() async {
         await _api.getRentalsApi().respondWellbeingCheck(
               id: id,
@@ -520,6 +534,7 @@ class ApiBackend implements Backend {
         idempotencyKey: idempotencyKey,
         endRentalRequest: EndRentalRequest((b) => b..returnPhotoObjectKey = photoKey),
         validateStatus: (s) => s != null && s >= 200 && s < 300,
+        extra: _longWait,
       ))
           .data!);
 
@@ -530,6 +545,7 @@ class ApiBackend implements Backend {
         idempotencyKey: idempotencyKey,
         endRentalRequest: EndRentalRequest((b) => b..returnPhotoObjectKey = photoKey),
         validateStatus: (s) => s != null && s >= 200 && s < 300,
+        extra: _longWait,
       ))
           .data!);
 

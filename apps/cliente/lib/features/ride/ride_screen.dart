@@ -12,6 +12,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/app_channel.dart';
 import '../../core/backend.dart';
+import '../../core/battery.dart';
 import '../../core/clock.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
@@ -46,10 +47,37 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
   Object? _loadError;
   int _elapsed = 0;
   int _cost = 0;
-  double _speed = 0;
-  int _limit = 32;
-  int _battery = 0;
+
+  /// `null` ate o primeiro dado (sem piscar "0").
+  double? _speed;
+
+  /// Limite que a moto informa (`null` = ainda nao sabemos).
+  int? _limit;
+
+  /// `false` depois de um `zone.notice` com `advisory`: a moto (rastreador so
+  /// rele) nao aplica limite, entao o medidor nao mostra "limite". O cliente nao
+  /// recebe o tipo do rastreador antes disso (lacuna em docs/decisoes.md).
+  bool _limitEnforced = true;
+
+  /// `null` = desconhecida (`batteryKnown: false`) ou ainda sem dado.
+  int? _battery;
   int? _range;
+
+  /// Segundos desde a ultima `vehicle.position` (ou desde abrir a corrida).
+  int _sincePosition = 0;
+
+  /// Pausa pedida ha pouco: a trava ainda pode estar esperando a moto parar.
+  bool _pausing = false;
+  Timer? _pausingTimer;
+
+  /// Status que o proprio cliente pediu (pausar/retomar). Mudanca para outro
+  /// status sem ele pedir vem do sistema: mostra a mensagem da linha do tempo.
+  RentalStatus? _userTarget;
+
+  /// Aviso do sistema (pausa/encerramento desfeito, trava tardia).
+  ({String title, String text})? _notice;
+  ({String title, String text})? _lastNotice;
+  Timer? _noticeTimer;
   LatLng? _vehiclePos;
   LatLng? _userPos;
   ZoneNotice? _zone;
@@ -104,11 +132,13 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     try {
       final rental = (await ref.read(backendProvider).currentRentalState()).rental;
       if (!mounted || rental == null) return;
+      final prev = _rental?.status;
       setState(() {
         _rental = rental;
         _cost = rental.costCents;
         _syncElapsed();
       });
+      _statusChanged(prev, rental.status);
     } catch (_) {
       if (mounted) setState(_syncElapsed);
     }
@@ -132,6 +162,8 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     WidgetsBinding.instance.removeObserver(this);
     _link.openCount -= 1;
     _tick?.cancel();
+    _pausingTimer?.cancel();
+    _noticeTimer?.cancel();
     _events?.cancel();
     _connSub?.cancel();
     _rtRetry?.cancel();
@@ -161,10 +193,10 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
         _openSwap = isOpenSwap(state.stationSwap) ? state.stationSwap : null;
         _syncElapsed();
         _cost = rental.costCents;
-        _limit = rental.speedLimitKmh ?? vehicle?.speedLimitKmh ?? 32;
+        _limit = rental.speedLimitKmh ?? vehicle?.speedLimitKmh;
         if (vehicle != null) {
-          _battery = vehicle.batteryPct;
-          _range = vehicle.estimatedRangeKm.round();
+          _battery = vehicle.knownBatteryPct;
+          _range = vehicle.knownRangeKm;
           _vehiclePos = LatLng(vehicle.lat, vehicle.lng);
         }
       });
@@ -172,8 +204,16 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
       _startRealtime();
       _startTracking();
       _tick?.cancel();
+      _sincePosition = 0;
       _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (_rental?.status == RentalStatus.active && mounted) setState(_syncElapsed);
+        if (!mounted) return;
+        final wasStale = _gpsStale;
+        _sincePosition++;
+        if (_rental?.status == RentalStatus.active) {
+          setState(_syncElapsed);
+        } else if (wasStale != _gpsStale) {
+          setState(() {});
+        }
       });
     } catch (e) {
       if (mounted) setState(() => _loadError = e);
@@ -188,8 +228,8 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
       final v = await ref.read(backendProvider).vehicleByCode(r.vehicleCode);
       if (!mounted) return;
       setState(() {
-        _battery = v.batteryPct;
-        _range = v.estimatedRangeKm.round();
+        _battery = v.knownBatteryPct;
+        _range = v.knownRangeKm;
       });
     } catch (_) {}
   }
@@ -302,6 +342,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     if (!mounted) return;
     switch (e) {
       case RentalUpdated():
+        final prev = _rental?.status;
         setState(() {
           _cost = e.costCents;
           final status = RentalStatus.values.firstWhere((s) => s.name == _camel(e.status), orElse: () => _rental?.status ?? RentalStatus.active);
@@ -320,11 +361,15 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
         });
         if (e.status == 'ended' || e.status == 'force_ended') {
           _goToSummary(e.rentalId);
+        } else {
+          _statusChanged(prev, _rental?.status);
         }
       case VehiclePositionEvent():
         setState(() {
+          _sincePosition = 0;
           _speed = e.speedKmh;
-          _battery = e.batteryPct;
+          _battery = e.knownBatteryPct;
+          if (_battery == null) _range = null;
           _limit = e.speedLimitKmh;
           _vehiclePos = LatLng(e.lat, e.lng);
           appendTrail(_trail, _vehiclePos!);
@@ -343,7 +388,13 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
         setState(() {
           _zone = e.transition == 'ENTER' ? e : null;
           if (_zone != null) _lastZone = _zone;
-          if (e.speedLimitKmh != null && e.transition == 'ENTER') _limit = e.speedLimitKmh!;
+          // Aviso (advisory): a moto nao aplica o limite; o medidor nao muda
+          // (sem o vai-e-volta 20 <-> 32 com a proxima posicao).
+          if (e.advisory) {
+            _limitEnforced = false;
+          } else if (e.speedLimitKmh != null && e.transition == 'ENTER') {
+            _limit = e.speedLimitKmh!;
+          }
         });
       case DeviceEventReceived():
         if (e.type == 'queda') _showWellbeing();
@@ -400,6 +451,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
   }
 
   String _zoneTitle(AppLocalizations l, ZoneNotice z) {
+    if (z.advisory) return z.speedLimitKmh != null ? l.zoneAdvisoryTitle(z.speedLimitKmh!) : l.zoneAdvisoryTitleNoLimit;
     final name = _zoneName(l, z);
     return z.speedLimitKmh != null ? l.zoneTitle(name, z.speedLimitKmh!) : name;
   }
@@ -410,7 +462,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
   /// o do plano.
   String? _fare(AppLocalizations l, PricingPlan? plan, Rental rental, {required bool paused}) {
     if (plan == null) return null;
-    if (paused) return l.farePerMinute(money(plan.pausePerMinuteCents));
+    if (paused) return plan.pausePerMinuteCents == 0 ? l.pauseFree : l.farePerMinute(money(plan.pausePerMinuteCents));
     final timeLine = rental.breakdown?.lines.where((x) => x.code == 'time' && x.unitCents != null).firstOrNull;
     final price = money(timeLine?.unitCents ?? plan.unitPriceCents);
     return switch (plan.unit) {
@@ -563,24 +615,98 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
   }
 
   Future<void> _togglePause() async {
+    if (_busy) return;
     final l = context.l;
-    setState(() => _busy = true);
+    final r = _rental!;
+    final pausing = r.status != RentalStatus.paused;
+    setState(() {
+      _busy = true;
+      _notice = null;
+      _userTarget = pausing ? RentalStatus.paused : RentalStatus.active;
+    });
     try {
       final backend = ref.read(backendProvider);
-      final r = _rental!;
-      final updated = r.status == RentalStatus.paused ? await backend.resume(r.id) : await backend.pause(r.id);
+      final updated = pausing ? await backend.pause(r.id) : await backend.resume(r.id);
       VoltiHaptics.tap();
       if (mounted) {
+        final prev = _rental?.status;
         setState(() {
           _rental = updated;
           _syncElapsed();
+          if (pausing && updated.status == RentalStatus.paused) _startPausing();
+          if (!pausing) _stopPausing();
         });
+        _statusChanged(prev, updated.status);
       }
     } catch (e) {
+      _userTarget = null;
       if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  bool get _gpsStale => _rental?.status == RentalStatus.active && _sincePosition >= kGpsStaleSeconds;
+
+  void _startPausing() {
+    _pausing = true;
+    _pausingTimer?.cancel();
+    _pausingTimer = Timer(kPausePendingWindow, () {
+      if (mounted) setState(() => _pausing = false);
+    });
+  }
+
+  void _stopPausing() {
+    _pausing = false;
+    _pausingTimer?.cancel();
+  }
+
+  /// O status mudou de [prev] para [next]. Se o cliente nao pediu (pausa que a
+  /// moto nao conseguiu travar, encerramento desfeito, trava que chegou tarde),
+  /// busca a mensagem do sistema na linha do tempo e avisa.
+  void _statusChanged(RentalStatus? prev, RentalStatus? next) {
+    if (prev == null || next == null || prev == next) return;
+    // Parada a moto manda posicao com menos frequencia: a contagem do GPS recomeca.
+    if (next == RentalStatus.active) _sincePosition = 0;
+    if (next != RentalStatus.paused && _pausing) setState(_stopPausing);
+    final surprise = (next == RentalStatus.active || next == RentalStatus.paused) && next != _userTarget;
+    _userTarget = null;
+    if (surprise) _showSystemNotice(prev, next);
+  }
+
+  Future<void> _showSystemNotice(RentalStatus prev, RentalStatus next) async {
+    final l = context.l;
+    final (String title, String fallback) = switch ((prev, next)) {
+      (RentalStatus.ending, _) => (l.endRevertedTitle, l.endRevertedText),
+      (_, RentalStatus.paused) => (l.lateLockTitle, l.lateLockText),
+      _ => (l.pauseRevertedTitle, l.pauseRevertedText),
+    };
+    String? message;
+    final id = _rental?.id;
+    if (id != null) {
+      try {
+        message = lastSystemMessage(await ref.read(backendProvider).rentalEvents(id));
+      } catch (_) {
+        // sem a linha do tempo: o texto padrao
+      }
+    }
+    if (!mounted) return;
+    VoltiHaptics.warning();
+    final notice = (title: title, text: message ?? fallback);
+    setState(() {
+      _notice = notice;
+      _lastNotice = notice;
+    });
+    _noticeTimer?.cancel();
+    _noticeTimer = Timer(const Duration(seconds: 20), () {
+      if (mounted) setState(() => _notice = null);
+    });
+  }
+
+  /// Abre a devolucao ([waiting]: direto na espera da trava) e, na volta, rele o aluguel.
+  Future<void> _openReturn(String rentalId, {bool waiting = false}) async {
+    await context.push(waiting ? '/return/$rentalId?waiting=1' : '/return/$rentalId');
+    if (mounted) _resync();
   }
 
   /// Um dialogo so: escolhe o problema (chips) e reporta. Sem troca de moto no
@@ -638,6 +764,11 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     final r = _rental;
     if (r == null) return Scaffold(body: const LoadingState());
     final paused = r.status == RentalStatus.paused;
+    final ending = r.status == RentalStatus.ending;
+    final pending = ending || (paused && _pausing);
+    final stale = _gpsStale;
+    final speed = stale ? null : _speed;
+    final shownLimit = _limitEnforced ? _limit : null;
     final plan = ref.watch(rentalPlanProvider(r.planCode)).value;
     // Carrega o contato de emergencia antes do SOS (o dialogo le o valor pronto).
     ref.watch(emergencyContactProvider);
@@ -647,17 +778,27 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     final coverageLabel = r.coverage == InsuranceCoverage.full ? l.coverageFullLong : l.coverageBasicLong;
     // Fonte grande: o titulo fica so com o estado; plano e seguro viram chips.
     final big = MediaQuery.textScalerOf(context).scale(10) > 13;
-    final stateLabel = paused ? l.ridePaused : l.rideLive;
+    final stateLabel = ending
+        ? l.rideEnding
+        : paused
+            ? (_pausing ? l.ridePausing : l.ridePaused)
+            : l.rideLive;
     final caption = big ? stateLabel : [stateLabel, if (plan != null) plan.name, coverageLabel].join(' · ');
     final stateBadge = _StateBadge(
-      paused: paused,
-      label: paused ? (fare ?? l.pausedBadge) : l.liveBadge,
-      semanticsLabel: paused && fare != null ? l.pausedFareSemantics(fare) : null,
+      mode: pending ? _BadgeMode.pending : (paused ? _BadgeMode.paused : _BadgeMode.live),
+      label: ending
+          ? l.endingBadge
+          : pending
+              ? l.pausingBadge
+              : paused
+                  ? (fare ?? l.pausedBadge)
+                  : l.liveBadge,
+      semanticsLabel: paused && !pending && fare != null ? l.pausedFareSemantics(fare) : null,
     );
     final stats = <Widget>[
       _Stat(l.fareLabel, fare ?? '—', key: const Key('ride-fare'), stacked: big),
       _Stat(l.accumulatedCost, money(_cost), ticker: true, stacked: big),
-      _Stat(l.battery, '$_battery%', ticker: true, stacked: big),
+      _Stat(l.battery, batteryValue(_battery), ticker: true, stacked: big),
     ];
     final center = _vehiclePos ?? _userPos ?? const LatLng(-23.5614, -46.6559);
     final mapOn = ref.watch(mapEnabledProvider);
@@ -695,7 +836,13 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                             point: _vehiclePos!,
                             width: 56,
                             height: 64,
-                            child: VehicleMarker(VehicleStatus.rented, _battery, selected: true, animateIn: firstMarkerDrop)),
+                            child: VehicleMarker(
+                              VehicleStatus.rented,
+                              _battery,
+                              selected: true,
+                              animateIn: firstMarkerDrop,
+                              semanticLabel: _battery == null ? l.vehicleMarkerUnknownSemantics : l.vehicleMarkerSemantics(_battery!),
+                            )),
                     ]),
                   ],
                 )
@@ -713,20 +860,29 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                     child: Row(children: [
                       VoltiSpeedGauge(
                         key: const Key('ride-gauge'),
-                        speedKmh: _speed,
-                        limitKmh: _limit,
+                        speedKmh: speed,
+                        limitKmh: shownLimit,
                         size: 60,
-                        semanticsLabel: l.speedSemantics(_speed.round(), _limit),
+                        semanticsLabel: speed == null
+                            ? l.speedSemanticsUnknown
+                            : shownLimit == null
+                                ? l.speedSemanticsNoLimit(speed.round())
+                                : l.speedSemantics(speed.round(), shownLimit),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                          Text(l.speedUnit(_limit), style: VoltiTypography.caption.copyWith(color: context.palette.onGlass)),
+                          Text(shownLimit == null ? l.speedUnitOnly : l.speedUnit(shownLimit), style: VoltiTypography.caption.copyWith(color: context.palette.onGlass)),
                           const SizedBox(height: 6),
                           FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
-                            child: BatteryPill(_battery, rangeKm: _range, light: true),
+                            child: BatteryPill(
+                              _battery,
+                              rangeKm: _range,
+                              light: true,
+                              semanticsLabel: batteryPillSemantics(l, _battery, rangeKm: _range),
+                            ),
                           ),
                         ]),
                       ),
@@ -761,6 +917,22 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                 icon: LucideIcons.wifiOff,
                 title: l.realtimeOffline,
                 message: l.realtimeOfflineText,
+              ),
+              VoltiStatusBanner(
+                key: const Key('gps-stale'),
+                visible: stale,
+                tone: VoltiStatusTone.warning,
+                icon: LucideIcons.satelliteDish,
+                title: l.gpsStaleTitle,
+                message: l.gpsStaleText,
+              ),
+              VoltiStatusBanner(
+                key: const Key('ride-system-notice'),
+                visible: _notice != null,
+                tone: VoltiStatusTone.warning,
+                icon: LucideIcons.circleAlert,
+                title: _lastNotice?.title,
+                message: _lastNotice?.text ?? '',
               ),
               VoltiStatusBanner(
                 key: const Key('zone-banner'),
@@ -854,23 +1026,36 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                 Padding(
                   padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 12, VoltiSpacing.screenGutter, 16),
                   // Proporcao do design (1 : 1,3); se o rotulo nao cabe inteiro, ajusta ou empilha.
-                  child: VoltiButtonPair(
-                    first: VoltiButton(
-                      label: paused ? l.unpauseRide : l.pause,
-                      icon: paused ? LucideIcons.circlePlay : LucideIcons.pause,
-                      variant: VoltiButtonVariant.secondary,
-                      size: VoltiButtonSize.lg,
-                      fullWidth: true,
-                      onPressed: _busy ? null : _togglePause,
-                    ),
-                    second: VoltiButton(
-                      label: l.returnVehicle,
-                      variant: VoltiButtonVariant.dark,
-                      size: VoltiButtonSize.lg,
-                      fullWidth: true,
-                      onPressed: () => context.push('/return/${r.id}'),
-                    ),
-                  ),
+                  // Encerrando: sem Pausar (a API recusa); so reabrir a espera da trava.
+                  child: ending
+                      ? VoltiButton(
+                          key: const Key('ride-open-ending'),
+                          label: l.rideOpenEnding,
+                          icon: LucideIcons.lock,
+                          variant: VoltiButtonVariant.dark,
+                          size: VoltiButtonSize.lg,
+                          fullWidth: true,
+                          onPressed: () => _openReturn(r.id, waiting: true),
+                        )
+                      : VoltiButtonPair(
+                          first: VoltiButton(
+                            key: const Key('ride-pause'),
+                            label: paused ? l.unpauseRide : l.pause,
+                            icon: paused ? LucideIcons.circlePlay : LucideIcons.pause,
+                            variant: VoltiButtonVariant.secondary,
+                            size: VoltiButtonSize.lg,
+                            fullWidth: true,
+                            loading: _busy,
+                            onPressed: _togglePause,
+                          ),
+                          second: VoltiButton(
+                            label: l.returnVehicle,
+                            variant: VoltiButtonVariant.dark,
+                            size: VoltiButtonSize.lg,
+                            fullWidth: true,
+                            onPressed: () => _openReturn(r.id),
+                          ),
+                        ),
                 ),
               ]),
             ),
@@ -907,25 +1092,36 @@ class _Stat extends StatelessWidget {
   }
 }
 
-/// Selo "Ao vivo" (ponto piscando) ou "Pausada", troca com cross-fade.
+enum _BadgeMode { live, paused, pending }
+
+/// Selo "Ao vivo" (ponto piscando), "Pausada" ou neutro enquanto a trava esta
+/// pendente ("Pausando…", "Encerrando…"); troca com cross-fade.
 class _StateBadge extends StatelessWidget {
-  const _StateBadge({required this.paused, required this.label, this.semanticsLabel});
-  final bool paused;
+  const _StateBadge({required this.mode, required this.label, this.semanticsLabel});
+  final _BadgeMode mode;
   final String label;
   final String? semanticsLabel;
 
   @override
   Widget build(BuildContext context) {
-    final bg = paused ? context.palette.sunSoft : context.palette.brandSoft;
-    final fg = paused ? context.palette.sunInk : context.palette.successInk;
+    final scheme = Theme.of(context).colorScheme;
+    final (bg, fg) = switch (mode) {
+      _BadgeMode.paused => (context.palette.sunSoft, context.palette.sunInk),
+      _BadgeMode.live => (context.palette.brandSoft, context.palette.successInk),
+      _BadgeMode.pending => (scheme.surfaceContainerHighest, scheme.onSurfaceVariant),
+    };
     return AnimatedSwitcher(
       duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
       child: Container(
-        key: ValueKey(paused),
+        key: ValueKey(mode),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(color: bg, borderRadius: VoltiRadii.rPill),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          if (paused) Icon(LucideIcons.pause, size: 14, color: fg) else const _LiveDot(),
+          switch (mode) {
+            _BadgeMode.paused => Icon(LucideIcons.pause, size: 14, color: fg),
+            _BadgeMode.pending => Icon(LucideIcons.hourglass, size: 14, color: fg),
+            _BadgeMode.live => const _LiveDot(),
+          },
           const SizedBox(width: 6),
           Text(label, style: VoltiTypography.label.copyWith(color: fg), semanticsLabel: semanticsLabel),
         ]),

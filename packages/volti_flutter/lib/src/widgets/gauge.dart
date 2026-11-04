@@ -15,6 +15,9 @@ import '../tokens/typography.dart';
 /// leituras (200 ms); reduced motion pula direto. O numero central tem escala
 /// de texto limitada a 1,3x porque vive dentro de um grafico de tamanho fixo
 /// (o texto de apoio do HUD continua escalando normalmente).
+/// Teto legal do equipamento autopropelido (Contran 996/2023).
+const kLegalMaxSpeedKmh = 32;
+
 class VoltiSpeedGauge extends StatelessWidget {
   const VoltiSpeedGauge({
     super.key,
@@ -24,14 +27,19 @@ class VoltiSpeedGauge extends StatelessWidget {
     this.semanticsLabel,
   });
 
-  final double speedKmh;
-  final int limitKmh;
+  /// `null` = sem dado ainda (ou sem sinal da moto): mostra "—" e o arco vazio.
+  final double? speedKmh;
+
+  /// Limite imposto pela moto. `null` = nao imposto (rastreador so rele) ou
+  /// desconhecido: o arco usa o teto legal ([kLegalMaxSpeedKmh]) e nunca fica
+  /// vermelho por um limite que a moto nao aplica.
+  final int? limitKmh;
   final double size;
   final String? semanticsLabel;
 
   /// Cor do arco para a razao velocidade/limite.
-  static Color colorFor(double speed, int limit) {
-    if (limit <= 0) return VoltiColors.brand;
+  static Color colorFor(double speed, int? limit) {
+    if (limit == null || limit <= 0) return VoltiColors.brand;
     final r = speed / limit;
     if (r > 1.0) return VoltiColors.danger;
     if (r >= .85) return VoltiColors.sun400;
@@ -40,11 +48,13 @@ class VoltiSpeedGauge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ratio = limitKmh <= 0 ? 0.0 : (speedKmh / limitKmh).clamp(0.0, 1.0);
-    final color = colorFor(speedKmh, limitKmh);
+    final speed = speedKmh;
+    final scale = limitKmh ?? kLegalMaxSpeedKmh;
+    final ratio = speed == null || scale <= 0 ? 0.0 : (speed / scale).clamp(0.0, 1.0);
+    final color = colorFor(speed ?? 0, limitKmh);
     final d = VoltiMotion.scaled(context, VoltiMotion.durBase);
     final track = Theme.of(context).brightness == Brightness.dark ? VoltiColors.ink700 : VoltiColors.ink200;
-    final over = speedKmh > limitKmh && limitKmh > 0;
+    final over = speed != null && limitKmh != null && limitKmh! > 0 && speed > limitKmh!;
     return Semantics(
       label: semanticsLabel,
       container: true,
@@ -73,7 +83,7 @@ class VoltiSpeedGauge extends StatelessWidget {
                     letterSpacing: -.5,
                     color: over ? VoltiPalette.of(context).dangerInkStrong : Theme.of(context).colorScheme.onSurface,
                   ),
-                  child: Text('${speedKmh.round()}', key: const Key('volti-gauge-speed')),
+                  child: Text(speed == null ? '—' : '${speed.round()}', key: const Key('volti-gauge-speed')),
                 ),
               ),
             ),

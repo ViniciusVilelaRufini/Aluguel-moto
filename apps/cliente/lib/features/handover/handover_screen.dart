@@ -6,6 +6,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/battery.dart';
 import '../../core/errors.dart';
 import '../../core/flash.dart';
 import '../../core/services.dart';
@@ -55,6 +56,15 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
 
   /// Aceite confirmado: o botao mostra o check por [VoltiMotion.successHold].
   bool _accepted = false;
+
+  /// O aceite ainda roda no servidor (`409` "Idempotency-Key ainda em
+  /// processamento" ou resposta atrasada): a moto esta destravando.
+  bool _unlocking = false;
+
+  /// Consultas da entrega enquanto destrava (a cada [_unlockPoll], ate ~45 s:
+  /// o servidor espera o rastreador ate 35 s).
+  static const _unlockPoll = Duration(seconds: 3);
+  static const _unlockPolls = 15;
 
   /// Motivo da ultima tentativa que falhou nesta tela (o `lastError` da entrega
   /// cobre o que aconteceu fora dela).
@@ -123,6 +133,11 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
       if (!mounted) return;
       final f = toFailure(e);
       if (f.status == 404) return _notMine();
+      // Nao e falha: a primeira tentativa ainda destrava a moto. Nunca "Sem conexao".
+      if (f.stillProcessing || f.timedOut) {
+        await _waitUnlock();
+        return;
+      }
       VoltiHaptics.warning();
       if (f.slug == 'handover-not-pending') {
         await _load();
@@ -138,6 +153,42 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
       }
     } finally {
       if (mounted) setState(() => _accepting = false);
+    }
+  }
+
+  /// Relê a entrega ate o aceite em curso terminar: aceita mostra "Moto
+  /// liberada"; falha mostra o `lastError`; sem desfecho no prazo, avisa.
+  Future<void> _waitUnlock() async {
+    final l = context.l;
+    setState(() => _unlocking = true);
+    for (var i = 0; i < _unlockPolls; i++) {
+      await Future<void>.delayed(_unlockPoll);
+      if (!mounted) return;
+      try {
+        final h = await ref.read(backendProvider).handover(widget.handoverId);
+        if (!mounted) return;
+        final done = h.status != HandoverStatus.pendingCustomer || h.lastError != null;
+        setState(() {
+          _h = h;
+          if (done) _unlocking = false;
+        });
+        if (h.status == HandoverStatus.accepted) {
+          VoltiHaptics.success();
+          ref.read(createdReservationProvider.notifier).set(null);
+          ref.invalidate(currentReservationProvider);
+          ref.invalidate(currentRentalStateProvider);
+          ref.invalidate(depotsProvider);
+        }
+        if (done) return;
+      } catch (_) {
+        // rede instavel: tenta na proxima
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _unlocking = false;
+        _error = l.handoverUnlockSlow;
+      });
     }
   }
 
@@ -256,7 +307,13 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
                 operator.isEmpty ? l.handoverIntroNoOperator(code) : l.handoverIntro(operator, code),
                 style: VoltiTypography.body.copyWith(color: scheme.onSurfaceVariant),
               ),
-              if (error != null) ...[
+              if (_unlocking) ...[
+                const SizedBox(height: VoltiSpacing.s12),
+                Semantics(
+                  liveRegion: true,
+                  child: NoticeBanner(key: const Key('handover-unlocking'), info: true, icon: LucideIcons.lockOpen, message: l.handoverUnlocking),
+                ),
+              ] else if (error != null) ...[
                 const SizedBox(height: VoltiSpacing.s12),
                 NoticeBanner(key: const Key('handover-error'), danger: true, icon: LucideIcons.circleAlert, message: error),
               ],
@@ -307,7 +364,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
                     ]),
                   ),
                   const SizedBox(width: VoltiSpacing.s8),
-                  FittedBox(fit: BoxFit.scaleDown, child: BatteryPill(h.batteryPct, light: true)),
+                  FittedBox(fit: BoxFit.scaleDown, child: BatteryPill(h.batteryPct, light: true, semanticsLabel: batteryPillSemantics(l, h.batteryPct))),
                 ]),
               ),
               VoltiListGroup(

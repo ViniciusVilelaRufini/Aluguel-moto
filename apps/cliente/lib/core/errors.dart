@@ -13,6 +13,7 @@ class AppFailure implements Exception {
     this.slug,
     this.detail,
     this.title,
+    this.timedOut = false,
   });
 
   final FailureKind kind;
@@ -23,12 +24,21 @@ class AppFailure implements Exception {
   final String? detail;
   final String? title;
 
+  /// A conexao abriu, mas a resposta nao chegou no prazo (`receiveTimeout`): o
+  /// servidor pode ainda estar processando. Nunca vira "Sem conexao".
+  final bool timedOut;
+
+  /// `409` "Requisicao com esta Idempotency-Key ainda em processamento": a
+  /// primeira tentativa (mesma chave) ainda roda no servidor (ex.: destravando
+  /// ou travando a moto). Nao e erro para o cliente: e esperar e conferir.
+  bool get stillProcessing => status == 409 && (detail ?? '').contains('Idempotency-Key');
+
   bool get isNetwork => kind == FailureKind.network;
 
   String message(AppLocalizations l) {
     switch (kind) {
       case FailureKind.network:
-        return l.errorNetwork;
+        return timedOut ? l.errorTimeout : l.errorNetwork;
       case FailureKind.unauthorized:
         return l.errorUnauthorized;
       case FailureKind.api:
@@ -47,7 +57,9 @@ AppFailure toFailure(Object error) {
   debugLogError(error);
   if (error is DioException) {
     final res = error.response;
-    if (res == null) return AppFailure(kind: FailureKind.network);
+    if (res == null) {
+      return AppFailure(kind: FailureKind.network, timedOut: error.type == DioExceptionType.receiveTimeout);
+    }
     final data = res.data;
     String? slug, detail, title;
     if (data is Map) {

@@ -8,6 +8,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/battery.dart';
 import '../../core/clock.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
@@ -45,6 +46,9 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
   bool _canceling = false;
   bool _doneHandled = false;
   int? _donePct;
+
+  /// A moto nao le a bateria (`batteryKnown: false`): o titulo sai sem o %.
+  bool _doneUnknown = false;
   bool _rtWasDown = false;
   bool _foreground = true;
   Timer? _tick;
@@ -217,7 +221,12 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
       final code = state.rental?.vehicleCode;
       if (code == null) return;
       final v = await ref.read(backendProvider).vehicleByCode(code);
-      if (mounted) setState(() => _donePct = v.batteryPct);
+      if (mounted) {
+        setState(() {
+          _donePct = v.knownBatteryPct;
+          _doneUnknown = !v.hasBatteryReading;
+        });
+      }
     } catch (_) {
       // Fica o 100% da bateria carregada.
     }
@@ -311,7 +320,7 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
             ),
             child: KeyedSubtree(
               key: ValueKey('swap-step-${status.name}'),
-              child: _StepView(swap: swap, donePct: _donePct),
+              child: _StepView(swap: swap, donePct: _donePct, doneUnknown: _doneUnknown),
             ),
           ),
           if (!isTerminalSwap(status)) ...[
@@ -392,9 +401,10 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
 
 /// Icone, titulo e instrucao do passo atual.
 class _StepView extends StatelessWidget {
-  const _StepView({required this.swap, required this.donePct});
+  const _StepView({required this.swap, required this.donePct, this.doneUnknown = false});
   final StationSwap swap;
   final int? donePct;
+  final bool doneUnknown;
 
   @override
   Widget build(BuildContext context) {
@@ -423,7 +433,7 @@ class _StepView extends StatelessWidget {
         ),
       StationSwapStatus.completed => (
           const VoltiSuccessCheck(size: 72),
-          l.swapDoneTitle(donePct ?? 100),
+          doneUnknown ? l.swapDoneTitleNoPct : l.swapDoneTitle(donePct ?? 100),
           l.swapDoneText,
         ),
       StationSwapStatus.canceled || StationSwapStatus.failed => (

@@ -267,7 +267,7 @@ void main() {
       await t.pump(const Duration(milliseconds: 400));
       expect(find.bySemanticsLabel('Velocidade 30 quilômetros por hora, limite 32'), findsOneWidget);
       final gauge = t.widget<VoltiSpeedGauge>(find.byKey(const Key('ride-gauge')));
-      expect(VoltiSpeedGauge.colorFor(gauge.speedKmh, gauge.limitKmh), VoltiColors.sun400);
+      expect(VoltiSpeedGauge.colorFor(gauge.speedKmh!, gauge.limitKmh), VoltiColors.sun400);
       expect(
         t.getSemantics(find.byKey(const Key('sos-button'))),
         isSemantics(label: 'SOS', hint: 'Ligar para o suporte ou compartilhar sua localização', isButton: true),

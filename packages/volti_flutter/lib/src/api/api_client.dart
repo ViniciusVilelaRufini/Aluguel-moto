@@ -49,6 +49,25 @@ class BearerTokenInterceptor extends Interceptor {
   }
 }
 
+/// Chave de `Options.extra` com o `receiveTimeout` so daquela requisicao (ex.:
+/// POSTs que esperam o rastreador: destravar no aceite, travar no encerramento).
+const kReceiveTimeoutExtra = 'volti_receive_timeout';
+
+/// Prazo dos POSTs que esperam o rastreador: o servidor segura a resposta por ate
+/// 35 s (destravar/travar); 15 s cortava a espera e a nova tentativa batia no
+/// `409` "Idempotency-Key ainda em processamento".
+const kLongReceiveTimeout = Duration(seconds: 45);
+
+/// Aplica o [kReceiveTimeoutExtra] da requisicao (o cliente gerado nao expoe o prazo).
+class ReceiveTimeoutInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    final t = options.extra[kReceiveTimeoutExtra];
+    if (t is Duration) options.receiveTimeout = t;
+    handler.next(options);
+  }
+}
+
 /// Retry com backoff exponencial (300 ms, 600 ms, ...) para erros de rede e
 /// 5xx. Maximo de [maxAttempts] tentativas no total (padrao 3). Em 5xx so
 /// repete metodos idempotentes (GET, HEAD, PUT, DELETE); erro de conexao
@@ -140,6 +159,7 @@ VoltiApi buildVoltiApi({
   api.dio.interceptors.addAll([
     // Primeiro: ve o `Date` de toda resposta, mesmo as que o retry repete.
     if (serverClock != null) ServerClockInterceptor(serverClock),
+    ReceiveTimeoutInterceptor(),
     BearerTokenInterceptor(auth),
     RetryInterceptor(
       dio: api.dio,

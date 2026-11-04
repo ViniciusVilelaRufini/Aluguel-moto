@@ -94,3 +94,23 @@ final rentalPlanProvider = FutureProvider.autoDispose.family<PricingPlan?, PlanC
   }
   return null;
 });
+
+/// Mensagem pt-BR do ultimo evento do sistema na linha do tempo do aluguel
+/// (ex.: "A moto não parou; pare e peça a pausa de novo."), ou `null`.
+String? lastSystemMessage(Iterable<RentalEvent> events) {
+  RentalEvent? last;
+  for (final e in events) {
+    if (e.actorType != ActorType.system || (e.message ?? '').trim().isEmpty) continue;
+    if (last == null || !e.at.isBefore(last.at)) last = e;
+  }
+  return last?.message?.trim();
+}
+
+/// Segundos sem `vehicle.position` (com o aluguel ativo) ate a corrida avisar
+/// "Sem sinal de GPS da moto" e trocar a velocidade por "—". A moto manda
+/// posicao a cada 5-10 s em aluguel.
+const kGpsStaleSeconds = 30;
+
+/// Quanto tempo a corrida mostra "Pausando… mantenha a moto parada" depois de
+/// pedir a pausa: a trava de um rastreador so rele espera a moto parar.
+const kPausePendingWindow = Duration(seconds: 30);

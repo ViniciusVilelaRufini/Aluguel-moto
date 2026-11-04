@@ -787,7 +787,7 @@ abstract class AppLocalizations {
   /// No description provided for @helpRule1Text.
   ///
   /// In pt, this message translates to:
-  /// **'Ciclovias, ciclofaixas e vias de baixa velocidade. Em calçadas e áreas de pedestres a moto reduz para 6 km/h sozinha.'**
+  /// **'Ciclovias, ciclofaixas e vias de baixa velocidade. Em calçadas e áreas de pedestres, respeite 6 km/h.'**
   String get helpRule1Text;
 
   /// No description provided for @helpRule2Title.
@@ -799,7 +799,7 @@ abstract class AppLocalizations {
   /// No description provided for @helpRule2Text.
   ///
   /// In pt, this message translates to:
-  /// **'A moto nunca passa de 32 km/h. Em ciclovias o limite é 20 km/h.'**
+  /// **'Nunca passe de 32 km/h. Em ciclovias, respeite 20 km/h.'**
   String get helpRule2Text;
 
   /// No description provided for @helpRule3Title.
@@ -1357,7 +1357,7 @@ abstract class AppLocalizations {
   /// No description provided for @ridePaused.
   ///
   /// In pt, this message translates to:
-  /// **'Moto travada · pausa'**
+  /// **'Corrida pausada'**
   String get ridePaused;
 
   /// No description provided for @rideTitle.
@@ -1621,7 +1621,7 @@ abstract class AppLocalizations {
   /// No description provided for @waitingLockText.
   ///
   /// In pt, this message translates to:
-  /// **'A moto precisa parar para travar com segurança. Isso leva alguns segundos.'**
+  /// **'Deixe a moto parada. Pode levar até 30 s.'**
   String get waitingLockText;
 
   /// No description provided for @wallet.
@@ -1807,7 +1807,7 @@ abstract class AppLocalizations {
   /// No description provided for @lockNotConfirmedText.
   ///
   /// In pt, this message translates to:
-  /// **'A moto ainda não confirmou que travou. Tente de novo ou fale com o suporte para não ser cobrado a mais.'**
+  /// **'A moto ainda não confirmou que travou. Deixe-a parada e tente encerrar de novo, volte para a corrida ou fale com o suporte para não ser cobrado a mais.'**
   String get lockNotConfirmedText;
 
   /// No description provided for @contactSupport.
@@ -5607,6 +5607,186 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Não dá para excluir a conta agora'**
   String get deleteAccountBlockedTitle;
+
+  /// No description provided for @batteryUnknownSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'bateria desconhecida'**
+  String get batteryUnknownSemantics;
+
+  /// No description provided for @batteryUnknownValue.
+  ///
+  /// In pt, this message translates to:
+  /// **'Desconhecida'**
+  String get batteryUnknownValue;
+
+  /// No description provided for @vehicleMarkerSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua moto, bateria {pct} por cento'**
+  String vehicleMarkerSemantics(int pct);
+
+  /// No description provided for @vehicleMarkerUnknownSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua moto, bateria desconhecida'**
+  String get vehicleMarkerUnknownSemantics;
+
+  /// No description provided for @swapDoneTitleNoPct.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria trocada'**
+  String get swapDoneTitleNoPct;
+
+  /// No description provided for @ridePausing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pausando… mantenha a moto parada'**
+  String get ridePausing;
+
+  /// No description provided for @pausingBadge.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pausando…'**
+  String get pausingBadge;
+
+  /// No description provided for @rideEnding.
+  ///
+  /// In pt, this message translates to:
+  /// **'Encerrando… aguardando a trava'**
+  String get rideEnding;
+
+  /// No description provided for @endingBadge.
+  ///
+  /// In pt, this message translates to:
+  /// **'Encerrando…'**
+  String get endingBadge;
+
+  /// No description provided for @rideOpenEnding.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ver encerramento'**
+  String get rideOpenEnding;
+
+  /// No description provided for @pauseFree.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pausa sem custo'**
+  String get pauseFree;
+
+  /// No description provided for @pauseRevertedTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'A pausa não foi concluída'**
+  String get pauseRevertedTitle;
+
+  /// No description provided for @pauseRevertedText.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto não travou e a corrida continua. Pare e peça a pausa de novo.'**
+  String get pauseRevertedText;
+
+  /// No description provided for @endRevertedTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'O encerramento não foi concluído'**
+  String get endRevertedTitle;
+
+  /// No description provided for @endRevertedText.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto não travou e a corrida continua. Pare e peça o encerramento de novo.'**
+  String get endRevertedText;
+
+  /// No description provided for @lateLockTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Corrida pausada'**
+  String get lateLockTitle;
+
+  /// No description provided for @lateLockText.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto foi travada. Retome pelo app para seguir.'**
+  String get lateLockText;
+
+  /// No description provided for @gpsStaleTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem sinal de GPS da moto'**
+  String get gpsStaleTitle;
+
+  /// No description provided for @gpsStaleText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Velocidade e posição podem estar desatualizadas.'**
+  String get gpsStaleText;
+
+  /// No description provided for @zoneAdvisoryTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Limite recomendado: {limit} km/h'**
+  String zoneAdvisoryTitle(int limit);
+
+  /// No description provided for @zoneAdvisoryTitleNoLimit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Área com limite de velocidade reduzido'**
+  String get zoneAdvisoryTitleNoLimit;
+
+  /// No description provided for @speedUnitOnly.
+  ///
+  /// In pt, this message translates to:
+  /// **'km/h'**
+  String get speedUnitOnly;
+
+  /// No description provided for @speedSemanticsNoLimit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Velocidade {speed} quilômetros por hora'**
+  String speedSemanticsNoLimit(int speed);
+
+  /// No description provided for @speedSemanticsUnknown.
+  ///
+  /// In pt, this message translates to:
+  /// **'Velocidade desconhecida'**
+  String get speedSemanticsUnknown;
+
+  /// No description provided for @waitingLockElapsed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aguardando há {seconds} s'**
+  String waitingLockElapsed(int seconds);
+
+  /// No description provided for @waitingLockGpsHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ainda sem confirmação. Em local coberto o GPS da moto pode demorar: mantenha-a parada.'**
+  String get waitingLockGpsHint;
+
+  /// No description provided for @retryEnd.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tentar encerrar de novo'**
+  String get retryEnd;
+
+  /// No description provided for @handoverUnlocking.
+  ///
+  /// In pt, this message translates to:
+  /// **'Destravando a moto… pode levar até 30 s'**
+  String get handoverUnlocking;
+
+  /// No description provided for @handoverUnlockSlow.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto ainda está destravando. Aguarde um pouco e confira de novo.'**
+  String get handoverUnlockSlow;
+
+  /// No description provided for @errorTimeout.
+  ///
+  /// In pt, this message translates to:
+  /// **'A resposta demorou mais que o esperado. Confira em instantes.'**
+  String get errorTimeout;
 }
 
 class _AppLocalizationsDelegate

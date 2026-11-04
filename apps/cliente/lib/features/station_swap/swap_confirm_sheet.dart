@@ -6,6 +6,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/battery.dart';
 import '../../core/clock.dart';
 import '../../core/geo.dart';
 import '../../core/errors.dart';
@@ -76,7 +77,7 @@ class _SwapConfirmSheetState extends ConsumerState<SwapConfirmSheet> {
   Future<void> _loadBattery() async {
     try {
       final v = await ref.read(backendProvider).vehicleByCode(widget.rental.vehicleCode);
-      if (mounted) setState(() => _battery = v.batteryPct);
+      if (mounted) setState(() => _battery = v.knownBatteryPct);
     } catch (_) {
       // sem o aviso: a troca segue normal
     }

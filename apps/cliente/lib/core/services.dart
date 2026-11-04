@@ -42,20 +42,31 @@ class VehiclePositionEvent extends RealtimeEvent {
     required this.speedKmh,
     required this.batteryPct,
     required this.speedLimitKmh,
+    this.batteryKnown = true,
   });
   final double lat;
   final double lng;
   final double speedKmh;
   final int batteryPct;
   final int speedLimitKmh;
+
+  /// `false` = rastreador sem leitura da bateria: [batteryPct] vem 0 e nao e
+  /// nivel (contrato: ausente = `true`).
+  final bool batteryKnown;
+
+  /// Carga em %, ou `null` quando desconhecida.
+  int? get knownBatteryPct => batteryKnown ? batteryPct : null;
 }
 
 class ZoneNotice extends RealtimeEvent {
-  const ZoneNotice({required this.zoneType, required this.transition, required this.message, this.speedLimitKmh});
+  const ZoneNotice({required this.zoneType, required this.transition, required this.message, this.speedLimitKmh, this.advisory = false});
   final String zoneType;
   final String transition;
   final String message;
   final int? speedLimitKmh;
+
+  /// `true` = a moto nao aplica o limite (rastreador so rele): e so aviso.
+  final bool advisory;
 }
 
 class DeviceEventReceived extends RealtimeEvent {
@@ -147,6 +158,7 @@ class SocketRealtimeService implements RealtimeService {
         speedKmh: (j['speedKmh'] as num).toDouble(),
         batteryPct: (j['batteryPct'] as num).toInt(),
         speedLimitKmh: (j['speedLimitKmh'] as num).toInt(),
+        batteryKnown: j['batteryKnown'] != false,
       ));
     });
     socket.on('zone.notice', (d) {
@@ -156,6 +168,7 @@ class SocketRealtimeService implements RealtimeService {
         transition: j['transition'] as String,
         message: (j['message'] ?? '') as String,
         speedLimitKmh: (j['speedLimitKmh'] as num?)?.toInt(),
+        advisory: j['advisory'] == true,
       ));
     });
     socket.on('device.event', (d) {

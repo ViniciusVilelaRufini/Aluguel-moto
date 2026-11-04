@@ -7,6 +7,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/geo.dart';
+import '../../core/battery.dart';
 import '../../core/session.dart';
 import '../../core/shared_vehicle.dart';
 import '../../core/widgets.dart';
@@ -404,7 +405,7 @@ class _PickCardState extends State<_PickCard> {
   /// Ficha da moto com o que o contrato traz: categoria, potencia e velocidade
   /// (lidas da descricao do catalogo, ex.: "1000 W · 32 km/h"), bateria e
   /// autonomia, preco por minuto, taxa de desbloqueio e codigo.
-  List<(String, String)> _specs(AppLocalizations l, String? category, String? description, int range) {
+  List<(String, String)> _specs(AppLocalizations l, String? category, String? description, int? range) {
     final v = widget.vehicle;
     final power = RegExp(r'(\d[\d.]*)\s*W\b').firstMatch(description ?? '')?.group(0);
     final speed = RegExp(r'(\d+)\s*km/h').firstMatch(description ?? '')?.group(0);
@@ -412,7 +413,7 @@ class _PickCardState extends State<_PickCard> {
       if (category != null) (l.pickSpecCategory, category),
       if (power != null) (l.pickSpecPower, power),
       if (speed != null) (l.pickSpecSpeed, speed),
-      (l.pickSpecBattery, l.pickSpecBatteryValue(v.batteryPct, range)),
+      (l.pickSpecBattery, v.knownBatteryPct == null || range == null ? l.batteryUnknownValue : l.pickSpecBatteryValue(v.knownBatteryPct!, range)),
       if (widget.priceCents != null) (l.pickSpecPrice, perMinuteLabel(widget.priceCents!)),
       if (widget.unlockFeeCents != null) (l.pickSpecUnlock, money(widget.unlockFeeCents!)),
       (l.pickSpecCode, v.code),
@@ -426,7 +427,9 @@ class _PickCardState extends State<_PickCard> {
     final v = widget.vehicle;
     final on = widget.selected;
     final category = widget.category;
-    final range = v.estimatedRangeKm.round();
+    // Bateria desconhecida (`batteryKnown: false`): "—", nunca 0% · ~0 km.
+    final pct = v.knownBatteryPct;
+    final range = v.knownRangeKm;
     final price = widget.priceCents == null ? null : perMinuteLabel(widget.priceCents!);
     final description = widget.description?.trim();
     final hasDescription = description != null && description.isNotEmpty;
@@ -434,8 +437,7 @@ class _PickCardState extends State<_PickCard> {
       '${v.model} ${v.code}',
       ?category,
       if (hasDescription) description,
-      l.batterySemantics(v.batteryPct),
-      l.rangeSemantics(range),
+      batteryPillSemantics(l, pct, rangeKm: range),
       if (widget.priceCents != null) l.priceSemantics(money(widget.priceCents!)),
     ].join(', ');
     final dur = VoltiMotion.scaled(context, VoltiMotion.durSpring);
@@ -561,7 +563,7 @@ class _PickCardState extends State<_PickCard> {
                             FittedBox(
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.centerLeft,
-                              child: BatteryPill(v.batteryPct, rangeKm: range, light: true),
+                              child: BatteryPill(pct, rangeKm: range, light: true, semanticsLabel: batteryPillSemantics(l, pct, rangeKm: range)),
                             ),
                             if (price != null) ...[
                               const SizedBox(height: 6),

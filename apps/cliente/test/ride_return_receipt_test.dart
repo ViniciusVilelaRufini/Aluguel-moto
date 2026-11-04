@@ -217,9 +217,12 @@ void main() {
       await t.pump();
       await t.pump(const Duration(milliseconds: 400));
       expect(backend.paused, isTrue);
-      expect(find.text('R\$ 0,20/min'), findsNWidgets(2), reason: 'na estatistica e no selo');
+      expect(find.text('R\$ 0,20/min'), findsOneWidget, reason: 'na estatistica (o selo diz "Pausando…" enquanto a trava confirma)');
       expect(find.widgetWithText(VoltiButton, 'Destravar'), findsOneWidget);
-      expect(find.text('Moto travada · pausa · Por minuto · Seguro básico'), findsOneWidget);
+      // Trava ainda pendente (rastreador so rele espera a moto parar): estado neutro.
+      expect(find.text('Pausando… mantenha a moto parada · Por minuto · Seguro básico'), findsOneWidget);
+      await t.pump(const Duration(seconds: 31));
+      expect(find.text('Corrida pausada · Por minuto · Seguro básico'), findsOneWidget);
       await t.pumpWidget(const SizedBox());
     });
 

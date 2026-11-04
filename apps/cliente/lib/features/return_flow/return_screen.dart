@@ -22,7 +22,7 @@ import '../home/depot_providers.dart' show depotsProvider;
 import '../home/providers.dart';
 import '../pickup/depot_labels.dart';
 import '../ride/battery_sheet.dart' show rentalDepotProvider;
-import '../ride/ride_data.dart' show ReturnScreensOpen, returnScreensOpenProvider, rideEventBusProvider, sharedZonesProvider;
+import '../ride/ride_data.dart' show ReturnScreensOpen, lastSystemMessage, returnScreensOpenProvider, rideEventBusProvider, sharedZonesProvider;
 import '../ride/ride_screen.dart' show mapEnabledProvider;
 import '../station_swap/swap_logic.dart' show isOpenSwap;
 import '../station_swap/swap_widgets.dart' show openSwapProgress;
@@ -77,12 +77,19 @@ class ReturnScreen extends ConsumerStatefulWidget {
     super.key,
     required this.rentalId,
     this.pollInterval = const Duration(seconds: 2),
-    this.lockTimeout = const Duration(seconds: 90),
+    this.lockTimeout = const Duration(seconds: 150),
     this.depotPollInterval = const Duration(seconds: 10),
+    this.resumeWaiting = false,
   });
   final String rentalId;
   final Duration pollInterval;
+
+  /// Quanto a tela espera o aluguel sair de `ending`. O servidor desiste da trava
+  /// sem corte (`did_not_stop`) em 120 s e a cobranca pode seguir ate 150 s.
   final Duration lockTimeout;
+
+  /// Aberta pela corrida em `ending` ("Ver encerramento"): ja comeca na espera.
+  final bool resumeWaiting;
 
   /// Consulta do aluguel enquanto espera o operador (sem tempo real).
   final Duration depotPollInterval;
@@ -99,6 +106,13 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   bool? _endKeyTest; // rota da tentativa de [_endKey]: trocar de rota usa outra chave
   String? _photoKey; // objeto ja enviado desta foto
   String? _error;
+
+  /// Segundos esperando a trava (contador da tela de espera).
+  int _waitSeconds = 0;
+  Timer? _waitTick;
+
+  /// Espera a partir da qual a tela sugere conferir o GPS da moto.
+  static const _gpsHintAfter = 45;
 
   /// Encerramento recusado com `409 swap-open`: oferece "Continuar troca".
   bool _swapOpen = false;
@@ -133,11 +147,17 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     // aberta, e ela que reage ao fim do aluguel.
     _rideEvents = ref.read(rideEventBusProvider).stream.listen(_onRideEvent);
     _openFlag = ref.read(returnScreensOpenProvider)..count += 1;
+    if (widget.resumeWaiting) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _startPolling();
+      });
+    }
   }
 
   @override
   void dispose() {
     _poll?.cancel();
+    _waitTick?.cancel();
     _rideEvents?.cancel();
     _openFlag.count -= 1;
     _map.dispose();
@@ -149,6 +169,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     switch (e) {
       case RentalUpdated(:final rentalId, :final status) when rentalId == widget.rentalId && (status == 'ended' || status == 'force_ended'):
         _finish();
+      // O servidor desfez o encerramento (a moto nao parou): volta ao formulario.
+      case RentalUpdated(:final rentalId, :final status) when rentalId == widget.rentalId && _waitingLock && (status == 'active' || status == 'paused'):
+        _endReverted();
       case HandoverUpdated(:final handoverId):
         _onHandoverUpdated(handoverId);
       default:
@@ -176,6 +199,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     if (_finished || !mounted) return;
     _finished = true;
     _poll?.cancel();
+    _waitTick?.cancel();
     VoltiHaptics.success();
     ref.invalidate(currentRentalStateProvider);
     if (mounted) context.go('/summary/${widget.rentalId}');
@@ -232,6 +256,12 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       }
     } catch (e) {
       final f = toFailure(e);
+      // A primeira tentativa (mesma chave) ainda trava a moto no servidor, ou a
+      // resposta demorou: nao e erro, e esperar o aluguel sair de `ending`.
+      if (f.stillProcessing || f.timedOut) {
+        if (mounted) _startPolling();
+        return;
+      }
       if (mounted) {
         final outside = f.slug == 'rental-outside-return-zone';
         setState(() {
@@ -277,20 +307,32 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   /// Um toque so em "Continuar troca" (sem empilhar duas telas da troca).
   bool _navigating = false;
 
+  /// Consulta o aluguel ate ele sair de `ending`: encerrado abre o recibo;
+  /// `active`/`paused` (a trava nao cortou) volta ao formulario com a mensagem.
   void _startPolling() {
     _poll?.cancel();
+    _waitTick?.cancel();
     final maxTicks = (widget.lockTimeout.inMilliseconds / widget.pollInterval.inMilliseconds).ceil();
     var ticks = 0;
     setState(() {
       _waitingLock = true;
       _lockTimedOut = false;
+      _waitSeconds = 0;
+    });
+    _waitTick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _waitSeconds++);
     });
     _poll = Timer.periodic(widget.pollInterval, (_) async {
       try {
         final r = await ref.read(backendProvider).rental(widget.rentalId);
+        if (!mounted || !_waitingLock) return;
         if (r.status == RentalStatus.ended || r.status == RentalStatus.forceEnded) {
           _poll?.cancel();
           _finish();
+          return;
+        }
+        if (r.status != RentalStatus.ending) {
+          _endReverted();
           return;
         }
       } catch (_) {
@@ -298,17 +340,67 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       }
       if (++ticks >= maxTicks) {
         _poll?.cancel();
+        _waitTick?.cancel();
         if (mounted) setState(() => _lockTimedOut = true);
       }
     });
   }
+
+  /// O servidor devolveu o aluguel a `active` (a moto nao parou): volta ao
+  /// formulario mantendo a foto (ja enviada) e mostra a mensagem do sistema. A
+  /// proxima tentativa usa chave nova: a antiga repetiria o 202 desfeito.
+  Future<void> _endReverted() async {
+    if (!_waitingLock || _finished) return;
+    _poll?.cancel();
+    _waitTick?.cancel();
+    final l = context.l;
+    setState(() {
+      _waitingLock = false;
+      _lockTimedOut = false;
+      _endKey = null;
+      _error = l.endRevertedText;
+    });
+    VoltiHaptics.warning();
+    ref.invalidate(currentRentalStateProvider);
+    try {
+      final message = lastSystemMessage(await ref.read(backendProvider).rentalEvents(widget.rentalId));
+      if (mounted && message != null && !_waitingLock) setState(() => _error = message);
+    } catch (_) {
+      // sem a linha do tempo: fica o texto padrao
+    }
+  }
+
+  /// "Tentar encerrar de novo": novo POST com a mesma chave (o servidor repete o
+  /// resultado ou segue o encerramento em curso) e volta a esperar.
+  void _retryEnd() {
+    setState(() {
+      _waitingLock = false;
+      _lockTimedOut = false;
+    });
+    _end(test: _endKeyTest ?? false);
+  }
+
+  void _backToRide() {
+    _poll?.cancel();
+    _waitTick?.cancel();
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop();
+    } else {
+      context.go('/ride');
+    }
+  }
+
+  /// Sem "voltar" do sistema enquanto a moto trava: a corrida embaixo ainda
+  /// esta em `ending` (no prazo esgotado, "Voltar para a corrida" sai).
+  Widget _guard(Widget child) => PopScope(canPop: !_busy && !(_waitingLock && !_lockTimedOut), child: child);
 
   @override
   Widget build(BuildContext context) {
     final l = context.l;
     final ctx = ref.watch(returnContextProvider(widget.rentalId));
     if (_waitingLock && _lockTimedOut) {
-      return Scaffold(
+      return _guard(Scaffold(
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
@@ -331,11 +423,25 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                 const SizedBox(height: 8),
                 Text(l.lockNotConfirmedText, style: VoltiTypography.body, textAlign: TextAlign.center),
                 const SizedBox(height: 20),
-                VoltiButton(label: l.retry, icon: LucideIcons.refreshCw, fullWidth: true, onPressed: _startPolling),
+                VoltiButton(
+                  key: const Key('lock-retry-end'),
+                  label: l.retryEnd,
+                  icon: LucideIcons.refreshCw,
+                  fullWidth: true,
+                  onPressed: _retryEnd,
+                ),
+                const SizedBox(height: 8),
+                VoltiButton(
+                  key: const Key('lock-back-to-ride'),
+                  label: l.backToRide,
+                  variant: VoltiButtonVariant.secondary,
+                  fullWidth: true,
+                  onPressed: _backToRide,
+                ),
                 const SizedBox(height: 8),
                 VoltiButton(
                   label: l.contactSupport,
-                  variant: VoltiButtonVariant.secondary,
+                  variant: VoltiButtonVariant.ghost,
                   fullWidth: true,
                   onPressed: () => context.push('/account/support'),
                 ),
@@ -343,10 +449,10 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
             ),
           ),
         ),
-      );
+      ));
     }
     if (_waitingLock) {
-      return Scaffold(
+      return _guard(Scaffold(
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
@@ -375,11 +481,22 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(l.waitingLockText, style: VoltiTypography.body, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                Text(
+                  l.waitingLockElapsed(_waitSeconds),
+                  key: const Key('lock-elapsed'),
+                  style: VoltiTypography.caption.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  textAlign: TextAlign.center,
+                ),
+                if (_waitSeconds >= _gpsHintAfter) ...[
+                  const SizedBox(height: 12),
+                  NoticeBanner(key: const Key('lock-gps-hint'), icon: LucideIcons.satelliteDish, message: l.waitingLockGpsHint),
+                ],
               ],
             ),
           ),
         ),
-      );
+      ));
     }
     final rc = ctx.value;
     final inZone = rc?.inZone;
@@ -398,7 +515,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       if (_mode == ReturnMode.depot && d != null) _moveMapTo(LatLng(d.lat, d.lng));
     });
 
-    return Scaffold(
+    return _guard(Scaffold(
       body: Stack(
         children: [
           Positioned.fill(
@@ -665,7 +782,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
           ),
         ],
       ),
-    );
+    ));
   }
 }
 

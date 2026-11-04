@@ -377,14 +377,14 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get helpRule1Text =>
-      'Ciclovias, ciclofaixas e vias de baixa velocidade. Em calçadas e áreas de pedestres a moto reduz para 6 km/h sozinha.';
+      'Ciclovias, ciclofaixas e vias de baixa velocidade. Em calçadas e áreas de pedestres, respeite 6 km/h.';
 
   @override
   String get helpRule2Title => 'Velocidade máxima';
 
   @override
   String get helpRule2Text =>
-      'A moto nunca passa de 32 km/h. Em ciclovias o limite é 20 km/h.';
+      'Nunca passe de 32 km/h. Em ciclovias, respeite 20 km/h.';
 
   @override
   String get helpRule3Title => 'Capacete e equipamentos';
@@ -680,7 +680,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get rideLive => 'Em corrida';
 
   @override
-  String get ridePaused => 'Moto travada · pausa';
+  String get ridePaused => 'Corrida pausada';
 
   @override
   String get rideTitle => 'Corrida';
@@ -815,8 +815,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get waitingLock => 'Aguardando a moto travar';
 
   @override
-  String get waitingLockText =>
-      'A moto precisa parar para travar com segurança. Isso leva alguns segundos.';
+  String get waitingLockText => 'Deixe a moto parada. Pode levar até 30 s.';
 
   @override
   String get wallet => 'Carteira';
@@ -962,7 +961,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get lockNotConfirmedText =>
-      'A moto ainda não confirmou que travou. Tente de novo ou fale com o suporte para não ser cobrado a mais.';
+      'A moto ainda não confirmou que travou. Deixe-a parada e tente encerrar de novo, volte para a corrida ou fale com o suporte para não ser cobrado a mais.';
 
   @override
   String get contactSupport => 'Falar com o suporte';
@@ -3303,4 +3302,108 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get deleteAccountBlockedTitle => 'Não dá para excluir a conta agora';
+
+  @override
+  String get batteryUnknownSemantics => 'bateria desconhecida';
+
+  @override
+  String get batteryUnknownValue => 'Desconhecida';
+
+  @override
+  String vehicleMarkerSemantics(int pct) {
+    return 'Sua moto, bateria $pct por cento';
+  }
+
+  @override
+  String get vehicleMarkerUnknownSemantics => 'Sua moto, bateria desconhecida';
+
+  @override
+  String get swapDoneTitleNoPct => 'Bateria trocada';
+
+  @override
+  String get ridePausing => 'Pausando… mantenha a moto parada';
+
+  @override
+  String get pausingBadge => 'Pausando…';
+
+  @override
+  String get rideEnding => 'Encerrando… aguardando a trava';
+
+  @override
+  String get endingBadge => 'Encerrando…';
+
+  @override
+  String get rideOpenEnding => 'Ver encerramento';
+
+  @override
+  String get pauseFree => 'Pausa sem custo';
+
+  @override
+  String get pauseRevertedTitle => 'A pausa não foi concluída';
+
+  @override
+  String get pauseRevertedText =>
+      'A moto não travou e a corrida continua. Pare e peça a pausa de novo.';
+
+  @override
+  String get endRevertedTitle => 'O encerramento não foi concluído';
+
+  @override
+  String get endRevertedText =>
+      'A moto não travou e a corrida continua. Pare e peça o encerramento de novo.';
+
+  @override
+  String get lateLockTitle => 'Corrida pausada';
+
+  @override
+  String get lateLockText => 'A moto foi travada. Retome pelo app para seguir.';
+
+  @override
+  String get gpsStaleTitle => 'Sem sinal de GPS da moto';
+
+  @override
+  String get gpsStaleText => 'Velocidade e posição podem estar desatualizadas.';
+
+  @override
+  String zoneAdvisoryTitle(int limit) {
+    return 'Limite recomendado: $limit km/h';
+  }
+
+  @override
+  String get zoneAdvisoryTitleNoLimit =>
+      'Área com limite de velocidade reduzido';
+
+  @override
+  String get speedUnitOnly => 'km/h';
+
+  @override
+  String speedSemanticsNoLimit(int speed) {
+    return 'Velocidade $speed quilômetros por hora';
+  }
+
+  @override
+  String get speedSemanticsUnknown => 'Velocidade desconhecida';
+
+  @override
+  String waitingLockElapsed(int seconds) {
+    return 'Aguardando há $seconds s';
+  }
+
+  @override
+  String get waitingLockGpsHint =>
+      'Ainda sem confirmação. Em local coberto o GPS da moto pode demorar: mantenha-a parada.';
+
+  @override
+  String get retryEnd => 'Tentar encerrar de novo';
+
+  @override
+  String get handoverUnlocking => 'Destravando a moto… pode levar até 30 s';
+
+  @override
+  String get handoverUnlockSlow =>
+      'A moto ainda está destravando. Aguarde um pouco e confira de novo.';
+
+  @override
+  String get errorTimeout =>
+      'A resposta demorou mais que o esperado. Confira em instantes.';
 }

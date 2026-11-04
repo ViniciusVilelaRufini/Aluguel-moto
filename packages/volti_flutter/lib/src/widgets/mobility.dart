@@ -12,9 +12,11 @@ import 'motion.dart';
 import 'pressable.dart';
 
 /// Pilula escura com bateria e autonomia. O anel segue o nivel:
-/// >= 50 verde, 20-49 ambar, < 20 coral.
+/// >= 50 verde, 20-49 ambar, < 20 coral. [pct] `null` = bateria desconhecida
+/// (rastreador sem leitura, `batteryKnown: false`): mostra "—", sem autonomia,
+/// com o anel neutro ([unknownColor]); nunca "0%".
 class BatteryPill extends StatelessWidget {
-  const BatteryPill(this.pct, {super.key, this.rangeKm, this.light = false});
+  const BatteryPill(this.pct, {super.key, this.rangeKm, this.light = false, this.semanticsLabel});
 
   /// Pilula clara (fundo `surfaceContainerHighest` do tema, texto escuro e raio
   /// colorido pelo nivel): cartoes de moto no app do cliente. O padrao escuro
@@ -26,19 +28,33 @@ class BatteryPill extends StatelessWidget {
   /// coral abaixo de 20%.
   static Color lightBoltColor(int pct) => VoltiColors.batteryInkColor(pct);
 
-  /// 0-100.
-  final int pct;
+  /// Anel/raio/tique da bateria desconhecida: neutro (nao parece nivel baixo).
+  static const Color unknownColor = VoltiColors.textTertiary;
 
-  /// Autonomia estimada em km.
+  /// 0-100; `null` = desconhecida.
+  final int? pct;
+
+  /// Autonomia estimada em km (ignorada com a bateria desconhecida).
   final int? rangeKm;
+
+  /// Rotulo do leitor de tela (um no so, com a autonomia), ja localizado pelo
+  /// app. Sem ele, o padrao pt-BR ("Bateria 80%, autonomia de cerca de 12 km" /
+  /// "Bateria desconhecida").
+  final String? semanticsLabel;
 
   /// Cor do anel para [pct].
   static Color colorFor(int pct) => VoltiColors.batteryColor(pct);
 
+  String get _label =>
+      semanticsLabel ?? (pct == null ? 'Bateria desconhecida' : ['Bateria $pct%', if (rangeKm != null) 'autonomia de cerca de $rangeKm km'].join(', '));
+  String get _value => pct == null ? '—' : '$pct%';
+  int? get _range => pct == null ? null : rangeKm;
+
   @override
   Widget build(BuildContext context) {
     if (light) return _buildLight(context);
-    final c = colorFor(pct);
+    final level = pct;
+    final c = level == null ? unknownColor : colorFor(level);
     const style = TextStyle(
       fontFamily: VoltiTypography.fontSans,
       fontWeight: VoltiTypography.fwSemibold,
@@ -47,7 +63,8 @@ class BatteryPill extends StatelessWidget {
       color: Colors.white,
     );
     return Semantics(
-      label: 'Bateria $pct%',
+      label: _label,
+      excludeSemantics: true,
       child: Container(
         height: 30,
         padding: const EdgeInsets.only(left: 4, right: 12),
@@ -69,12 +86,12 @@ class BatteryPill extends StatelessWidget {
               child: Icon(LucideIcons.zap, size: 12, color: c),
             ),
             const SizedBox(width: 8),
-            Text('$pct%', style: style),
-            if (rangeKm != null) ...[
+            Text(_value, style: style),
+            if (_range != null) ...[
               const SizedBox(width: 8),
               Container(width: 1, height: 14, color: const Color(0x59FFFFFF)),
               const SizedBox(width: 8),
-              Text('~$rangeKm km', style: style),
+              Text('~$_range km', style: style),
             ],
           ],
         ),
@@ -91,8 +108,10 @@ class BatteryPill extends StatelessWidget {
       height: 1,
       color: scheme.onSurface,
     );
+    final level = pct;
     return Semantics(
-      label: 'Bateria $pct%',
+      label: _label,
+      excludeSemantics: true,
       child: Container(
         key: const Key('battery-pill-light'),
         height: 30,
@@ -106,15 +125,19 @@ class BatteryPill extends StatelessWidget {
               key: const Key('battery-bolt'),
               size: 14,
               // Tema escuro: os tons vivos da bateria (contraste sobre o fundo escuro).
-              color: Theme.of(context).brightness == Brightness.dark ? VoltiColors.batteryColor(pct) : lightBoltColor(pct),
+              color: level == null
+                  ? unknownColor
+                  : Theme.of(context).brightness == Brightness.dark
+                      ? VoltiColors.batteryColor(level)
+                      : lightBoltColor(level),
             ),
             const SizedBox(width: 6),
-            Text('$pct%', style: style),
-            if (rangeKm != null) ...[
+            Text(_value, style: style),
+            if (_range != null) ...[
               const SizedBox(width: 8),
               Container(width: 1, height: 14, color: VoltiPalette.of(context).borderStrong),
               const SizedBox(width: 8),
-              Text('~$rangeKm km', style: style),
+              Text('~$_range km', style: style),
             ],
           ],
         ),
@@ -136,6 +159,7 @@ class VehicleMarker extends StatefulWidget {
     this.animateIn = true,
     this.onTap,
     this.customerStyle = false,
+    this.semanticLabel,
   });
 
   /// Pin do app do cliente (design `VehicleMarker`): corpo escuro
@@ -144,8 +168,13 @@ class VehicleMarker extends StatefulWidget {
   final bool customerStyle;
 
   final VehicleStatus status;
-  final int batteryPct;
+
+  /// `null` = bateria desconhecida: tique neutro ([BatteryPill.unknownColor]).
+  final int? batteryPct;
   final bool selected;
+
+  /// Rotulo do leitor de tela, ja localizado pelo app. Sem ele, o padrao pt-BR.
+  final String? semanticLabel;
 
   /// Atraso da entrada: escalone os pins quando o mapa carrega (ex.: 260 ms + i * 70 ms).
   final Duration delay;
@@ -232,7 +261,8 @@ class _VehicleMarkerState extends State<VehicleMarker>
         : VoltiColors.statusColor(widget.status);
     return VoltiPressable(
       onTap: widget.onTap,
-      semanticLabel: 'Moto, bateria ${widget.batteryPct}%',
+      semanticLabel: widget.semanticLabel ??
+          (widget.batteryPct == null ? 'Moto, bateria desconhecida' : 'Moto, bateria ${widget.batteryPct}%'),
       child: _drop(
         AnimatedContainer(
           duration: VoltiMotion.scaled(context, VoltiMotion.durSpring),
@@ -290,7 +320,7 @@ class _VehicleMarkerState extends State<VehicleMarker>
                   width: 16,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: VoltiColors.batteryColor(widget.batteryPct),
+                    color: widget.batteryPct == null ? BatteryPill.unknownColor : VoltiColors.batteryColor(widget.batteryPct!),
                     borderRadius: BorderRadius.circular(2),
                     border: Border.all(color: Colors.white, width: 1.5),
                   ),

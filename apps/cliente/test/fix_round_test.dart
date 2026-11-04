@@ -108,7 +108,7 @@ void main() {
     expect(b.keys[0], b.keys[1]);
   });
 
-  testWidgets('espera da trava expira e oferece "Tentar de novo" e suporte', (t) async {
+  testWidgets('espera da trava expira e oferece "Tentar encerrar de novo", voltar e suporte', (t) async {
     tallScreen(t);
     final b = _EndBackend(ending: true);
     await t.pumpWidget(testApp(
@@ -125,7 +125,8 @@ void main() {
       await t.pump(const Duration(milliseconds: 100));
     }
     expect(find.text('Não conseguimos confirmar a trava'), findsOneWidget);
-    expect(find.text('Tentar de novo'), findsOneWidget);
+    expect(find.text('Tentar encerrar de novo'), findsOneWidget);
+    expect(find.text('Voltar à corrida'), findsOneWidget);
     expect(find.text('Falar com o suporte'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });

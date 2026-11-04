@@ -1171,3 +1171,14 @@ Contexto: o banco do dev single acumulou motos, aluguéis, pagamentos e alertas 
 6. **Depois do reset:** reiniciar a API (cache por processo de thing → moto da telemetria, aluguel por moto e modo do rastreador). O estado do Redis das motos apagadas (`iot:live:*` etc.) fica até expirar; sem moto no banco, a telemetria delas é descartada (`telemetry_unknown_thing`).
 
 Pendências: nenhuma de código. Testes: unitários (`dev-reset-bench.spec.ts`); a execução real é do controlador no dev single (sem Docker local).
+
+## 2026-11-03 · App do cliente na moto de bancada (`apps/cliente`, `packages/volti_flutter`, branch `fix/app-bancada`) · status: aplicada (sem mudança de contrato)
+
+Contexto: auditoria do app confirmada no emulador com a VLT-0059 (J16 GT06 `relay_only`: posição a cada 10 s, GPS muitas vezes inválido, `batteryKnown: false`, sem controle de velocidade). Detalhes no README do app.
+
+1. **Só o contrato existente.** Usa `Vehicle.batteryKnown`, `vehicle.position.batteryKnown`, `zone.notice.advisory` e `GET /rentals/{id}/events` (já com `customerAuth`). Nenhum endpoint novo.
+2. **Mensagem de status do sistema** = último `RentalEvent` com `actorType: system` e `message`, lido quando o status muda sem o cliente pedir (pausa desfeita por `did_not_stop`, encerramento desfeito, trava tardia). Sem ela, texto padrão do app.
+3. **Prazos do app alinhados ao servidor:** espera do fim até 150 s (did_not_stop em 120 s); `receiveTimeout` 45 s nos POSTs que esperam o rastreador (servidor até 35 s); "Pausando…" por 30 s.
+4. **Lacuna — limite imposto:** o cliente não recebe o tipo do rastreador (`Vehicle.trackerControlMode` é staff). O app só sabe que a moto não impõe limite quando chega um `zone.notice` com `advisory`; antes disso o medidor mostra o `speedLimitKmh` informado. **Proposta (não aplicada, aditiva):** expor ao cliente `Vehicle.speedControl: boolean` (ou `trackerControlMode` sem o resto dos campos staff) e o mesmo campo em `vehicle.position`, para o app esconder "limite" desde o início e a Ajuda poder citar o limite automático só nas motos que o aplicam. Precisa de aprovação.
+5. **Lacuna — bateria da entrega:** `Handover.batteryPct` é digitado pelo operador e não tem `batteryKnown`; 0 continua sendo mostrado como 0%. Sem campo no contrato, não há como distinguir "0 real" de "desconhecida"; fica como está.
+
