@@ -1348,3 +1348,24 @@ Moto devolvida fora do galpão fica `awaiting_pickup` com uma tarefa `collect`. 
 - cartão da tarefa em Operação.
 
 Com a tarefa `open`, o painel chama `POST /field-tasks/{id}/start`, que atribui a tarefa ao próprio usuário, e depois `/complete` com `depotId` e a nota. A moto volta a `free` no galpão. Sem tarefa `collect` aberta, o painel só mostra um aviso. Os erros 409 e 422 aparecem com o texto da API. No cartão de Operação, o galpão só vem pré-selecionado quando há um único galpão ativo, porque `FieldTask` não traz `depotId`.
+
+## 2026-11-04 · Qualidade do GPS: posição fraca, alarme de furto, GPS dormindo (branches `feat/gps-qualidade`, `feat/gps-painel`, `feat/gps-app`) · status: aplicada (contrato aditivo)
+
+Motivo: na bancada, as travas do J16 falhavam com `did_not_stop`. Os heartbeats mostraram o modo de economia (`Slp:1`): com a ignição desligada, o GPS liga por ~5 min e desliga por 10 a 70 min. No aparelho, foi enviado `SZCS#GPS_DISSLP=1` (resposta `SETOK`). Depois disso, o GPS ficou ligado por mais de 11 min com a ignição desligada e sem fonte externa.
+
+1. **Posição fraca.** A telemetria traz `satelites` (vindo do Traccar). Com menos de 5 satélites conhecidos, a posição é "fraca":
+   - não conta como amostra parada, nem na trava só relé nem na segunda guarda da ponte (só dificulta o corte);
+   - nas cercas de velocidade, **só pode baixar** o limite: pode fazer ENTER em zona `reduced_speed`, mas nunca EXIT, e nunca sobe acima do `geofence:limit` gravado;
+   - nas demais cercas, não muda o estado;
+   - não vai para o tracker do Amazon Location nem para o resolver de limite do unlock.
+   - Sem o campo `satelites`, o comportamento é o de antes.
+2. **Alarme de movimento travada.** Na cadeia de posições boas, o limiar é 20 m. A ponte guarda `lastGoodLocked`, a última posição boa vista com o corte ativo, e só a apaga quando o corte é solto. Depois de uma lacuna, e em qualquer posição fraca, compara com ela a 150 m. Isso acaba com o falso alarme do GPS voltando (~40 m) e mantém o alarme de furto no sono do GPS, em van ou em arrasto. A repetição do alarme por posição fraca é contida por distância.
+3. **`Vehicle.gpsSatellites` e `Vehicle.gpsSleep`.** O `gpsSleep` sai do byte terminal info cru (`attributes.status` do Traccar), quando o bit 6 e o bit 1 estão desligados e o status tem até 3 min. A equipe sempre vê; o cliente só vê junto com a posição visível.
+   - **Painel:** linha "GPS" na ficha, anel no pino do mapa e aviso no Bloquear.
+   - **App:** "ligue a ignição para a trava confirmar" na devolução e na pausa.
+4. **Revisões independentes.** Trava, zonas, teto de 32 km/h e privacidade do cliente: sem problemas. O ponto cego do alarme de furto foi corrigido.
+5. **Pendências.**
+   - Posições fracas que oscilam mais de 150 m com a moto parada podem gerar alarmes repetidos. Exigir duas seguidas.
+   - `lastGoodLocked` fica só na memória: um reinício da ponte durante um furto com o GPS desligado perde a referência. Persistir no Redis.
+   - Os eventos `vehicle.position` não trazem satélites nem `gpsSleep`, então o anel do mapa só atualiza no GET.
+   - No modo aws, `gpsSleep` só é lido durante comandos.
