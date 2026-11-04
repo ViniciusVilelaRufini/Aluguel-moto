@@ -130,6 +130,52 @@ test('Acertar no balcão: recebe pelo método do balcão a partir das Entregas',
   await expect(dialog).toBeVisible();
 });
 
+test('Acertar no balcão: resposta perdida depois do registro não quita duas vezes', async ({ page }) => {
+  const mock = await loginMocked(page, { group: 'admin' });
+  mock.db.counter.failAfterApplyOnce = true;
+  await page.goto('/customers?tab=rentals&rental=rent-002');
+  await page.getByTestId('rental-counter-settle').click();
+  const dialog = page.getByTestId('counter-settle-dialog');
+  await page.getByTestId('counter-debt-receive').click();
+  await page.getByTestId('counter-action-amount').fill('25,00');
+  await page.getByTestId('counter-action-confirm').click();
+  await expect(page.getByTestId('counter-settle-error')).toBeVisible();
+  // O saldo recarrega mesmo no erro: o servidor já registrou os 25,00.
+  await expect(page.getByTestId('counter-debt-outstanding')).toContainText('35,00');
+  await page.getByTestId('counter-action-cancel').click();
+  // Fecha e reabre o diálogo dentro do staleTime padrão: o saldo vem do servidor de novo.
+  await dialog.getByRole('button', { name: 'Fechar' }).click();
+  await page.getByTestId('rental-counter-settle').click();
+  await expect(page.getByTestId('counter-debt-outstanding')).toContainText('35,00');
+  await page.getByTestId('counter-debt-receive').click();
+  await expect(page.getByTestId('counter-action-amount')).toHaveValue('35,00');
+  const settles = () => mock.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/counter-settle'));
+  expect(settles()).toHaveLength(1); // reabrir não reenvia nada
+  // O atendente repete os mesmos dados: mesma chave, a API devolve o já registrado e o saldo não cai de novo.
+  await page.getByTestId('counter-action-amount').fill('25,00');
+  await page.getByTestId('counter-action-confirm').click();
+  await expect(page.getByTestId('counter-action')).toHaveCount(0);
+  expect(settles()).toHaveLength(2);
+  expect(settles()[1]!.headers['idempotency-key']).toBe(settles()[0]!.headers['idempotency-key']);
+  await expect(page.getByTestId('counter-debt-outstanding')).toContainText('35,00');
+  expect(mock.db.counter.debts[0]!.outstandingCents).toBe(3500);
+});
+
+test('Acertar no balcão: saldo mudado no servidor mostra aviso sem centavos crus e recarrega', async ({ page }) => {
+  const mock = await loginMocked(page, { group: 'operacao' });
+  await page.goto('/entregas');
+  await page.getByTestId('handovers-table').getByText('VLT-002').first().click();
+  await page.getByTestId('handover-counter-settle').click();
+  await expect(page.getByTestId('counter-debt-outstanding')).toContainText('60,00');
+  mock.db.counter.debts[0]!.outstandingCents = 1000; // outro balcão quitou parte enquanto isso
+  await page.getByTestId('counter-debt-receive').click();
+  await page.getByTestId('counter-action-confirm').click();
+  const err = page.getByTestId('counter-settle-error');
+  await expect(err).toHaveText('O saldo mudou. Confira e tente de novo.');
+  await expect(err).not.toContainText('1000');
+  await expect(page.getByTestId('counter-debt-outstanding')).toContainText('10,00');
+});
+
 test('Acertar no balcão: aluguel aberto aguarda o encerramento', async ({ page }) => {
   const mock = await loginMocked(page, { group: 'admin' });
   mock.db.counter.rentalStatus = 'active';

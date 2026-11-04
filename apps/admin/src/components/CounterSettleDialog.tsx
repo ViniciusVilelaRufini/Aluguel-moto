@@ -16,9 +16,21 @@ import { Button } from '@/ds/Button';
 type Debt = S<'CounterDebt'>;
 type Deposit = S<'CounterDepositBalance'>;
 
-/** Ação em andamento: receber no balcão, abater da caução ou devolver a caução. Uma `Idempotency-Key` por ação. */
-type ActionInput = { kind: 'receive' | 'deduct'; debt: Debt } | { kind: 'refund'; deposit: Deposit };
-type Action = ActionInput & { key: string };
+/** Ação em andamento (receber no balcão, abater da caução, devolver a caução), pelo id do débito ou da caução. */
+type Action = { kind: 'receive' | 'deduct'; paymentId: string } | { kind: 'refund'; depositId: string };
+
+/**
+ * `Idempotency-Key` estável pelos dados da ação (tipo, alvo, valor, método/caução, referência), e não por abertura:
+ * resposta perdida (timeout/5xx depois do registro) seguida de cancelar e reabrir com os mesmos dados reusa a chave,
+ * e a API devolve o que já registrou em vez de quitar de novo. Sai do mapa só quando a ação dá certo. Fica no módulo
+ * para sobreviver a fechar e reabrir o diálogo.
+ */
+const ACTION_KEYS = new Map<string, string>();
+function actionKey(signature: string): string {
+  let k = ACTION_KEYS.get(signature);
+  if (!k) { k = crypto.randomUUID(); ACTION_KEYS.set(signature, k); }
+  return k;
+}
 
 const row = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const, padding: '10px 0', borderBottom: '1px solid var(--ink-100)' };
 
@@ -39,17 +51,31 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
   const [fieldError, setFieldError] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
 
+  // Sempre do servidor ao abrir (sem o staleTime padrão): o valor sugerido nunca vem de um saldo antigo.
   const balance = useQuery({
     queryKey: ['counter-balance', rentalId],
     queryFn: () => unwrap(api.GET('/rentals/{id}/counter-balance', { params: { path: { id: rentalId } } })),
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
   const b = balance.data;
-  const deposits = b?.deposits ?? [];
+  const deposits: Deposit[] = b?.deposits ?? [];
+  const reload = () => qc.invalidateQueries({ queryKey: ['counter-balance', rentalId] });
+  // Débito/caução da ação sempre do saldo atual: depois de recarregar, o limite já é o novo.
+  const debt: Debt | undefined = action && action.kind !== 'refund' ? b?.debts.find((d) => d.paymentId === action.paymentId) : undefined;
+  const deposit = action && action.kind === 'refund' ? deposits.find((d) => d.depositId === action.depositId) : undefined;
+  const target = debt ?? deposit;
+  const stale = balance.isFetching;
 
-  const open = (a: ActionInput) => {
-    const max = a.kind === 'refund' ? a.deposit.availableCents : a.debt.outstandingCents;
+  const close = () => { reload(); onClose(); };
+  const cancelAction = () => { setAction(null); reload(); };
+
+  const open = (a: Action) => {
+    const max = a.kind === 'refund'
+      ? deposits.find((d) => d.depositId === a.depositId)?.availableCents ?? 0
+      : b?.debts.find((d) => d.paymentId === a.paymentId)?.outstandingCents ?? 0;
     const cap = a.kind === 'deduct' && deposits[0] ? Math.min(max, deposits[0].availableCents) : max;
-    setAction({ ...a, key: crypto.randomUUID() });
+    setAction(a);
     setAmount(toReais(cap));
     setMethod('counter_card');
     setDepositId(deposits[0]?.depositId ?? '');
@@ -58,47 +84,52 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
     setError(null);
   };
 
-  const limit = (a: Action): { cents: number; text: string } => {
-    if (a.kind === 'refund') return { cents: a.deposit.availableCents, text: `O valor passa do disponível da caução (${formatBRL(a.deposit.availableCents)})` };
-    if (a.kind === 'deduct') {
-      const dep = deposits.find((d) => d.depositId === depositId);
-      const avail = dep?.availableCents ?? 0;
-      if (avail < a.debt.outstandingCents) return { cents: avail, text: `O valor passa do disponível da caução (${formatBRL(avail)})` };
+  const limit = (): { cents: number; text: string } => {
+    if (deposit) return { cents: deposit.availableCents, text: `O valor passa do disponível da caução (${formatBRL(deposit.availableCents)})` };
+    const owed = debt?.outstandingCents ?? 0;
+    if (action?.kind === 'deduct') {
+      const avail = deposits.find((d) => d.depositId === depositId)?.availableCents ?? 0;
+      if (avail < owed) return { cents: avail, text: `O valor passa do disponível da caução (${formatBRL(avail)})` };
     }
-    return { cents: a.debt.outstandingCents, text: `O valor passa do saldo do débito (${formatBRL(a.debt.outstandingCents)})` };
+    return { cents: owed, text: `O valor passa do saldo do débito (${formatBRL(owed)})` };
   };
 
   const confirm = () => run(async () => {
-    if (!action) return;
+    if (!action || !target || stale) return;
     const cents = reaisToCents(amount);
     if (cents === null || cents <= 0) { setFieldError('Informe um valor válido'); return; }
-    const lim = limit(action);
+    const lim = limit();
     if (cents > lim.cents) { setFieldError(lim.text); return; }
     setFieldError(undefined); setError(null);
     const ref = reference.trim() ? { reference: reference.trim() } : {};
-    const header = { 'Idempotency-Key': action.key };
+    const source = action.kind === 'deduct' ? { fromDepositId: depositId } : { method };
+    const targetId = action.kind === 'refund' ? action.depositId : action.paymentId;
+    const signature = JSON.stringify([rentalId, action.kind, targetId, cents, action.kind === 'refund' ? null : source, ref]);
+    const header = { 'Idempotency-Key': actionKey(signature) };
     try {
       if (action.kind === 'refund') {
-        await unwrap(api.POST('/payments/deposits/{id}/counter-refund', { params: { path: { id: action.deposit.depositId }, header }, body: { amountCents: cents, ...ref } }));
+        await unwrap(api.POST('/payments/deposits/{id}/counter-refund', { params: { path: { id: action.depositId }, header }, body: { amountCents: cents, ...ref } }));
         toast('Devolução da caução registrada');
       } else {
-        const source = action.kind === 'deduct' ? { fromDepositId: depositId } : { method };
-        await unwrap(api.POST('/payments/{id}/counter-settle', { params: { path: { id: action.debt.paymentId }, header }, body: { amountCents: cents, ...source, ...ref } }));
+        await unwrap(api.POST('/payments/{id}/counter-settle', { params: { path: { id: action.paymentId }, header }, body: { amountCents: cents, ...source, ...ref } }));
         toast(action.kind === 'deduct' ? 'Valor abatido da caução' : 'Pagamento registrado');
         qc.invalidateQueries({ queryKey: ['payments'] });
       }
+      ACTION_KEYS.delete(signature);
       setAction(null);
-      qc.invalidateQueries({ queryKey: ['counter-balance', rentalId] });
     } catch (e) {
       setError(errorText(e));
+    } finally {
+      // Também no erro: a resposta pode ter se perdido depois do registro; o saldo mostrado tem de ser o do servidor.
+      reload();
     }
   });
 
   const waiting = b && isRentalOpen(b.rentalStatus);
 
   return (
-    <Modal open width={520} title="Acertar no balcão" onClose={onClose} testId="counter-settle-dialog"
-      actions={<Button size="sm" variant="ghost" onClick={onClose}>Fechar</Button>}>
+    <Modal open width={520} title="Acertar no balcão" onClose={close} testId="counter-settle-dialog"
+      actions={<Button size="sm" variant="ghost" onClick={close}>Fechar</Button>}>
       <ErrorNote error={balance.error} onRetry={() => balance.refetch()} />
       {!b && balance.isLoading && <PanelSkeleton rows={3} />}
       {b && waiting && (
@@ -120,8 +151,8 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{PAYMENT_METHOD[d.method]}</div>
                 </div>
                 <strong data-testid="counter-debt-outstanding" style={{ fontSize: 15 }}>{formatBRL(d.outstandingCents)}</strong>
-                <Button size="sm" variant="dark" icon="Wallet" testId="counter-debt-receive" onClick={() => open({ kind: 'receive', debt: d })}>Receber</Button>
-                {deposits.length > 0 && <Button size="sm" variant="secondary" icon="ArrowDownToLine" testId="counter-debt-deduct" onClick={() => open({ kind: 'deduct', debt: d })}>Abater da caução</Button>}
+                <Button size="sm" variant="dark" icon="Wallet" testId="counter-debt-receive" disabled={stale} onClick={() => open({ kind: 'receive', paymentId: d.paymentId })}>Receber</Button>
+                {deposits.length > 0 && <Button size="sm" variant="secondary" icon="ArrowDownToLine" testId="counter-debt-deduct" disabled={stale} onClick={() => open({ kind: 'deduct', paymentId: d.paymentId })}>Abater da caução</Button>}
               </div>
             ))}
           </div>
@@ -135,14 +166,14 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Retida {formatBRL(d.amountCents)} · abatida {formatBRL(d.capturedCents)} · devolvida {formatBRL(d.refundedCents)}</div>
                 </div>
                 <strong data-testid="counter-deposit-available" style={{ fontSize: 15 }}>{formatBRL(d.availableCents)}</strong>
-                <Button size="sm" variant="secondary" icon="Undo2" testId="counter-deposit-refund" onClick={() => open({ kind: 'refund', deposit: d })}>Devolver</Button>
+                <Button size="sm" variant="secondary" icon="Undo2" testId="counter-deposit-refund" disabled={stale} onClick={() => open({ kind: 'refund', depositId: d.depositId })}>Devolver</Button>
               </div>
             ))}
           </div>
         </>
       )}
 
-      {action && b && !waiting && (
+      {action && b && !waiting && target && (
         <div data-testid="counter-action" style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 14, borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)' }}>
           <div style={{ font: 'var(--type-label)' }}>
             {action.kind === 'receive' ? 'Receber no balcão' : action.kind === 'deduct' ? 'Abater da caução' : 'Devolver caução'}
@@ -168,8 +199,8 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
           </div>
           {error && <Alert tone="danger" testId="counter-settle-error">{error}</Alert>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Button size="sm" variant="ghost" onClick={() => setAction(null)}>Cancelar</Button>
-            <Button size="sm" variant="dark" testId="counter-action-confirm" disabled={busy} busy={busy} onClick={confirm}>{busy ? 'Registrando...' : 'Confirmar'}</Button>
+            <Button size="sm" variant="ghost" testId="counter-action-cancel" onClick={cancelAction}>Cancelar</Button>
+            <Button size="sm" variant="dark" testId="counter-action-confirm" disabled={busy || stale} busy={busy} onClick={confirm}>{busy ? 'Registrando...' : 'Confirmar'}</Button>
           </div>
         </div>
       )}

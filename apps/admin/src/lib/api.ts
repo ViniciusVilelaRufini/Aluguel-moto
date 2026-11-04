@@ -41,6 +41,9 @@ const SLUG_MESSAGES: Record<string, string> = {
   'subscription-required': 'O cliente não tem plano semanal ou mensal ativo',
   'maintenance-slot-unavailable': 'Horário de manutenção indisponível',
   'pix-key-invalid': 'Chave Pix inválida',
+  // Balcão: o detalhe da API traz centavos crus; o painel recarrega o saldo e pede para conferir.
+  'counter-amount-mismatch': 'O saldo mudou. Confira e tente de novo.',
+  'idempotency-key-reused': 'Esta operação já foi enviada com outros dados. Confira o saldo e tente de novo.',
 };
 
 interface ProblemLike {

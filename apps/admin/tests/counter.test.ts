@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { can } from '@/lib/permissions';
 import { AUDIT_ACTION_LABEL } from '@/lib/audit-labels';
-import { ApiError } from '@/lib/api';
+import { ApiError, problemMessage } from '@/lib/api';
 import {
   COUNTER_METHOD_LABEL, COUNTER_PLAN_LABEL, COUNTER_QUANTITY_MAX, checkoutErrorMessage, clampQuantity, reaisToCents, isRentalOpen,
 } from '@/lib/counter';
@@ -62,5 +62,13 @@ describe('balcão no painel (Task 13)', () => {
     expect(isRentalOpen('ending')).toBe(true);
     expect(isRentalOpen('ended')).toBe(false);
     expect(isRentalOpen('force_ended')).toBe(false);
+  });
+});
+
+describe('mensagens de erro do acerto (fix round 1)', () => {
+  it('saldo mudado e chave reutilizada viram texto em pt-BR, sem centavos crus', () => {
+    const p = (slug: string) => problemMessage({ type: `https://api.volti.app/problems/${slug}`, detail: 'O valor passa do saldo do débito (6000).' }, 422).message;
+    expect(p('counter-amount-mismatch')).toBe('O saldo mudou. Confira e tente de novo.');
+    expect(p('idempotency-key-reused')).toBe('Esta operação já foi enviada com outros dados. Confira o saldo e tente de novo.');
   });
 });

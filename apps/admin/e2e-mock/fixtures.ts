@@ -297,5 +297,9 @@ export function makeCounterState() {
     mismatchOnce: false,
     /** Força um erro no checkout (ex.: 422 `location-consent-required`). */
     checkoutError: undefined as { status: number; slug: string; title: string } | undefined,
+    /** O próximo acerto é registrado e a resposta "se perde" (500), como um timeout depois do commit. */
+    failAfterApplyOnce: false,
+    /** Respostas de sucesso do acerto por `Idempotency-Key` (replay como na API). */
+    idempotent: new Map<string, { status?: number; json: unknown }>(),
   };
 }

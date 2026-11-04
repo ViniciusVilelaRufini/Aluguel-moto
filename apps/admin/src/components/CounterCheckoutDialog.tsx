@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, api, unwrap } from '@/lib/api';
 import { formatBRL } from '@/lib/format';
@@ -60,8 +60,11 @@ export function CounterCheckoutDialog({ handoverId, onClose }: { handoverId: str
   } : null;
   // Uma Idempotency-Key por tentativa: a mesma enquanto os dados não mudam (toque duplo, nova tentativa), nova depois.
   const signature = body ? JSON.stringify(body) : '';
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const idempotencyKey = useMemo(() => crypto.randomUUID(), [signature]);
+  const keyRef = useRef<{ signature: string; key: string } | null>(null);
+  const keyFor = (sig: string) => {
+    if (keyRef.current?.signature !== sig) keyRef.current = { signature: sig, key: crypto.randomUUID() };
+    return keyRef.current.key;
+  };
 
   const max = COUNTER_QUANTITY_MAX[plan];
   const changePlan = (p: CounterPlan) => { setPlan(p); setQuantity((n) => clampQuantity(p, n)); setError(null); };
@@ -88,7 +91,7 @@ export function CounterCheckoutDialog({ handoverId, onClose }: { handoverId: str
     if (!body) return;
     setError(null);
     try {
-      await unwrap(api.POST('/handovers/{id}/counter-checkout', { params: { path: { id: handoverId }, header: { 'Idempotency-Key': idempotencyKey } }, body }));
+      await unwrap(api.POST('/handovers/{id}/counter-checkout', { params: { path: { id: handoverId }, header: { 'Idempotency-Key': keyFor(signature) } }, body }));
       toast('Aluguel iniciado — moto liberada');
       qc.invalidateQueries({ queryKey: ['depot-pickups'] });
       qc.invalidateQueries({ queryKey: ['handovers'] });
@@ -96,6 +99,9 @@ export function CounterCheckoutDialog({ handoverId, onClose }: { handoverId: str
       onClose();
     } catch (e) {
       if (e instanceof ApiError && e.slug === 'counter-amount-mismatch') await quote.refetch();
+      // A resposta pode ter se perdido depois do registro: a agenda recarrega para mostrar o estado real.
+      qc.invalidateQueries({ queryKey: ['depot-pickups'] });
+      qc.invalidateQueries({ queryKey: ['handover', handoverId] });
       setError(checkoutErrorMessage(e));
     }
   });

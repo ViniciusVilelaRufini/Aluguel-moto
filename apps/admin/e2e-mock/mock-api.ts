@@ -100,7 +100,7 @@ export async function installMockApi(page_: Page, opts: MockOptions = {}): Promi
     if (opts.latencyMs) await new Promise((r) => setTimeout(r, opts.latencyMs));
     const send = (status: number, json: unknown) => route.fulfill({ status, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify(json) });
     if (opts.failPaths?.some((p) => url.pathname.startsWith(p))) return send(500, problem(500, 'Falha simulada'));
-    const res = handle(db, method, url.pathname, url.searchParams, body);
+    const res = handle(db, method, url.pathname, url.searchParams, body, req.headers()['idempotency-key']);
     if (res === undefined) {
       mock.unmocked.push(`${method} ${url.pathname}`);
       return send(404, problem(404, `Sem mock para ${method} ${url.pathname}`, 'not-mocked'));
@@ -128,7 +128,7 @@ export async function installMockApi(page_: Page, opts: MockOptions = {}): Promi
 type Res = { status?: number; json: unknown } | undefined;
 const ok = (json: unknown, status = 200): Res => ({ status, json });
 
-function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: URLSearchParams, body: unknown): Res {
+function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: URLSearchParams, body: unknown, idemKey?: string): Res {
   const p = path.replace(/\/$/, '');
   const seg = p.split('/').filter(Boolean);
   // /pricing/plans/{id}, /insurance/coverages/{c}, /maintenance/tasks/{id} e /support/{recurso}/{id} levam o id no 3o segmento
@@ -324,18 +324,26 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
     const debts = c.debts.filter((d) => d.outstandingCents > 0);
     return ok({ rentalId: id, customerId: 'cus-002', customerFirstName: 'Carla', rentalStatus: c.rentalStatus, debtTotalCents: debts.reduce((s, d) => s + d.outstandingCents, 0), debts, deposits: c.deposits.filter((d) => d.availableCents > 0) });
   }
+  // Acerto: como a API, a mesma Idempotency-Key devolve o resultado já registrado (erros não são memorizados).
+  const replay = idemKey && (method === 'POST') ? db.counter.idempotent.get(idemKey) : undefined;
+  if (replay && /\/counter-(settle|refund)$/.test(p)) return replay;
+  const remember = (res: Res): Res => {
+    if (idemKey && res) db.counter.idempotent.set(idemKey, res);
+    if (db.counter.failAfterApplyOnce) { db.counter.failAfterApplyOnce = false; return { status: 500, json: problem(500, 'Falha simulada depois do registro') }; }
+    return res;
+  };
   if (method === 'POST' && match(/^\/payments\/deposits\/[^/]+\/counter-refund$/)) {
     const d = db.counter.deposits.find((x) => x.depositId === seg[2]); if (!d) return notFound();
     const amount = Number(b.amountCents);
-    if (amount > d.availableCents) return { status: 422, json: problem(422, 'O valor passa do disponível da caução.', 'counter-amount-mismatch') };
+    if (amount > d.availableCents) return { status: 422, json: problem(422, `O valor passa do disponível da caução (${d.availableCents}).`, 'counter-amount-mismatch') };
     d.refundedCents += amount; d.availableCents -= amount;
     if (d.availableCents === 0) d.status = d.capturedCents > 0 ? 'captured' : 'released';
-    return ok({ id: d.depositId, customerId: 'cus-002', rentalId: d.rentalId, method: d.method, status: d.status, amountCents: d.amountCents, capturedCents: d.capturedCents, refundedCents: d.refundedCents, createdAt: now });
+    return remember(ok({ id: d.depositId, customerId: 'cus-002', rentalId: d.rentalId, method: d.method, status: d.status, amountCents: d.amountCents, capturedCents: d.capturedCents, refundedCents: d.refundedCents, createdAt: now }));
   }
   if (method === 'POST' && match(/^\/payments\/[^/]+\/counter-settle$/)) {
     const debt = db.counter.debts.find((x) => x.paymentId === id); if (!debt) return notFound();
     const amount = Number(b.amountCents);
-    if (amount > debt.outstandingCents) return { status: 422, json: problem(422, 'O valor passa do saldo do débito.', 'counter-amount-mismatch') };
+    if (amount > debt.outstandingCents) return { status: 422, json: problem(422, `O valor passa do saldo do débito (${debt.outstandingCents}).`, 'counter-amount-mismatch') };
     if (b.fromDepositId) {
       const d = db.counter.deposits.find((x) => x.depositId === b.fromDepositId);
       if (!d || amount > d.availableCents) return { status: 422, json: problem(422, 'O valor passa do disponível da caução.', 'counter-amount-mismatch') };
@@ -343,7 +351,7 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
     }
     debt.outstandingCents -= amount;
     if (debt.outstandingCents === 0) debt.status = 'paid';
-    return ok({ id: debt.paymentId, customerId: 'cus-002', rentalId: debt.rentalId, kind: debt.kind, status: debt.status, method: debt.method, amountCents: 6000, refundedCents: 0, outstandingCents: debt.outstandingCents, createdAt: debt.createdAt });
+    return remember(ok({ id: debt.paymentId, customerId: 'cus-002', rentalId: debt.rentalId, kind: debt.kind, status: debt.status, method: debt.method, amountCents: 6000, refundedCents: 0, outstandingCents: debt.outstandingCents, createdAt: debt.createdAt }));
   }
   if (method === 'GET' && match(/^\/handovers\/[^/]+$/)) { const h = find(db.handovers); return h ? ok(h) : notFound(); }
   if (method === 'GET' && match(/^\/batteries\/[^/]+\/movements$/)) return ok({ items: [] });
