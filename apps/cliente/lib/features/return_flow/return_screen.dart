@@ -41,9 +41,21 @@ bool? vehicleGpsStale(Vehicle v, DateTime now) {
   return now.difference(at) > gpsStaleAfter;
 }
 
+/// Satelites abaixo disto = posicao fraca: nao confirma a parada para a trava so rele.
+const gpsWeakBelowSatellites = 5;
+
+/// Moto sem GPS util para a trava: o rastreador desligou o GPS (ignicao desligada),
+/// tem poucos satelites ou a ultima posicao e velha. `null` = nao sabemos.
+bool? vehicleNoGps(Vehicle v, DateTime now) {
+  if (v.gpsSleep == true) return true;
+  final sats = v.gpsSatellites;
+  if (sats != null && sats < gpsWeakBelowSatellites) return true;
+  return vehicleGpsStale(v, now);
+}
+
 /// Zonas de devolucao e onde a moto esta em relacao a elas.
 class ReturnContext {
-  const ReturnContext({required this.zones, this.vehicle, this.inside, this.nearest, this.gpsStale});
+  const ReturnContext({required this.zones, this.vehicle, this.inside, this.nearest, this.gpsStale, this.gpsSleep = false});
 
   /// Zonas `return` ativas (os pontos verdes do mapa).
   final List<GeoZone> zones;
@@ -62,6 +74,9 @@ class ReturnContext {
 
   /// Ver [vehicleGpsStale]: `true` avisa antes de encerrar que a moto nao vai travar.
   final bool? gpsStale;
+
+  /// O rastreador desligou o GPS com a ignicao desligada (`Vehicle.gpsSleep`).
+  final bool gpsSleep;
 }
 
 final returnContextProvider = FutureProvider.autoDispose.family<ReturnContext, String>((ref, rentalId) async {
@@ -70,17 +85,19 @@ final returnContextProvider = FutureProvider.autoDispose.family<ReturnContext, S
   final zones = (await ref.watch(sharedZonesProvider.future)).where((z) => z.active && z.type == ZoneType.return_).toList();
   LatLng? pos;
   bool? gpsStale;
+  var gpsSleep = false;
   try {
     final rental = await backend.rental(rentalId);
     final v = await backend.vehicleByCode(rental.vehicleCode);
     // 0,0 = moto que nunca teve posicao: sem posicao (o servidor decide o ponto verde).
     if (v.lat != 0 || v.lng != 0) pos = LatLng(v.lat, v.lng);
-    gpsStale = vehicleGpsStale(v, ref.read(clockProvider)());
+    gpsStale = vehicleNoGps(v, ref.read(clockProvider)());
+    gpsSleep = v.gpsSleep == true;
   } catch (_) {
     // Sem posicao: mostra as zonas e deixa o servidor validar no encerramento.
   }
   final inside = pos == null ? null : zoneContaining(pos.latitude, pos.longitude, zones);
-  return ReturnContext(zones: zones, vehicle: pos, inside: inside, nearest: inside ?? (pos == null ? null : nearestZone(pos, zones)), gpsStale: gpsStale);
+  return ReturnContext(zones: zones, vehicle: pos, inside: inside, nearest: inside ?? (pos == null ? null : nearestZone(pos, zones)), gpsStale: gpsStale, gpsSleep: gpsSleep);
 });
 
 /// Onde o cliente devolve a moto.
@@ -137,6 +154,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
 
   /// Moto sem GPS durante a espera (ver [vehicleGpsStale]); `null` = nao sabemos.
   bool? _noGps;
+
+  /// Dentro de [_noGps]: o GPS esta desligado pela ignicao desligada.
+  bool _gpsSleep = false;
   Timer? _gpsPoll;
   bool _gpsInFlight = false;
 
@@ -213,7 +233,10 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       // Posicao nova da moto (mesmo socket da corrida; 0,0 nao e posicao): o GPS voltou.
       case VehiclePositionEvent(:final lat, :final lng) when lat != 0 || lng != 0:
         if (_waitingLock && _noGps == true) {
-          setState(() => _noGps = false);
+          setState(() {
+            _noGps = false;
+            _gpsSleep = false;
+          });
         } else if (!_waitingLock && ref.read(returnContextProvider(widget.rentalId)).value?.gpsStale == true) {
           // Formulario: o aviso some com a ficha relida.
           ref.invalidate(returnContextProvider(widget.rentalId));
@@ -376,6 +399,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       _waitSeconds = 0;
       // Nunca o contexto em cache (pode ter minutos): a ficha e relida ja.
       _noGps = null;
+      _gpsSleep = false;
     });
     _waitTick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _waitSeconds++);
@@ -416,8 +440,14 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       final backend = ref.read(backendProvider);
       final v = await backend.vehicleByCode((await backend.rental(widget.rentalId)).vehicleCode);
       if (!mounted || !_waitingLock || gen != _pollGen) return;
-      final stale = vehicleGpsStale(v, ref.read(clockProvider)());
-      if (stale != null && stale != _noGps) setState(() => _noGps = stale);
+      final stale = vehicleNoGps(v, ref.read(clockProvider)());
+      final sleep = v.gpsSleep == true;
+      if (stale != null && (stale != _noGps || sleep != _gpsSleep)) {
+        setState(() {
+          _noGps = stale;
+          _gpsSleep = sleep;
+        });
+      }
     } catch (_) {
       // sem a ficha: fica o que ja sabiamos
     } finally {
@@ -437,11 +467,16 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     // Sem GPS a moto nunca confirma a parada: a mensagem do servidor ("pare e
     // peca de novo") nao resolve; diz o que fazer.
     final noGps = _noGps == true;
+    final sleep = _gpsSleep;
     setState(() {
       _waitingLock = false;
       _lockTimedOut = false;
       _endKey = null;
-      _error = noGps ? l.endRevertedNoGps : l.endRevertedText;
+      _error = sleep
+          ? l.endRevertedGpsSleep
+          : noGps
+          ? l.endRevertedNoGps
+          : l.endRevertedText;
     });
     VoltiHaptics.warning();
     ref.invalidate(currentRentalStateProvider);
@@ -577,7 +612,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                 if (_noGps == true) ...[
                   // Sem GPS desde ja: nao espera 45 s para dizer o que fazer.
                   const SizedBox(height: 12),
-                  NoticeBanner(key: const Key('lock-no-gps'), danger: true, icon: LucideIcons.satelliteDish, title: l.gpsStaleTitle, message: l.waitingLockNoGps),
+                  NoticeBanner(key: const Key('lock-no-gps'), danger: true, icon: LucideIcons.satelliteDish, title: l.gpsStaleTitle, message: _gpsSleep ? l.waitingLockGpsSleep : l.waitingLockNoGps),
                 ] else if (_waitSeconds >= _gpsHintAfter) ...[
                   const SizedBox(height: 12),
                   NoticeBanner(key: const Key('lock-gps-hint'), icon: LucideIcons.satelliteDish, message: l.waitingLockGpsHint),
@@ -795,7 +830,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                         if (rc?.gpsStale == true && _error == null)
                           Padding(
                             padding: const EdgeInsets.only(top: 12),
-                            child: NoticeBanner(key: const Key('return-no-gps'), icon: LucideIcons.satelliteDish, title: l.gpsStaleTitle, message: l.returnNoGps),
+                            child: NoticeBanner(key: const Key('return-no-gps'), icon: LucideIcons.satelliteDish, title: l.gpsStaleTitle, message: rc?.gpsSleep == true ? l.returnGpsSleep : l.returnNoGps),
                           ),
                         if (_error != null)
                           Padding(

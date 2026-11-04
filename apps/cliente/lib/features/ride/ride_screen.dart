@@ -71,6 +71,12 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
   bool _pausing = false;
   Timer? _pausingTimer;
 
+  /// O rastreador desligou o GPS com a ignicao desligada (`Vehicle.gpsSleep`): a trava da
+  /// pausa nao confirma a parada. Lido da ficha da moto ao pedir a pausa e durante a espera.
+  bool _gpsSleep = false;
+  Timer? _gpsSleepPoll;
+  bool _gpsSleepInFlight = false;
+
   /// Status que o proprio cliente pediu (pausar/retomar). Mudanca para outro
   /// status sem ele pedir vem do sistema: mostra a mensagem da linha do tempo.
   RentalStatus? _userTarget;
@@ -168,6 +174,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     _link.openCount -= 1;
     _tick?.cancel();
     _pausingTimer?.cancel();
+    _gpsSleepPoll?.cancel();
     _noticeTimer?.cancel();
     _events?.cancel();
     _connSub?.cancel();
@@ -630,10 +637,13 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     setState(() {
       _busy = true;
       _notice = null;
+      if (pausing) _gpsSleep = false;
       _userTarget = pausing ? RentalStatus.paused : RentalStatus.active;
     });
     try {
       final backend = ref.read(backendProvider);
+      // Uma leitura da ficha ao pedir a pausa (em paralelo ao POST); sem ela fica o texto padrao.
+      final gpsRead = pausing ? _readGpsSleep() : null;
       final updated = pausing ? await backend.pause(r.id) : await backend.resume(r.id);
       VoltiHaptics.tap();
       if (mounted) {
@@ -646,6 +656,8 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
           if (!pausing || pauseUndone) _stopPausing();
         });
         if (pauseUndone) {
+          await gpsRead; // o aviso depende de gpsSleep
+          if (!mounted) return;
           // O `did_not_stop` chegou antes de a resposta da pausa sair: o POST ja
           // devolve `active`. Sem mudanca de status na tela, mas e "pausa desfeita".
           _userTarget = null;
@@ -668,13 +680,35 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     _pausing = true;
     _pausingTimer?.cancel();
     _pausingTimer = Timer(kPausePendingWindow, () {
+      _gpsSleepPoll?.cancel();
       if (mounted) setState(() => _pausing = false);
     });
+    // Como a devolucao: enquanto espera a trava, rele a ficha (o GPS voltou ou caiu).
+    _gpsSleepPoll?.cancel();
+    _gpsSleepPoll = Timer.periodic(kGpsSleepPollInterval, (_) => _readGpsSleep());
   }
 
   void _stopPausing() {
     _pausing = false;
     _pausingTimer?.cancel();
+    _gpsSleepPoll?.cancel();
+  }
+
+  /// Le `gpsSleep` na ficha da moto do aluguel (mesmo caminho da devolucao).
+  Future<void> _readGpsSleep() async {
+    final id = _rental?.id;
+    if (id == null || _gpsSleepInFlight) return;
+    _gpsSleepInFlight = true;
+    try {
+      final backend = ref.read(backendProvider);
+      final v = await backend.vehicleByCode((await backend.rental(id)).vehicleCode);
+      final sleep = v.gpsSleep == true;
+      if (mounted && sleep != _gpsSleep) setState(() => _gpsSleep = sleep);
+    } catch (_) {
+      // sem a ficha: fica o que ja sabiamos
+    } finally {
+      _gpsSleepInFlight = false;
+    }
   }
 
   /// O status mudou de [prev] para [next]. Se o cliente nao pediu (pausa que a
@@ -696,11 +730,13 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     final (String title, String fallback) = switch ((prev, next)) {
       (RentalStatus.ending, _) => (l.endRevertedTitle, l.endRevertedText),
       (_, RentalStatus.paused) => (l.lateLockTitle, l.lateLockText),
-      _ => (l.pauseRevertedTitle, l.pauseRevertedText),
+      // GPS desligado pela ignicao: a mensagem do servidor ("pare e peca de novo") nao resolve.
+      _ => (l.pauseRevertedTitle, _gpsSleep ? l.pauseRevertedGpsSleep : l.pauseRevertedText),
     };
     String? message;
     final id = _rental?.id;
-    if (id != null) {
+    final gpsSleepRevert = _gpsSleep && prev != RentalStatus.ending && next == RentalStatus.active;
+    if (id != null && !gpsSleepRevert) {
       try {
         message = lastSystemMessage(await ref.read(backendProvider).rentalEvents(id));
       } catch (_) {
@@ -956,6 +992,14 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                 icon: LucideIcons.satelliteDish,
                 title: l.gpsStaleTitle,
                 message: l.gpsStaleText,
+              ),
+              VoltiStatusBanner(
+                key: const Key('pause-gps-sleep'),
+                visible: paused && _pausing && _gpsSleep,
+                tone: VoltiStatusTone.warning,
+                icon: LucideIcons.satelliteDish,
+                title: l.gpsStaleTitle,
+                message: l.pausingGpsSleep,
               ),
               VoltiStatusBanner(
                 key: const Key('ride-system-notice'),

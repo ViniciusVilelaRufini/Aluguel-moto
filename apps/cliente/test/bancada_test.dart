@@ -184,6 +184,44 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
 
+    testWidgets('pausa com gpsSleep: faixa diz que a ignicao esta desligada; sem gpsSleep, nao ha faixa', (t) async {
+      await pumpRide(t, _BenchRide(vehicle: _benchBike().rebuild((v) => v..gpsSleep = true)));
+      await t.tap(find.widgetWithText(VoltiButton, 'Pausar'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('Pausando… mantenha a moto parada'), findsOneWidget);
+      expect(find.byKey(const Key('pause-gps-sleep')), findsOneWidget);
+      expect(find.textContaining('O GPS da moto está desligado porque a ignição está desligada'), findsOneWidget);
+      await t.pump(const Duration(seconds: 31));
+      await t.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('O GPS da moto está desligado'), findsNothing);
+      await t.pumpWidget(const SizedBox());
+
+      await pumpRide(t, _BenchRide(vehicle: _benchBike().rebuild((v) => v..gpsSleep = false)));
+      await t.tap(find.widgetWithText(VoltiButton, 'Pausar'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('O GPS da moto está desligado'), findsNothing);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('pausa desfeita com gpsSleep: aviso da ignicao em vez da mensagem do servidor', (t) async {
+      final b = _BenchRide(vehicle: _benchBike().rebuild((v) => v..gpsSleep = true))
+        ..events = [_sysEvent('A moto não parou; pare e peça a pausa de novo.')];
+      await pumpRide(t, b);
+      await t.tap(find.widgetWithText(VoltiButton, 'Pausar'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 400));
+      rt.emit(const RentalUpdated(rentalId: 'r1', status: 'paused', elapsedSeconds: 130, costCents: 260));
+      await t.pump();
+      rt.emit(const RentalUpdated(rentalId: 'r1', status: 'active', elapsedSeconds: 140, costCents: 270));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 600));
+      expect(find.textContaining('GPS dela está desligado com a ignição desligada'), findsOneWidget);
+      expect(find.text('A moto não parou; pare e peça a pausa de novo.'), findsNothing);
+      await t.pumpWidget(const SizedBox());
+    });
+
     testWidgets('botao Pausar mostra o carregando enquanto a API responde', (t) async {
       final b = _BenchRide(vehicle: _benchBike())..pauseGate = Completer<void>();
       await pumpRide(t, b);
@@ -682,6 +720,67 @@ void main() {
         await takeAndEndInZone(t);
         await t.pump(const Duration(milliseconds: 100));
         expect(find.byKey(const Key('lock-no-gps')), findsOneWidget, reason: 'sem esperar os 10 s da releitura');
+        await t.pumpWidget(const SizedBox());
+      });
+
+      const sleepText = 'O GPS da moto está desligado porque a ignição está desligada. Ligue a ignição e deixe a moto parada para a trava confirmar.';
+      const openSkyText = 'Ela só trava quando o GPS confirma que está parada. Leve a moto para um lugar aberto, com céu visível, antes de encerrar.';
+
+      Vehicle fresh({bool? sleep, int? sats}) => at(DateTime.now()).rebuild((b) => b
+        ..gpsSleep = sleep
+        ..gpsSatellites = sats);
+
+      testWidgets('gpsSleep: formulario diz que a ignicao esta desligada (posicao ainda em dia)', (t) async {
+        await pumpGps(t, fresh(sleep: true));
+        expect(find.byKey(const Key('return-no-gps')), findsOneWidget);
+        expect(find.text(sleepText), findsOneWidget);
+        expect(find.text(openSkyText), findsNothing);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      testWidgets('gpsSatellites 3 (sem gpsSleep): formulario mantem o texto de lugar aberto', (t) async {
+        await pumpGps(t, fresh(sats: 3));
+        expect(find.text(openSkyText), findsOneWidget);
+        expect(find.text(sleepText), findsNothing);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      testWidgets('gpsSatellites 8 e gpsSleep false: sem aviso', (t) async {
+        await pumpGps(t, fresh(sleep: false, sats: 8));
+        expect(find.byKey(const Key('return-no-gps')), findsNothing);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      testWidgets('gpsSleep ausente e posicao velha: texto atual de lugar aberto', (t) async {
+        await pumpGps(t, at(DateTime.now().subtract(const Duration(minutes: 5))));
+        expect(find.text(openSkyText), findsOneWidget);
+        expect(find.text(sleepText), findsNothing);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      testWidgets('gpsSleep: espera e reversao falam da ignicao', (t) async {
+        final b = await pumpGps(t, fresh(sleep: true));
+        b.events = [_sysEvent('A moto não parou; pare e peça o encerramento de novo.')];
+        await takeAndEndInZone(t);
+        await t.pump(const Duration(milliseconds: 100));
+        expect(find.byKey(const Key('lock-no-gps')), findsOneWidget);
+        expect(find.text(sleepText), findsOneWidget);
+        expect(find.text('Sem GPS a moto não trava. Leve-a para um lugar aberto, com céu visível, e mantenha-a parada.'), findsNothing);
+        b.status = RentalStatus.active;
+        await t.pump(const Duration(seconds: 2));
+        await t.pump(const Duration(milliseconds: 100));
+        await t.pump(const Duration(milliseconds: 100));
+        expect(find.textContaining('GPS dela está desligado com a ignição desligada'), findsOneWidget);
+        expect(find.text('A moto não parou; pare e peça o encerramento de novo.'), findsNothing);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      testWidgets('gpsSatellites 3 na espera: texto de lugar aberto', (t) async {
+        await pumpGps(t, fresh(sats: 3));
+        await takeAndEndInZone(t);
+        await t.pump(const Duration(milliseconds: 100));
+        expect(find.text('Sem GPS a moto não trava. Leve-a para um lugar aberto, com céu visível, e mantenha-a parada.'), findsOneWidget);
+        expect(find.text(sleepText), findsNothing);
         await t.pumpWidget(const SizedBox());
       });
 
