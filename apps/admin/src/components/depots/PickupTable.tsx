@@ -1,32 +1,46 @@
 'use client';
 
+import { useState } from 'react';
 import { DataTable, Pill } from '@/components/ui';
+import { CounterCheckoutDialog } from '@/components/CounterCheckoutDialog';
+import { Button } from '@/ds/Button';
 import { toPickupRows, type PickupModeFilter, type PickupRow } from '@/lib/pickups';
 import type { S } from '@/lib/types';
 
 /**
  * Agenda de retiradas do dia (`GET /depots/{id}/pickups`): horário em São Paulo, modo, só o primeiro nome do
- * cliente, moto, status e prazo. O `pickupCode` nunca é mostrado.
+ * cliente, moto, status e prazo. O `pickupCode` nunca é mostrado. Reserva em entrega (`handover`) oferece
+ * "Contrato e pagamento" (balcão) a quem tem `counter.checkout`, que inicia o aluguel; a vistoria fica no app do operador.
  */
-export function PickupTable({ items, mode, loading }: { items: S<'Reservation'>[]; mode: PickupModeFilter; loading?: boolean }) {
+export function PickupTable({ items, mode, loading, canCheckout = false }: { items: S<'Reservation'>[]; mode: PickupModeFilter; loading?: boolean; canCheckout?: boolean }) {
+  const [checkout, setCheckout] = useState<string | null>(null);
   const rows = toPickupRows(items, mode);
   return (
-    <DataTable<PickupRow>
-      testId="pickups-table"
-      label="Agenda de retiradas"
-      loading={loading}
-      rows={rows}
-      empty="Nenhuma retirada neste dia"
-      emptyIcon="CalendarClock"
-      emptyHint="As reservas de retirada aparecem aqui assim que o cliente confirma no app."
-      columns={[
-        { key: 'time', label: 'Horário', mono: true },
-        { key: 'mode', label: 'Modo', render: (r) => <Pill tone={r.mode === 'now' ? 'dark' : 'neutral'} icon={r.mode === 'now' ? 'Zap' : 'CalendarClock'}>{r.modeLabel}</Pill> },
-        { key: 'customer', label: 'Cliente' },
-        { key: 'vehicleCode', label: 'Moto', mono: true },
-        { key: 'status', label: 'Status', render: (r) => <Pill tone={r.tone}>{r.statusLabel}</Pill> },
-        { key: 'deadline', label: 'Retirar até', mono: true, align: 'right' },
-      ]}
-    />
+    <>
+      <DataTable<PickupRow>
+        testId="pickups-table"
+        label="Agenda de retiradas"
+        loading={loading}
+        rows={rows}
+        empty="Nenhuma retirada neste dia"
+        emptyIcon="CalendarClock"
+        emptyHint="As reservas de retirada aparecem aqui assim que o cliente confirma no app."
+        columns={[
+          { key: 'time', label: 'Horário', mono: true },
+          { key: 'mode', label: 'Modo', render: (r) => <Pill tone={r.mode === 'now' ? 'dark' : 'neutral'} icon={r.mode === 'now' ? 'Zap' : 'CalendarClock'}>{r.modeLabel}</Pill> },
+          { key: 'customer', label: 'Cliente' },
+          { key: 'vehicleCode', label: 'Moto', mono: true },
+          { key: 'status', label: 'Status', render: (r) => <Pill tone={r.tone}>{r.statusLabel}</Pill> },
+          { key: 'deadline', label: 'Retirar até', mono: true, align: 'right' },
+          ...(canCheckout ? [{
+            key: 'actions', label: '', align: 'right' as const, pin: true,
+            render: (r: PickupRow) => r.status === 'handover' && r.handoverId
+              ? <Button size="sm" variant="dark" icon="FileText" testId="pickup-counter-checkout" onClick={() => setCheckout(r.handoverId!)}>Contrato e pagamento</Button>
+              : null,
+          }] : []),
+        ]}
+      />
+      {checkout && <CounterCheckoutDialog handoverId={checkout} onClose={() => setCheckout(null)} />}
+    </>
   );
 }

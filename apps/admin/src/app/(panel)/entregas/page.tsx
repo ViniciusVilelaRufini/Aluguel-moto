@@ -10,6 +10,8 @@ import { HANDOVER_STATUS, HANDOVER_STATUSES, HANDOVER_TYPE_LABEL, supportHref, t
 import type { S } from '@/lib/types';
 import { HandoverDetail, HandoverTable } from '@/components/depots/HandoverViews';
 import { CancelHandoverDialog } from '@/components/CancelHandoverDialog';
+import { CounterSettleDialog } from '@/components/CounterSettleDialog';
+import { Button } from '@/ds/Button';
 import { ErrorNote, Page, PageHeader, PanelSkeleton, Select, SidePanel, usePagedQuery } from '@/components/ui';
 import { SegmentedControl } from '@/ds/SegmentedControl';
 
@@ -30,6 +32,7 @@ export default function HandoversPage() {
   const [depotId, setDepotId] = useState('all');
   const [selected, setSelected] = useState<string | null>(null);
   const [canceling, setCanceling] = useState<S<'Handover'> | null>(null);
+  const [settling, setSettling] = useState<string | null>(null);
 
   const depotsQ = useQuery({ queryKey: ['depots', 'all'], queryFn: () => unwrap(api.GET('/depots', { params: { query: { includeInactive: true } } })) });
   const depots = useMemo(() => depotsQ.data?.items ?? [], [depotsQ.data]);
@@ -77,14 +80,20 @@ export default function HandoversPage() {
           title={<div style={{ font: '700 18px/1.25 var(--font-sans)' }}>Entrega {shown?.vehicleCode ? `· ${shown.vehicleCode}` : ''}</div>}>
           <ErrorNote error={detail.error} onRetry={() => detail.refetch()} />
           {shown ? (
-            <HandoverDetail handover={shown} photosLoading={detail.isLoading} supportHref={supportHref(groups)} rentalHref={shown.rentalId ? rentalHref(groups, shown.rentalId) : null}
-              onCancel={can(groups, 'handover.cancel') && canCancelHandover(shown) ? () => setCanceling(shown) : undefined} />
+            <>
+              <HandoverDetail handover={shown} photosLoading={detail.isLoading} supportHref={supportHref(groups)} rentalHref={shown.rentalId ? rentalHref(groups, shown.rentalId) : null}
+                onCancel={can(groups, 'handover.cancel') && canCancelHandover(shown) ? () => setCanceling(shown) : undefined} />
+              {shown.rentalId && can(groups, 'counter.settle') && (
+                <Button size="sm" variant="secondary" icon="Wallet" testId="handover-counter-settle" style={{ alignSelf: 'flex-start' }} onClick={() => setSettling(shown.rentalId!)}>Acertar no balcão</Button>
+              )}
+            </>
           ) : (
             <PanelSkeleton />
           )}
         </SidePanel>
       )}
       <CancelHandoverDialog handover={canceling} onClose={() => setCanceling(null)} />
+      {settling && <CounterSettleDialog rentalId={settling} onClose={() => setSettling(null)} />}
     </div>
   );
 }

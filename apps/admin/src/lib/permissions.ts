@@ -86,7 +86,9 @@ export type Action =
   | 'wallet.adjust'
   | 'deposit.view'
   | 'payment.view'
-  | 'finance.reports';
+  | 'finance.reports'
+  | 'counter.checkout'
+  | 'counter.settle';
 
 const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'vehicle.command': ['admin', 'operacao'],
@@ -132,6 +134,9 @@ const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'deposit.view': ['admin', 'financeiro'], // GET /payments/deposits
   'payment.view': ['admin', 'financeiro', 'suporte'], // GET /payments, GET /payments/{id}
   'finance.reports': ['admin', 'financeiro'], // GET /reports/finance|revenue|occupancy…; abas Visão geral e Aluguéis
+  // Balcão do galpão (pré-reserva 2026-11-04, interpretação 18): contrato admin, operacao, campo; `campo` não usa o painel.
+  'counter.checkout': ['admin', 'operacao'], // GET /handovers/{id}/counter-quote, POST /handovers/{id}/counter-checkout, POST /handovers/uploads
+  'counter.settle': ['admin', 'operacao'], // GET /rentals/{id}/counter-balance, POST /payments/{id}/counter-settle, POST /payments/deposits/{id}/counter-refund
 };
 
 export function can(groups: StaffGroup[], action: Action): boolean {

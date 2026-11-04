@@ -79,6 +79,13 @@ describe('PickupTable (agenda)', () => {
   it('mostra o estado vazio', () => {
     expect(renderToStaticMarkup(<PickupTable items={[]} mode="all" />)).toContain('Nenhuma retirada neste dia');
   });
+  it('balcão: "Contrato e pagamento" só na reserva em entrega com handoverId e com permissão', () => {
+    const items = [pickupsResponse.items[0]!, { ...pickupsResponse.items[1]!, handoverId: 'h1' }];
+    const html = renderToStaticMarkup(<PickupTable items={items} mode="all" canCheckout />);
+    expect(html.match(/data-testid="pickup-counter-checkout"/g)).toHaveLength(1);
+    expect(html).toContain('Contrato e pagamento');
+    expect(renderToStaticMarkup(<PickupTable items={items} mode="all" />)).not.toContain('pickup-counter-checkout');
+  });
 });
 
 describe('Entregas e disputas', () => {

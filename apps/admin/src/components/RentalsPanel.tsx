@@ -10,6 +10,7 @@ import { PLAN_LABEL, RENTAL_EVENT, RENTAL_STATUS, COVERAGE_LABEL } from '@/lib/l
 import { dayEndIso, dayStartIso, formatBRL, formatDateTime, formatDuration } from '@/lib/format';
 import { toCents } from '@/lib/money';
 import type { S } from '@/lib/types';
+import { CounterSettleDialog } from './CounterSettleDialog';
 import { DataTable, ErrorNote, Field, KV, Page, Pill, ReasonDialog, SectionTitle, Select, SidePanel, TextInput, usePagedQuery, useToast } from './ui';
 import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
@@ -69,6 +70,7 @@ function RentalDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const [forceEnd, setForceEnd] = useState(false);
   const [refund, setRefund] = useState(false);
   const [refundAmount, setRefundAmount] = useState('');
+  const [settle, setSettle] = useState(false);
 
   const rental = useQuery({ queryKey: ['rental', id], queryFn: () => unwrap(api.GET('/rentals/{id}', { params: { path: { id } } })) });
   const events = useQuery({ queryKey: ['rental-events', id], queryFn: () => unwrap(api.GET('/rentals/{id}/events', { params: { path: { id } } })) });
@@ -117,10 +119,12 @@ function RentalDetail({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8, borderTop: '1px solid var(--border-subtle)' }}>
             {can(groups, 'rental.forceEnd') && !finished && <Button size="sm" variant="danger" icon="Square" testId="force-end" onClick={() => setForceEnd(true)}>Encerrar à força</Button>}
+            {can(groups, 'counter.settle') && <Button size="sm" variant="secondary" icon="Wallet" testId="rental-counter-settle" onClick={() => setSettle(true)}>Acertar no balcão</Button>}
             {can(groups, 'payment.refund') && r.paymentId && finished && <Button size="sm" variant="dark" icon="Undo2" testId="refund" onClick={() => { setRefundAmount(''); setRefund(true); }}>Estornar pagamento</Button>}
           </div>
         </>
       )}
+      {settle && <CounterSettleDialog rentalId={id} onClose={() => setSettle(false)} />}
       <ReasonDialog
         open={forceEnd}
         title="Encerrar aluguel à força"
