@@ -13,6 +13,9 @@ import { CancelHandoverDialog } from '@/components/CancelHandoverDialog';
 import { CounterSettleButton, CounterSettleDialog } from '@/components/CounterSettleDialog';
 import { ErrorNote, Page, PageHeader, PanelSkeleton, Select, SidePanel, usePagedQuery } from '@/components/ui';
 import { SegmentedControl } from '@/ds/SegmentedControl';
+import { Button } from '@/ds/Button';
+import { ArrivalSearchDialog } from '@/components/depots/ArrivalSearchDialog';
+import { ReturnHandoverDialog } from '@/components/depots/ReturnHandoverDialog';
 
 type View = 'all' | 'disputes';
 type StatusFilter = HandoverStatus | 'all';
@@ -20,7 +23,8 @@ type TypeFilter = HandoverType | 'all';
 
 /**
  * Entregas no galpão (`GET /handovers`): saídas e chegadas com fotos e checklist. A aba Disputas é a fila do
- * suporte (`status=disputed`).
+ * suporte (`status=disputed`). "Registrar chegada" (admin, operacao): busca a moto do aluguel em andamento pelo código
+ * e registra a chegada no galpão (o cliente devolveu no balcão); com saldo a acertar, abre o "Acertar no balcão".
  */
 export default function HandoversPage() {
   const { groups } = useAuth();
@@ -32,6 +36,9 @@ export default function HandoversPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [canceling, setCanceling] = useState<S<'Handover'> | null>(null);
   const [settling, setSettling] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [arriving, setArriving] = useState<S<'Vehicle'> | null>(null);
+  const canReceive = can(groups, 'handover.create');
 
   const depotsQ = useQuery({ queryKey: ['depots', 'all'], queryFn: () => unwrap(api.GET('/depots', { params: { query: { includeInactive: true } } })) });
   const depots = useMemo(() => depotsQ.data?.items ?? [], [depotsQ.data]);
@@ -54,6 +61,7 @@ export default function HandoversPage() {
         <PageHeader subtitle="Saídas e chegadas registradas pela operação, com fotos e checklist. Horários de São Paulo.">
           <SegmentedControl label="Ver" options={[{ value: 'all', label: 'Todas' }, { value: 'disputes', label: 'Disputas' }]} value={view}
             onChange={(v: View) => { setView(v); setSelected(null); }} style={{ width: 260 }} />
+          {canReceive && <Button size="sm" variant="dark" icon="PackageCheck" testId="handovers-register-arrival" onClick={() => setSearching(true)}>Registrar chegada</Button>}
         </PageHeader>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ width: 240 }}>
@@ -92,6 +100,11 @@ export default function HandoversPage() {
         </SidePanel>
       )}
       <CancelHandoverDialog handover={canceling} onClose={() => setCanceling(null)} />
+      {searching && <ArrivalSearchDialog onClose={() => setSearching(false)} onPick={(v) => { setSearching(false); setArriving(v); }} />}
+      {arriving?.currentRentalId && (
+        <ReturnHandoverDialog rentalId={arriving.currentRentalId} vehicle={arriving} onClose={() => setArriving(null)}
+          onDone={(r) => { setArriving(null); if (r.settle) setSettling(r.rentalId); }} />
+      )}
       {settling && <CounterSettleDialog rentalId={settling} onClose={() => setSettling(null)} />}
     </div>
   );
