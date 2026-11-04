@@ -2808,6 +2808,16 @@ class AppLocalizationsPt extends AppLocalizations {
   String get rideCounterDueLabel => 'A acertar no galpão';
 
   @override
+  String ridePrepaidEndingOn(String time) {
+    return 'Seu período termina em $time. O excedente é acertado no galpão.';
+  }
+
+  @override
+  String ridePrepaidOverOn(String time) {
+    return 'Seu período terminou em $time. O excedente é acertado no galpão.';
+  }
+
+  @override
   String get ridePrepaidLabel => 'Pago no balcão';
 
   @override

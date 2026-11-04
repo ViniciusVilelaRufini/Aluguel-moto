@@ -4768,6 +4768,18 @@ abstract class AppLocalizations {
   /// **'A acertar no galpão'**
   String get rideCounterDueLabel;
 
+  /// No description provided for @ridePrepaidEndingOn.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seu período termina em {time}. O excedente é acertado no galpão.'**
+  String ridePrepaidEndingOn(String time);
+
+  /// No description provided for @ridePrepaidOverOn.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seu período terminou em {time}. O excedente é acertado no galpão.'**
+  String ridePrepaidOverOn(String time);
+
   /// No description provided for @ridePrepaidLabel.
   ///
   /// In pt, this message translates to:

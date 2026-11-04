@@ -272,6 +272,33 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
 
+    testWidgets('fim em outro dia (7 dias) mostra data e hora', (t) async {
+      await _pump(t, const RideScreen(), now: _until.subtract(const Duration(days: 7)));
+      expect(find.text('Período até 05/11 12:30'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('virada do dia em São Paulo: fim 00:30 do dia seguinte mostra a data', (t) async {
+      final end = DateTime.utc(2026, 11, 5, 3, 30); // 05/11 00:30 SP
+      backend.rentalValue = counterRental().rebuild((b) => b.prepaidUntil = end);
+      await _pump(t, const RideScreen(), now: DateTime.utc(2026, 11, 5, 1, 0)); // 04/11 22:00 SP
+      expect(find.text('Período até 05/11 00:30'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+      // 23:30 SP (04/11): ultima hora, fim no dia seguinte.
+      await _pump(t, const RideScreen(), now: DateTime.utc(2026, 11, 5, 2, 30));
+      expect(find.text('Seu período termina em 05/11 00:30. O excedente é acertado no galpão.'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('fim no mesmo dia mostra só a hora (terminou: mesmo dia e outro dia)', (t) async {
+      await _pump(t, const RideScreen(), now: _until.add(const Duration(minutes: 10)));
+      expect(find.text('Seu período terminou às 12:30. O excedente é acertado no galpão.'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+      await _pump(t, const RideScreen(), now: _until.add(const Duration(days: 2)));
+      expect(find.text('Seu período terminou em 05/11 12:30. O excedente é acertado no galpão.'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
     testWidgets('aviso 1 h antes do fim do período', (t) async {
       // clock = prepaidUntil − 59 min; prepaidUntil = 2026-11-05T15:30:00Z
       await _pump(t, const RideScreen(), now: _until.subtract(const Duration(minutes: 59)));
