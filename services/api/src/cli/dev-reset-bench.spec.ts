@@ -191,6 +191,12 @@ describe('parseResetArgs / maskEmail', () => {
     expect(() => parseResetArgs(['--keep', 'VLT-0059'])).toThrow('--customer-email');
     expect(() => parseResetArgs(['--keep', 'VLT-0059', '--customer-email', OWNER_EMAIL, '--plan', 'monthly'])).toThrow('--plan');
     expect(() => parseResetArgs(['--keep', 'VLT-0059', '--customer-email', OWNER_EMAIL, '--force'])).toThrow();
+    expect(() => parseResetArgs(['--keep', 'VLT-0059', '--customer-email', OWNER_EMAIL, '--customer-id', 'x'])).toThrow('--customer-id');
+  });
+
+  it('--customer-id desempata contas com o mesmo e-mail', () => {
+    const id = '42a10b53-b36d-45e6-b778-14698034ee2b';
+    expect(parseResetArgs(['--keep', 'VLT-0059', '--customer-email', OWNER_EMAIL, '--customer-id', id]).customerId).toBe(id);
   });
 
   it('mascara o e-mail', () => {

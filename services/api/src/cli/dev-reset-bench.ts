@@ -70,6 +70,8 @@ export function assertDevEnvironment(env: Record<string, string | undefined>): v
 export interface ResetOptions {
   keepCode: string;
   customerEmail: string;
+  /** Desempate quando há mais de uma conta ativa com o mesmo e-mail (ex.: login por Google com outro `sub`). */
+  customerId?: string;
   dryRun: boolean;
   confirmed: boolean;
   planCode: (typeof RENTAL_PLANS)[number];
@@ -83,6 +85,7 @@ export function parseResetArgs(argv: string[]): ResetOptions {
     options: {
       keep: { type: 'string' },
       'customer-email': { type: 'string' },
+      'customer-id': { type: 'string' },
       plan: { type: 'string', default: 'day' },
       coverage: { type: 'string', default: 'basic' },
       'dry-run': { type: 'boolean', default: false },
@@ -97,7 +100,9 @@ export function parseResetArgs(argv: string[]): ResetOptions {
   if (!(RENTAL_PLANS as readonly string[]).includes(planCode)) throw new Error(`--plan inválido (use ${RENTAL_PLANS.join(' | ')}).`);
   const coverage = values.coverage as ResetOptions['coverage'];
   if (!(COVERAGES as readonly string[]).includes(coverage)) throw new Error(`--coverage inválido (use ${COVERAGES.join(' | ')}).`);
-  return { keepCode, customerEmail, dryRun: values['dry-run'] === true, confirmed: values[CONFIRM_FLAG] === true, planCode, coverage };
+  const customerId = values['customer-id']?.trim() || undefined;
+  if (customerId !== undefined && !/^[0-9a-f-]{36}$/i.test(customerId)) throw new Error('--customer-id inválido (uuid da conta).');
+  return { keepCode, customerEmail, customerId, dryRun: values['dry-run'] === true, confirmed: values[CONFIRM_FLAG] === true, planCode, coverage };
 }
 
 /** E-mail em log: primeira e última letra do usuário e o domínio (`v***7@gmail.com`). */
@@ -304,7 +309,7 @@ export interface ResetTargets {
  * lista de restrição, consentimento de localização, termos); a inadimplência é zerada pelo reset (vinha dos pagamentos de
  * teste). Recusa (erro) ou aviso (segue).
  */
-export async function loadTargets(db: ResetDb, opts: Pick<ResetOptions, 'keepCode' | 'customerEmail' | 'planCode' | 'coverage'>, env: Record<string, string | undefined>): Promise<ResetTargets> {
+export async function loadTargets(db: ResetDb, opts: Pick<ResetOptions, 'keepCode' | 'customerEmail' | 'customerId' | 'planCode' | 'coverage'>, env: Record<string, string | undefined>): Promise<ResetTargets> {
   const warnings: Array<Record<string, unknown>> = [];
   const vehicle = await db.vehicle.findUnique({
     where: { code: opts.keepCode },
@@ -322,8 +327,10 @@ export async function loadTargets(db: ResetDb, opts: Pick<ResetOptions, 'keepCod
   });
   const masked = maskEmail(opts.customerEmail);
   if (customers.length === 0) throw new Error(`Nenhuma conta de cliente ativa com o e-mail ${masked}.`);
-  if (customers.length > 1) throw new Error(`Mais de uma conta de cliente com o e-mail ${masked} (${customers.length}); resolva antes do reset.`);
-  const c = customers[0];
+  const chosen = opts.customerId ? customers.filter((x) => x.id === opts.customerId) : customers;
+  if (opts.customerId && chosen.length === 0) throw new Error(`--customer-id não é uma conta ativa com o e-mail ${masked}.`);
+  if (chosen.length > 1) throw new Error(`Mais de uma conta de cliente com o e-mail ${masked} (${chosen.length}); passe --customer-id.`);
+  const c = chosen[0];
   if (c.kycStatus !== 'approved') throw new Error(`O cliente ${masked} não tem KYC aprovado (${c.kycStatus}).`);
   if (c.status !== 'active') throw new Error(`A conta do cliente ${masked} está ${c.status}.`);
   if (c.cpf && (await db.restrictionEntry.findUnique({ where: { cpf: c.cpf }, select: { id: true } }))) {
