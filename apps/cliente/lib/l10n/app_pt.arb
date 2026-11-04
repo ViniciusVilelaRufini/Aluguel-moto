@@ -193,6 +193,8 @@
   "rateRide": "Como foi a corrida?",
   "refreshStatus": "Atualizar status",
   "rentalInProgress": "Corrida em andamento",
+  "rentalOngoingBadge": "Em andamento",
+  "receiptAfterRideEnds": "O recibo fica disponível quando a corrida terminar.",
   "reportProblem": "Reportar problema",
   "reportSentText": "Recebemos o seu relato. Quer trocar de moto sem nova taxa?",
   "reportSentTitle": "Problema reportado",
@@ -270,17 +272,6 @@
   "@greeting": {
     "placeholders": {
       "name": {
-        "type": "String"
-      }
-    }
-  },
-  "historyItem": "Moto {code} · {date}",
-  "@historyItem": {
-    "placeholders": {
-      "code": {
-        "type": "String"
-      },
-      "date": {
         "type": "String"
       }
     }
