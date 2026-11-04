@@ -103,7 +103,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   String _finishedText(Receipt r) {
     final l = context.l;
     return switch (r.paymentStatus) {
-      ReceiptPaymentStatus.pending => l.rideFinishedPending(money(r.amountDueCents ?? 0)),
+      ReceiptPaymentStatus.pending => l.rideFinishedPending,
       ReceiptPaymentStatus.processing => l.rideFinishedProcessing,
       _ => (r.depositUsedCents ?? 0) > 0 ? l.rideFinishedDepositUsed(money(r.depositUsedCents!)) : l.rideFinishedText,
     };
@@ -249,8 +249,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                     if ((r.depositUsedCents ?? 0) > 0) _Line(l.receiptDepositUsed, money(r.depositUsedCents!)),
                     if (r.paymentStatus != null && r.paymentStatus != ReceiptPaymentStatus.pending && (r.depositReleasedCents ?? 0) > 0)
                       _Line(l.receiptDepositReleased, money(r.depositReleasedCents!)),
-                    if (r.paymentStatus == ReceiptPaymentStatus.pending && r.amountDueCents != null)
-                      _Line(l.receiptAmountDue, money(r.amountDueCents!), strong: true),
+                    // Pendente: o valor a acertar fica so no aviso abaixo (sem repetir aqui).
                     if (_statusBadge(r) case final badge?)
                       _Line(l.receiptPaymentLabel, '', value: badge),
                   ]),

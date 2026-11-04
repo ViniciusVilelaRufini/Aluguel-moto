@@ -128,11 +128,31 @@ class PagamentosBackend extends FakeBackend {
     ..customer = customer().toBuilder());
 }
 
-Rental counterRental({int costCents = 0}) => sampleRental().rebuild((b) => b
-  ..planCode = PlanCode.day
-  ..startedAt = DateTime.utc(2026, 11, 4, 15, 30)
-  ..costCents = costCents
-  ..prepaidUntil = _until);
+Rental counterRental({int costCents = 0, bool withBreakdown = true}) => sampleRental().rebuild((b) {
+      b
+        ..planCode = PlanCode.day
+        ..startedAt = DateTime.utc(2026, 11, 4, 15, 30)
+        ..costCents = costCents
+        ..prepaidUntil = _until;
+      if (withBreakdown) {
+        b.breakdown = PriceBreakdown((p) => p
+          ..lines.addAll([
+            PriceLine((l) => l
+              ..code = 'counter_plan'
+              ..description = 'Plano diário (balcão)'
+              ..amountCents = 8900),
+            PriceLine((l) => l
+              ..code = 'counter_prepaid'
+              ..description = 'Pago no balcão'
+              ..amountCents = -8900),
+          ])
+          ..subtotalCents = 8900
+          ..discountCents = 0
+          ..insuranceCents = 0
+          ..feesCents = 0
+          ..totalCents = costCents).toBuilder();
+      }
+    });
 
 late PagamentosBackend backend;
 
@@ -242,6 +262,11 @@ void main() {
       expect(find.byKey(const Key('ride-prepaid-until')), findsOneWidget);
       expect(find.text('Período até 12:30'), findsOneWidget);
       expect(find.byKey(const Key('ride-prepaid-ending')), findsNothing);
+      // Durante o periodo: o que foi pago no balcao, nunca "Custo acumulado R$ 0,00".
+      expect(find.text('Pago no balcão'), findsOneWidget);
+      expect(find.text('R\$ 89,00'), findsOneWidget);
+      expect(find.text('Custo acumulado'), findsNothing);
+      expect(find.text('A acertar no galpão'), findsNothing);
       await t.pumpWidget(const SizedBox());
     });
 
@@ -254,11 +279,23 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
 
+    testWidgets('periodo sem o pre-pago no breakdown esconde a metrica de custo', (t) async {
+      backend.rentalValue = counterRental(withBreakdown: false);
+      await _pump(t, const RideScreen(), now: _until.subtract(const Duration(minutes: 30)));
+      expect(find.byKey(const Key('ride-prepaid-ending')), findsOneWidget);
+      expect(find.text('Custo acumulado'), findsNothing);
+      expect(find.text('Pago no balcão'), findsNothing);
+      expect(find.text('R\$ 0,00'), findsNothing);
+      await t.pumpWidget(const SizedBox());
+    });
+
     testWidgets('depois do fim do período o custo vira a acertar no galpão', (t) async {
       backend.rentalValue = counterRental(costCents: 6000);
       await _pump(t, const RideScreen(), now: _until.add(const Duration(minutes: 10)));
       expect(find.text('A acertar no galpão: R\$ 60,00'), findsOneWidget);
+      expect(find.text('A acertar no galpão'), findsOneWidget); // rotulo da metrica
       expect(find.text('Custo acumulado'), findsNothing);
+      expect(find.text('Pago no balcão'), findsNothing);
       expect(find.byKey(const Key('ride-prepaid-ending')), findsNothing);
       await t.pumpWidget(const SizedBox());
     });
@@ -314,6 +351,12 @@ void main() {
       expect(find.textContaining('Pix'), findsNothing);
       expect(find.text('Pago no balcão'), findsOneWidget);
       expect(find.text('-R\$ 89,00'), findsOneWidget);
+      // O valor aparece uma vez (no aviso); o resto nao repete.
+      // Linha do excedente, total e aviso; sem a linha "A acertar" nem o valor no texto do fim.
+      expect(find.textContaining('60,00'), findsNWidgets(3));
+      expect(find.text('Moto travada. O valor restante é acertado no galpão.'), findsOneWidget);
+      expect(find.text('A acertar no galpão'), findsNothing);
+      expect(find.text('A acertar no galpão · Recibo VLT-20261105-R1'), findsOneWidget);
       await t.pumpWidget(const SizedBox());
     });
 

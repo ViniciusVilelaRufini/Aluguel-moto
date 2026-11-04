@@ -817,9 +817,17 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     final prepaidUntil = r.prepaidUntil;
     final phase = prepaidPhase(prepaidUntil, ref.read(clockProvider)());
     _shownPrepaidPhase = phase;
+    // Antes do fim do periodo o custo e 0: mostra o que foi pago no balcao (linha `counter_prepaid`)
+    // ou, sem ela, nenhuma metrica de custo.
+    final prepaidCents = phase == null || phase == PrepaidPhase.over ? null : counterPrepaidCents(r);
     final stats = <Widget>[
       _Stat(l.fareLabel, fare ?? '—', key: const Key('ride-fare'), stacked: big),
-      _Stat(phase == PrepaidPhase.over ? l.rideCounterDueLabel : l.accumulatedCost, money(_cost), ticker: true, stacked: big),
+      if (phase == null)
+        _Stat(l.accumulatedCost, money(_cost), ticker: true, stacked: big)
+      else if (phase == PrepaidPhase.over)
+        _Stat(l.rideCounterDueLabel, money(_cost), key: const Key('ride-counter-due'), ticker: true, stacked: big)
+      else if (prepaidCents != null)
+        _Stat(l.ridePrepaidLabel, money(prepaidCents), key: const Key('ride-prepaid'), stacked: big),
       _Stat(l.battery, batteryValue(_battery), ticker: true, stacked: big),
     ];
     final center = _vehiclePos ?? _userPos ?? const LatLng(-23.5614, -46.6559);

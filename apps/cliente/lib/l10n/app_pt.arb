@@ -547,8 +547,8 @@
   "filterAll": "Todas",
   "filterRange10": "Autonomia 10+ km",
   "filterPickupPoints": "Pontos de retirada",
-  "promoPassTitle": "Desbloqueie seu plano",
-  "promoPassText": "Ande mais, pague menos",
+  "promoPassTitle": "Planos no galpão",
+  "promoPassText": "Diária, semanal e mensal são contratados no balcão, com o contrato.",
   "promoFirstRideTitle": "1ª corrida grátis",
   "promoFirstRideText": "Até 15 minutos",
   "yourLocationAt": "Sua localização · {place}",
@@ -1882,8 +1882,7 @@
   "receiptPdfAfterPayment": "O recibo fica disponível depois do acerto no galpão.",
   "rideFinishedDepositUsed": "Moto travada. Usamos {amount} da caução.",
   "@rideFinishedDepositUsed": {"placeholders": {"amount": {"type": "String"}}},
-  "rideFinishedPending": "Moto travada. Falta acertar {amount} no galpão.",
-  "@rideFinishedPending": {"placeholders": {"amount": {"type": "String"}}},
+  "rideFinishedPending": "Moto travada. O valor restante é acertado no galpão.",
   "rideFinishedProcessing": "Moto travada. Pagamento em processamento.",
   "debtPixTitle": "Pague a pendência com Pix",
   "debtPixText": "Pague {amount} com o QR ou o código copia e cola no app do seu banco.",
@@ -1974,6 +1973,7 @@
   "ridePrepaidOver": "Seu período terminou às {time}. O excedente é acertado no galpão.",
   "@ridePrepaidOver": {"placeholders": {"time": {"type": "String"}}},
   "rideCounterDueLabel": "A acertar no galpão",
+  "ridePrepaidLabel": "Pago no balcão",
   "rideCounterDue": "A acertar no galpão: {amount}",
   "@rideCounterDue": {"placeholders": {"amount": {"type": "String"}}}
 }

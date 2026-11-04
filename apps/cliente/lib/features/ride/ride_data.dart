@@ -138,3 +138,12 @@ PrepaidPhase? prepaidPhase(DateTime? prepaidUntil, DateTime now) {
   if (!t.isBefore(until.subtract(kPrepaidEndingWarning))) return PrepaidPhase.ending;
   return PrepaidPhase.running;
 }
+
+/// Valor pago no balcao pelo periodo (linha `counter_prepaid` do `breakdown`, negativa), ou
+/// `null` sem a linha.
+int? counterPrepaidCents(Rental r) {
+  for (final line in r.breakdown?.lines ?? const <PriceLine>[]) {
+    if (line.code == 'counter_prepaid') return line.amountCents.abs();
+  }
+  return null;
+}

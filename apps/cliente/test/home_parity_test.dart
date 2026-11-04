@@ -8,6 +8,7 @@ import 'package:volti_cliente/core/flash.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/home/home_screen.dart';
+import 'package:volti_flutter/volti_flutter.dart';
 
 import 'galpao_fixtures.dart';
 import 'helpers.dart';
@@ -80,7 +81,10 @@ void main() {
     expect(find.text('Retire em'), findsOneWidget);
     expect(find.text('Galpão Volti · Pinheiros'), findsOneWidget);
     expect(find.textContaining('Perto'), findsNothing);
-    expect(find.text('Desbloqueie seu plano'), findsOneWidget);
+    expect(find.text('Planos no galpão'), findsOneWidget);
+    expect(find.text('Diária, semanal e mensal são contratados no balcão, com o contrato.'), findsOneWidget);
+    // Balcao: o cartao so informa (nada se contrata no app).
+    expect(t.widget<PassCard>(find.byKey(const Key('home-counter-plans'))).onTap, isNull);
     expect(find.text('1ª corrida grátis'), findsNothing);
     for (final f in ['Todas', 'Autonomia 10+ km', 'Pontos de retirada', 'Escanear para andar']) {
       expect(find.text(f), findsNothing);

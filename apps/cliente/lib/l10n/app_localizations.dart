@@ -2155,13 +2155,13 @@ abstract class AppLocalizations {
   /// No description provided for @promoPassTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Desbloqueie seu plano'**
+  /// **'Planos no galpão'**
   String get promoPassTitle;
 
   /// No description provided for @promoPassText.
   ///
   /// In pt, this message translates to:
-  /// **'Ande mais, pague menos'**
+  /// **'Diária, semanal e mensal são contratados no balcão, com o contrato.'**
   String get promoPassText;
 
   /// No description provided for @promoFirstRideTitle.
@@ -5485,8 +5485,8 @@ abstract class AppLocalizations {
   /// No description provided for @rideFinishedPending.
   ///
   /// In pt, this message translates to:
-  /// **'Moto travada. Falta acertar {amount} no galpão.'**
-  String rideFinishedPending(String amount);
+  /// **'Moto travada. O valor restante é acertado no galpão.'**
+  String get rideFinishedPending;
 
   /// No description provided for @rideFinishedProcessing.
   ///
@@ -5925,6 +5925,12 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'A acertar no galpão'**
   String get rideCounterDueLabel;
+
+  /// No description provided for @ridePrepaidLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pago no balcão'**
+  String get ridePrepaidLabel;
 
   /// No description provided for @rideCounterDue.
   ///

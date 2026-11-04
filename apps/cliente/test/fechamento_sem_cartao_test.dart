@@ -113,13 +113,14 @@ void main() {
       _screen(t, size: const Size(412, 2000));
       final b = _DebtBackend();
       await _summary(t, b);
-      expect(find.text('Moto travada. Falta acertar R\$ 216,35 no galpão.'), findsOneWidget);
+      expect(find.text('Moto travada. O valor restante é acertado no galpão.'), findsOneWidget);
       expect(find.text('Moto travada. Caução liberada.'), findsNothing);
       expect(find.widgetWithText(VoltiBadge, 'Pendente'), findsOneWidget);
       expect(find.text('Caução usada'), findsOneWidget);
       expect(find.text('R\$ 50,00'), findsOneWidget);
-      expect(find.text('A acertar no galpão'), findsOneWidget);
-      expect(find.text('R\$ 216,35'), findsOneWidget);
+      // O valor aparece uma vez, no aviso (sem a linha "A acertar" repetida).
+      expect(find.text('A acertar no galpão'), findsNothing);
+      expect(find.textContaining('216,35'), findsOneWidget);
       expect(find.text('Valor a acertar no galpão: R\$ 216,35'), findsOneWidget);
       expect(find.text('Acerte no balcão do galpão. O recibo fica disponível depois do acerto.'), findsOneWidget);
       expect(find.byKey(const Key('receipt-pay-now')), findsNothing);

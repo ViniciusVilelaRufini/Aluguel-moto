@@ -610,12 +610,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                   padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 4),
                                   child: Row(
                                     children: VoltiStagger.wrap([
+                                      // Balcao: os planos sao contratados no galpao; o cartao so informa
+                                      // (sem abrir a tela do plano, que e so leitura).
                                       PassCard(
+                                        key: const Key('home-counter-plans'),
                                         title: l.promoPassTitle,
                                         subtitle: l.promoPassText,
-                                        icon: LucideIcons.ticket,
+                                        icon: LucideIcons.warehouse,
                                         tone: PassCardTone.sun,
-                                        onTap: () => context.push('/account/subscriptions'),
                                       ),
                                       if (promoFirstRide) ...[
                                         const SizedBox(width: VoltiSpacing.s10),

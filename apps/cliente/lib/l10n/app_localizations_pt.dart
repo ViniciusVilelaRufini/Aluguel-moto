@@ -1166,10 +1166,11 @@ class AppLocalizationsPt extends AppLocalizations {
   String get filterPickupPoints => 'Pontos de retirada';
 
   @override
-  String get promoPassTitle => 'Desbloqueie seu plano';
+  String get promoPassTitle => 'Planos no galpão';
 
   @override
-  String get promoPassText => 'Ande mais, pague menos';
+  String get promoPassText =>
+      'Diária, semanal e mensal são contratados no balcão, com o contrato.';
 
   @override
   String get promoFirstRideTitle => '1ª corrida grátis';
@@ -3214,9 +3215,8 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String rideFinishedPending(String amount) {
-    return 'Moto travada. Falta acertar $amount no galpão.';
-  }
+  String get rideFinishedPending =>
+      'Moto travada. O valor restante é acertado no galpão.';
 
   @override
   String get rideFinishedProcessing =>
@@ -3492,6 +3492,9 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get rideCounterDueLabel => 'A acertar no galpão';
+
+  @override
+  String get ridePrepaidLabel => 'Pago no balcão';
 
   @override
   String rideCounterDue(String amount) {
