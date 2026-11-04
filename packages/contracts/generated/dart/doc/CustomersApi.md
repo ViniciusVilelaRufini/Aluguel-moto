@@ -198,7 +198,7 @@ Name | Type | Description  | Notes
 
 Buscar clientes
 
-`q` busca por nome, e-mail, telefone ou CPF. CPF mascarado para quem não é `admin`.
+`q` busca por nome, e-mail, telefone ou CPF. CPF mascarado para quem não é `admin`. Cada item traz `stats` (aluguéis, gasto, contestações).
 
 ### Example
 ```dart

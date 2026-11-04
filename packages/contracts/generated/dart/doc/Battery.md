@@ -18,6 +18,7 @@ Name | Type | Description | Notes
 **holderId** | **String** | Operador com a bateria na van. | [optional] 
 **stationId** | **String** |  | [optional] 
 **depotId** | **String** | Galpão onde está (`charging`, `charged` ou `defective`). | [optional] 
+**chargeKnown** | **bool** | `false` só para bateria `in_vehicle` numa moto sem leitura de bateria (`Vehicle.batteryKnown: false`): `chargePct` é o último valor gravado, não uma leitura (exibir \"sem leitura\"). Ausente = conhecida.  | [optional] 
 **updatedAt** | [**DateTime**](DateTime.md) |  | 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

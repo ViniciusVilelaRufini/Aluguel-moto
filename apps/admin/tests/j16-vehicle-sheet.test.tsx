@@ -75,8 +75,8 @@ describe('vehicle.position (J16)', () => {
     expect(applyVehiclePosition({ ...base, batteryKnown: true }, posEv({ batteryPct: 0 })).batteryKnown).toBe(true); // sem o campo: não muda
   });
 
-  it('descarta posição mais velha que a carregada', () => {
-    const loaded = { ...base, lastSeenAt: T1 };
+  it('descarta posição mais velha que a posição carregada (ordem por positionAt, painel de bancada)', () => {
+    const loaded = { ...base, positionAt: T1, lastSeenAt: T1 };
     expect(applyVehiclePosition(loaded, posEv({ ts: T0 }))).toBe(loaded);
   });
 
@@ -111,9 +111,9 @@ describe('chip de limite', () => {
   it('relay_only não controla velocidade: sem "Limite 32 km/h"', () => {
     expect(speedLimitChip({ ...base, trackerControlMode: 'relay_only' })).toBe('Sem controle de velocidade');
   });
-  it('speed_control (ou ausente) mostra o limite', () => {
+  it('speed_control mostra o limite; tipo ausente → "Limite —" (painel de bancada, L4)', () => {
     expect(speedLimitChip({ ...base, trackerControlMode: 'speed_control', speedLimitKmh: 20 })).toBe('Limite 20 km/h');
-    expect(speedLimitChip({ ...base, trackerControlMode: undefined })).toBe('Limite 32 km/h');
+    expect(speedLimitChip({ ...base, trackerControlMode: undefined })).toBe('Limite —');
   });
 });
 

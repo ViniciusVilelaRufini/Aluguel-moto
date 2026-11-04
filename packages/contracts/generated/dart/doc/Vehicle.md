@@ -31,6 +31,7 @@ Name | Type | Description | Notes
 **stolenMode** | **bool** | staff. | [optional] 
 **firmwareVersion** | **String** | staff. Versão do firmware do rastreador vinculado (`Tracker.firmwareVersion`); sem ela, a gravada na moto. Ausente = desconhecida. | [optional] 
 **lastSeenAt** | [**DateTime**](DateTime.md) | staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s. | [optional] 
+**positionAt** | [**DateTime**](DateTime.md) | staff. Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a posição atual e a velocidade dela não é a atual.  | [optional] 
 **currentRentalId** | **String** | staff. | [optional] 
 **vehicleModelId** | **String** |  | [optional] 
 **categoryLabel** | **String** |  | [optional] 

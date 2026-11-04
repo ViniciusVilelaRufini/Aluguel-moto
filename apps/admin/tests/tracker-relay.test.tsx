@@ -30,7 +30,7 @@ describe('rastreador só relé no painel (spec GT06 §9)', () => {
 
   it('falhas: unsupported_by_tracker e did_not_stop sem corte; a linha do tempo não passa por "em andamento"', () => {
     expect(commandStateLabel('failed', 'unsupported_by_tracker')).toBe('falhou: este rastreador não executa este comando');
-    expect(commandStateLabel('failed', 'did_not_stop', { type: 'lock', controlMode: 'relay_only' })).toBe('falhou: a moto não parou em 120 s; nenhum corte foi enviado');
+    expect(commandStateLabel('failed', 'did_not_stop', { type: 'lock', controlMode: 'relay_only' })).toBe('falhou: não foi possível confirmar a moto parada em 120 s (sem posição GPS recente ou em movimento); nenhum corte foi enviado');
     expect(commandStateLabel('failed', 'did_not_stop')).toBe('falhou: a moto não parou');
     expect(commandSteps('failed', 'unsupported_by_tracker')[1].state).toBe('todo');
   });

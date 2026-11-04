@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested,
 } from 'class-validator';
@@ -14,6 +14,10 @@ export class ListFieldTasksQuery extends PageQuery {
   /** UUID do operador ou `me`. */
   @IsOptional() @IsString() @MaxLength(36) assigneeId?: string;
   @IsOptional() @IsUUID() vehicleId?: string;
+  /** Painel de bancada: `true` = só as em aberto (open, assigned, in_progress); ignorado com `status`. */
+  @IsOptional() @Transform(({ value }) => value === true || value === 'true') @IsBoolean() active?: boolean;
+  /** Só as concluídas a partir deste instante (coluna "Concluída" do kanban: últimos 7 dias). */
+  @IsOptional() @IsDateString() completedSince?: string;
 }
 
 export class FieldTaskCreateDto {

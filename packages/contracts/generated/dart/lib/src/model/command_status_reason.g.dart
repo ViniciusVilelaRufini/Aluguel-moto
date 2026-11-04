@@ -16,6 +16,8 @@ const CommandStatusReason _$lockedByStaff =
     const CommandStatusReason._('lockedByStaff');
 const CommandStatusReason _$unsupportedByTracker =
     const CommandStatusReason._('unsupportedByTracker');
+const CommandStatusReason _$superseded =
+    const CommandStatusReason._('superseded');
 const CommandStatusReason _$unknownDefaultOpenApi =
     const CommandStatusReason._('unknownDefaultOpenApi');
 
@@ -33,6 +35,8 @@ CommandStatusReason _$valueOf(String name) {
       return _$lockedByStaff;
     case 'unsupportedByTracker':
       return _$unsupportedByTracker;
+    case 'superseded':
+      return _$superseded;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -48,6 +52,7 @@ final BuiltSet<CommandStatusReason> _$values =
   _$invalidLimit,
   _$lockedByStaff,
   _$unsupportedByTracker,
+  _$superseded,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -59,6 +64,7 @@ class _$CommandStatusReasonMeta {
   CommandStatusReason get invalidLimit => _$invalidLimit;
   CommandStatusReason get lockedByStaff => _$lockedByStaff;
   CommandStatusReason get unsupportedByTracker => _$unsupportedByTracker;
+  CommandStatusReason get superseded => _$superseded;
   CommandStatusReason get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   CommandStatusReason valueOf(String name) => _$valueOf(name);
   BuiltSet<CommandStatusReason> get values => _$values;
@@ -82,6 +88,7 @@ class _$CommandStatusReasonSerializer
     'invalidLimit': 'invalid_limit',
     'lockedByStaff': 'locked_by_staff',
     'unsupportedByTracker': 'unsupported_by_tracker',
+    'superseded': 'superseded',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -91,6 +98,7 @@ class _$CommandStatusReasonSerializer
     'invalid_limit': 'invalidLimit',
     'locked_by_staff': 'lockedByStaff',
     'unsupported_by_tracker': 'unsupportedByTracker',
+    'superseded': 'superseded',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

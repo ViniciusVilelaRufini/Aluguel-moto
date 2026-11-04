@@ -21,7 +21,7 @@ import { BUDGET_MS, CALL_TIMEOUT_MS, VehicleAddressService } from '../vehicles/v
 import { assertTaskActor, isFieldOnly } from './task-actor';
 import type { BatterySwapDto, FieldTaskCompleteDto, FieldTaskCreateDto, FieldTaskUpdateDto, InspectionDto, ListFieldTasksQuery } from './field-tasks.dto';
 
-type TaskVehicle = Pick<Vehicle, 'code' | 'lat' | 'lng' | 'batteryPct'> & Partial<Pick<Vehicle, 'status' | 'addressLabel' | 'batterySerial'>>;
+type TaskVehicle = Pick<Vehicle, 'code' | 'lat' | 'lng' | 'batteryPct'> & Partial<Pick<Vehicle, 'status' | 'addressLabel' | 'batterySerial' | 'batteryKnown'>>;
 type TaskRow = FieldTask & {
   vehicle?: TaskVehicle | null;
   assignee?: Pick<StaffUser, 'name'> | null;
@@ -37,7 +37,9 @@ const VEHICLE_STATUS_SETTABLE: VehicleStatus[] = ['free', 'maintenance'];
 export function toFieldTask(t: TaskRow) {
   return compact({
     id: t.id, type: t.type, status: t.status, priority: t.priority, vehicleId: t.vehicleId, vehicleCode: t.vehicle?.code ?? '',
-    vehicleLat: t.vehicle?.lat, vehicleLng: t.vehicle?.lng, vehicleBatteryPct: t.vehicle?.batteryPct,
+    vehicleLat: t.vehicle?.lat, vehicleLng: t.vehicle?.lng,
+    // Painel de bancada (P1-4): sem leitura de bateria (J16), o 0 gravado não é carga — o campo fica ausente.
+    vehicleBatteryPct: t.vehicle?.batteryKnown === false ? undefined : t.vehicle?.batteryPct,
     vehicleStatus: t.vehicle?.status, vehicleAddress: t.vehicle?.addressLabel ?? undefined,
     vehicleBatterySerial: t.battery?.serial ?? t.vehicle?.batterySerial ?? undefined, vehicleBatteryCycleCount: t.battery?.cycleCount,
     targetAddress: t.targetAddress, targetLat: t.targetLat ?? undefined,
@@ -115,7 +117,7 @@ export class FieldTasksService {
       vIds.length
         ? this.prisma.vehicle.findMany({
             where: { id: { in: vIds } },
-            select: { id: true, code: true, lat: true, lng: true, batteryPct: true, status: true, batterySerial: true, addressLabel: true, addressLat: true, addressLng: true, addressUpdatedAt: true },
+            select: { id: true, code: true, lat: true, lng: true, batteryPct: true, batteryKnown: true, status: true, batterySerial: true, addressLabel: true, addressLat: true, addressLng: true, addressUpdatedAt: true },
           })
         : [],
       sIds.length ? this.prisma.staffUser.findMany({ where: { id: { in: sIds } }, select: { id: true, name: true } }) : [],
@@ -153,6 +155,8 @@ export class FieldTasksService {
     const assignee = isFieldOnly(user) ? user.userId : q.assigneeId === 'me' ? user.userId : q.assigneeId;
     if (assignee) where.assigneeId = assignee;
     if (q.status) where.status = q.status;
+    else if (q.active) where.status = { in: ['open', 'assigned', 'in_progress'] };
+    if (q.completedSince) where.completedAt = { gte: new Date(q.completedSince) };
     if (q.type) where.type = q.type;
     if (q.vehicleId) where.vehicleId = q.vehicleId;
     const rows = await this.prisma.fieldTask.findMany({ where, orderBy: [{ priority: 'desc' }, { dueAt: 'asc' }, { id: 'asc' }], ...pageArgs(q) });

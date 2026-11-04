@@ -95,3 +95,31 @@ describe('withLiveState — trava com a precedência do reported', () => {
     expect((await withLiveState(redis, [{ ...row, lockedAt: null, lockedFromReport: false }]))[0].locked).toBe(false);
   });
 });
+
+/** Painel de bancada: o GET leva a hora da posição ao vivo (o heartbeat avança o último sinal sem posição nova). */
+describe('withLiveState — positionAt', () => {
+  const row = {
+    id: 'v1', thingName: 'moto-0059', lat: -23.5, lng: -46.6, speedKmh: 0, batteryPct: 70, batteryKnown: true, locked: false, ignition: false, signal: 4, online: true,
+    lastSeenAt: new Date('2026-11-03T15:00:00.000Z'), positionAt: new Date('2026-11-03T14:50:00.000Z'),
+  };
+
+  it('posição do Redis → positionAt do Redis (ms da medição)', async () => {
+    const redis = new MemoryRedisStore();
+    await redis.hset('iot:live:moto-0059', { lat: '-23.51', lng: '-46.61', positionAt: String(Date.parse('2026-11-03T15:00:05.000Z')), online: 'true', lastSeenAt: '2026-11-03T15:00:06.000Z' });
+    expect((await withLiveState(redis, [row]))[0].positionAt).toEqual(new Date('2026-11-03T15:00:05.000Z'));
+  });
+
+  it('só heartbeat (Redis sem posição) → positionAt do banco, mesmo com o último sinal mais novo', async () => {
+    const redis = new MemoryRedisStore();
+    await redis.hset('iot:live:moto-0059', { lat: '0', lng: '0', positionAt: '', online: 'true', lastSeenAt: '2026-11-03T15:01:00.000Z' });
+    const [v] = await withLiveState(redis, [row]);
+    expect(v.positionAt).toEqual(new Date('2026-11-03T14:50:00.000Z'));
+    expect(v.lastSeenAt).toEqual(new Date('2026-11-03T15:01:00.000Z'));
+  });
+
+  it('posição do Redis sem hora conhecida → positionAt desconhecida (null), nunca a hora da posição velha do banco', async () => {
+    const redis = new MemoryRedisStore();
+    await redis.hset('iot:live:moto-0059', { lat: '-23.51', lng: '-46.61', positionAt: '', online: 'true', lastSeenAt: '2026-11-03T15:00:06.000Z' });
+    expect((await withLiveState(redis, [row]))[0].positionAt).toBeNull();
+  });
+});

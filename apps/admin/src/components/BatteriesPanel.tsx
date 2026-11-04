@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
-import { BATTERY_STATUS, BATTERY_STATUSES, batteryActions, batteryLocation, buildBatteryCreate, chargeTone, countsFromPage, movementTitle, parseSerials, unloadDestination, validateReason, type Battery, type BatteryStatus } from '@/lib/batteries';
+import { BATTERY_STATUS, BATTERY_STATUSES, batteryActions, batteryChargeText, batteryLocation, buildBatteryCreate, chargeTone, countsFromPage, movementTitle, parseSerials, unloadDestination, validateReason, type Battery, type BatteryStatus } from '@/lib/batteries';
 import { formatDateTimeIn, timeAgo } from '@/lib/format';
 import { loadAllPages } from '@/lib/paging';
 import type { S } from '@/lib/types';
@@ -318,7 +318,7 @@ function BatteryList({ stationNames, staffNames, depotNames, depots, depotId }: 
       <DataTable<Battery> dense testId="batteries-table" rows={rows} loading={loading} pager={pager} empty={dq ? `Nenhuma bateria com "${dq}"` : 'Nenhuma bateria nesta situação'} emptyIcon="Battery"
         columns={[
           { key: 'serial', label: 'Série', mono: true },
-          { key: 'chargePct', label: 'Carga', align: 'right', render: (b) => <Pill tone={chargeTone(b.chargePct)}>{b.chargePct}%</Pill> },
+          { key: 'chargePct', label: 'Carga', align: 'right', render: (b) => <Pill tone={b.chargeKnown === false ? 'neutral' : chargeTone(b.chargePct)}>{batteryChargeText(b)}</Pill> },
           { key: 'cycleCount', label: 'Ciclos', align: 'right', render: (b) => <span style={{ fontFamily: 'var(--font-mono)' }}>{b.cycleCount}</span> },
           { key: 'status', label: 'Situação', render: (b) => <Pill tone={BATTERY_STATUS[b.status][1]}>{BATTERY_STATUS[b.status][0]}</Pill> },
           { key: 'where', label: 'Onde', wrap: true, render: (b) => batteryLocation(b, { stations: stationNames, staff: staffNames, depots: depotNames }) },

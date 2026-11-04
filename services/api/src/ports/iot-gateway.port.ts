@@ -33,8 +33,10 @@ export interface CommandOutcome {
   /**
    * `locked_by_staff`: unlock de cliente/campo recusado (trava de equipe/sistema, hold em 0 ou modo roubada).
    * `unsupported_by_tracker`: `speed_limit`/`horn` em rastreador `relay_only` (nada é publicado).
+   * `superseded`: comando pendente substituído por um mais novo sobre o mesmo campo (ou trava cancelada por um unlock). Não é
+   * falha da moto: não abre alerta `command_failed`.
    */
-  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit' | 'locked_by_staff' | 'unsupported_by_tracker';
+  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit' | 'locked_by_staff' | 'unsupported_by_tracker' | 'superseded';
 }
 
 export interface VehicleLiveState {

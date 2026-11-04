@@ -3230,7 +3230,7 @@ export interface paths {
         };
         /**
          * Buscar clientes
-         * @description `q` busca por nome, e-mail, telefone ou CPF. CPF mascarado para quem não é `admin`.
+         * @description `q` busca por nome, e-mail, telefone ou CPF. CPF mascarado para quem não é `admin`. Cada item traz `stats` (aluguéis, gasto, contestações).
          */
         get: operations["listCustomers"];
         put?: never;
@@ -3294,6 +3294,29 @@ export interface paths {
         };
         /** Ficha do cliente */
         get: operations["getCustomer"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/customers/{id}/kyc-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Arquivos da verificação (documento e selfie)
+         * @description Links de leitura pré-assinados (curtos, 5 minutos) dos arquivos que o cliente enviou na verificação, para a revisão manual.
+         *     Cada consulta grava AuditLog (`customer.kyc_files_view`) com quais arquivos, sem as chaves e sem os links; nada disso vai
+         *     para log (LGPD). O link pré-assinado contém o caminho do objeto (`kyc/{customerId}/...`: só o UUID do cliente, sem dado
+         *     pessoal). Arquivo não enviado → campo ausente.
+         */
+        get: operations["getCustomerKycFiles"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3525,6 +3548,9 @@ export interface components {
         KycStatus: "not_started" | "pending" | "approved" | "rejected";
         /**
          * @description Motivo do estado do comando (`CommandOutcome.reason` da porta IoT). No WebSocket `command.updated` aparece como `reason`.
+         *     `superseded` (painel de bancada, 2026-11-03): comando ainda pendente substituído por um comando mais novo sobre o mesmo
+         *     campo (ex.: pausar e retomar em seguida). Termina `failed`, mas não é falha da moto: não abre alerta `command_failed`
+         *     ("substituído por um comando mais novo").
          *     `locked_by_staff`: destravar pedido por cliente ou campo recusado (trava da equipe ou do sistema, limite segurado em 0 ou
          *     modo roubada); nada é publicado e só admin/operacao desfaz.
          *     `did_not_stop`: em rastreador `speed_control`, a moto não parou em 120 s e o limite fica segurado em 0; em `relay_only`,
@@ -3532,7 +3558,7 @@ export interface components {
          *     `unsupported_by_tracker`: comando que o rastreador não executa (`speed_limit` e `horn` em `relay_only`); o shadow não é tocado.
          * @enum {string}
          */
-        CommandStatusReason: "offline" | "timeout" | "did_not_stop" | "invalid_limit" | "locked_by_staff" | "unsupported_by_tracker";
+        CommandStatusReason: "offline" | "timeout" | "did_not_stop" | "invalid_limit" | "locked_by_staff" | "unsupported_by_tracker" | "superseded";
         /**
          * @description Capacidade do rastreador. `speed_control` (padrão): limita velocidade e faz o bloqueio seguro com rampa (firmware F1–F12).
          *     `relay_only` (ex.: Concox J16, protocolo GT06 via Traccar): só rastreia e corta pelo relé — o `lock` espera a moto parar
@@ -3822,6 +3848,23 @@ export interface components {
             /** Format: date-time */
             reviewedAt?: string;
         };
+        KycFileLink: {
+            /**
+             * Format: uri
+             * @description Link de leitura pré-assinado (expira em `expiresAt`).
+             */
+            url: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        KycFiles: {
+            /** Format: uuid */
+            customerId: string;
+            documentType?: components["schemas"]["DocumentType"];
+            documentFront?: components["schemas"]["KycFileLink"];
+            documentBack?: components["schemas"]["KycFileLink"];
+            selfie?: components["schemas"]["KycFileLink"];
+        };
         KycReviewRequest: {
             decision: components["schemas"]["KycDecision"];
             reason: string;
@@ -3934,6 +3977,13 @@ export interface components {
              * @description staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s.
              */
             lastSeenAt?: string;
+            /**
+             * Format: date-time
+             * @description staff. Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat
+             *     do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a
+             *     posição atual e a velocidade dela não é a atual.
+             */
+            readonly positionAt?: string;
             /**
              * Format: uuid
              * @description staff.
@@ -5222,6 +5272,7 @@ export interface components {
             vehicleLat?: number;
             /** Format: double */
             vehicleLng?: number;
+            /** @description Carga da bateria da moto. Ausente quando a moto não tem leitura de bateria (`Vehicle.batteryKnown: false`). */
             vehicleBatteryPct?: number;
             vehicleStatus?: components["schemas"]["VehicleStatus"];
             /**
@@ -5467,7 +5518,10 @@ export interface components {
         DashboardSummary: {
             /** Format: date-time */
             generatedAt: string;
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Motos com aluguel em aberto (`active`, `paused`, `ending`), inclusive sem sinal, ÷ motos cadastradas, em %. Mesma definição do relatório de ocupação.
+             */
             occupancyPct: number;
             activeRentals: number;
             /** @description Mesma definição de `FinanceReport.totalRevenueCents`, desde 00:00 de hoje (America/Sao_Paulo). */
@@ -5517,9 +5571,14 @@ export interface components {
             /** Format: date-time */
             periodStart: string;
             vehiclesTotal: number;
-            /** @description Média de motos em aluguel no período. */
+            /** @description Média de motos em aluguel no período (tempo em aluguel ÷ duração do período), arredondada. */
             vehiclesRented: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Tempo em aluguel ÷ tempo de frota no período (motos cadastradas × duração), em %, uma casa decimal. O período é cortado
+             *     em `from`, `to` e agora (o trecho futuro não conta). Aluguel em aberto (`active`, `paused`, `ending`) conta até agora:
+             *     é a mesma definição de `DashboardSummary.occupancyPct` (motos com aluguel em aberto ÷ frota) integrada no tempo.
+             */
             occupancyPct: number;
         };
         OccupancyReport: {
@@ -5528,6 +5587,11 @@ export interface components {
             /** Format: date-time */
             to: string;
             groupBy: components["schemas"]["ReportGroupBy"];
+            /**
+             * Format: double
+             * @description Ocupação do intervalo inteiro (`from`–`to`, até agora), ponderada pelo tempo: soma do tempo em aluguel ÷ soma do tempo de frota. Use esta, não a média simples das linhas.
+             */
+            occupancyPct?: number;
             rows: components["schemas"]["OccupancyRow"][];
         };
         VehicleRevenueRow: {
@@ -6301,6 +6365,11 @@ export interface components {
              * @description Galpão onde está (`charging`, `charged` ou `defective`).
              */
             depotId?: string;
+            /**
+             * @description `false` só para bateria `in_vehicle` numa moto sem leitura de bateria (`Vehicle.batteryKnown: false`): `chargePct` é o
+             *     último valor gravado, não uma leitura (exibir "sem leitura"). Ausente = conhecida.
+             */
+            readonly chargeKnown?: boolean;
             /** Format: date-time */
             updatedAt: string;
         };
@@ -11111,6 +11180,10 @@ export interface operations {
                 /** @description UUID do operador ou `me`. */
                 assigneeId?: string;
                 vehicleId?: string;
+                /** @description `true` = só as tarefas em aberto (`open`, `assigned`, `in_progress`). Ignorado com `status`. */
+                active?: boolean;
+                /** @description Só tarefas concluídas (`completedAt`) a partir deste instante (ex.: a coluna "Concluída" dos últimos 7 dias). Use com `status=done`. */
+                completedSince?: string;
             };
             header?: never;
             path?: never;
@@ -12123,6 +12196,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Customer"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getCustomerKycFiles: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Links dos arquivos. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KycFiles"];
                 };
             };
             401: components["responses"]["Unauthorized"];

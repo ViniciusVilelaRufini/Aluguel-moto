@@ -45,11 +45,12 @@ export class BatteriesService {
     private readonly audit: AuditService,
   ) {}
 
-  private async vehicleCodes(ids: Array<string | null>): Promise<Map<string, string>> {
+  /** Código da moto e se ela tem leitura de bateria (bateria instalada numa moto sem leitura: carga não é leitura). */
+  private async vehicleCodes(ids: Array<string | null>): Promise<Map<string, { code: string; batteryKnown: boolean }>> {
     const list = [...new Set(ids.filter((x): x is string => !!x))];
     if (!list.length) return new Map();
-    const vs = await this.prisma.vehicle.findMany({ where: { id: { in: list } }, select: { id: true, code: true } });
-    return new Map(vs.map((v) => [v.id, v.code]));
+    const vs = await this.prisma.vehicle.findMany({ where: { id: { in: list } }, select: { id: true, code: true, batteryKnown: true } });
+    return new Map(vs.map((v) => [v.id, { code: v.code, batteryKnown: v.batteryKnown !== false }]));
   }
 
   async list(user: Principal, q: { cursor?: string; limit?: number; status?: BatteryStatus; holderId?: string; q?: string; depotId?: string }) {
@@ -70,7 +71,13 @@ export class BatteriesService {
     const codes = await this.vehicleCodes(rows.map((r) => r.vehicleId));
     const statusCounts = Object.fromEntries(BATTERY_STATUSES.map((s) => [s, 0])) as Record<BatteryStatus, number>;
     for (const g of groups) statusCounts[g.status] = g._count._all;
-    return { ...toPage(rows, q, (b) => toBattery(b, b.vehicleId ? codes.get(b.vehicleId) : undefined)), statusCounts };
+    return {
+      ...toPage(rows, q, (b) => {
+        const v = b.vehicleId ? codes.get(b.vehicleId) : undefined;
+        return toBattery(b, v?.code, v?.batteryKnown);
+      }),
+      statusCounts,
+    };
   }
 
   /** `campo` só vê a própria van; `admin`/`operacao` podem consultar a de qualquer operador. */

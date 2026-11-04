@@ -38,6 +38,7 @@ part 'vehicle.g.dart';
 /// * [stolenMode] - staff.
 /// * [firmwareVersion] - staff. Versão do firmware do rastreador vinculado (`Tracker.firmwareVersion`); sem ela, a gravada na moto. Ausente = desconhecida.
 /// * [lastSeenAt] - staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s.
+/// * [positionAt] - staff. Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a posição atual e a velocidade dela não é a atual.
 /// * [currentRentalId] - staff.
 /// * [vehicleModelId]
 /// * [categoryLabel]
@@ -142,6 +143,10 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   /// staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s.
   @BuiltValueField(wireName: r'lastSeenAt')
   DateTime? get lastSeenAt;
+
+  /// staff. Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a posição atual e a velocidade dela não é a atual.
+  @BuiltValueField(wireName: r'positionAt')
+  DateTime? get positionAt;
 
   /// staff.
   @BuiltValueField(wireName: r'currentRentalId')
@@ -359,6 +364,13 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
       yield r'lastSeenAt';
       yield serializers.serialize(
         object.lastSeenAt,
+        specifiedType: const FullType(DateTime),
+      );
+    }
+    if (object.positionAt != null) {
+      yield r'positionAt';
+      yield serializers.serialize(
+        object.positionAt,
         specifiedType: const FullType(DateTime),
       );
     }
@@ -666,6 +678,14 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
           ) as DateTime?;
           if (valueDes == null) continue;
           result.lastSeenAt = valueDes;
+          break;
+        case r'positionAt':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DateTime),
+          ) as DateTime?;
+          if (valueDes == null) continue;
+          result.positionAt = valueDes;
           break;
         case r'currentRentalId':
           final valueDes = serializers.deserialize(

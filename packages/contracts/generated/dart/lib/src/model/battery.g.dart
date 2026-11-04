@@ -28,6 +28,8 @@ class _$Battery extends Battery {
   @override
   final String? depotId;
   @override
+  final bool? chargeKnown;
+  @override
   final DateTime updatedAt;
 
   factory _$Battery([void Function(BatteryBuilder)? updates]) =>
@@ -44,6 +46,7 @@ class _$Battery extends Battery {
       this.holderId,
       this.stationId,
       this.depotId,
+      this.chargeKnown,
       required this.updatedAt})
       : super._();
   @override
@@ -67,6 +70,7 @@ class _$Battery extends Battery {
         holderId == other.holderId &&
         stationId == other.stationId &&
         depotId == other.depotId &&
+        chargeKnown == other.chargeKnown &&
         updatedAt == other.updatedAt;
   }
 
@@ -83,6 +87,7 @@ class _$Battery extends Battery {
     _$hash = $jc(_$hash, holderId.hashCode);
     _$hash = $jc(_$hash, stationId.hashCode);
     _$hash = $jc(_$hash, depotId.hashCode);
+    _$hash = $jc(_$hash, chargeKnown.hashCode);
     _$hash = $jc(_$hash, updatedAt.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
@@ -101,6 +106,7 @@ class _$Battery extends Battery {
           ..add('holderId', holderId)
           ..add('stationId', stationId)
           ..add('depotId', depotId)
+          ..add('chargeKnown', chargeKnown)
           ..add('updatedAt', updatedAt))
         .toString();
   }
@@ -149,6 +155,10 @@ class BatteryBuilder implements Builder<Battery, BatteryBuilder> {
   String? get depotId => _$this._depotId;
   set depotId(String? depotId) => _$this._depotId = depotId;
 
+  bool? _chargeKnown;
+  bool? get chargeKnown => _$this._chargeKnown;
+  set chargeKnown(bool? chargeKnown) => _$this._chargeKnown = chargeKnown;
+
   DateTime? _updatedAt;
   DateTime? get updatedAt => _$this._updatedAt;
   set updatedAt(DateTime? updatedAt) => _$this._updatedAt = updatedAt;
@@ -170,6 +180,7 @@ class BatteryBuilder implements Builder<Battery, BatteryBuilder> {
       _holderId = $v.holderId;
       _stationId = $v.stationId;
       _depotId = $v.depotId;
+      _chargeKnown = $v.chargeKnown;
       _updatedAt = $v.updatedAt;
       _$v = null;
     }
@@ -206,6 +217,7 @@ class BatteryBuilder implements Builder<Battery, BatteryBuilder> {
           holderId: holderId,
           stationId: stationId,
           depotId: depotId,
+          chargeKnown: chargeKnown,
           updatedAt: BuiltValueNullFieldError.checkNotNull(
               updatedAt, r'Battery', 'updatedAt'),
         );

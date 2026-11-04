@@ -115,8 +115,15 @@ test.describe('mapa da frota', () => {
     await expect(page.getByTestId('vehicle-sheet').getByText('-23.5000, -46.6000')).toBeVisible({ timeout: 3000 });
     await expect(page.getByTestId('vehicle-sheet').getByText('11 km/h')).toBeVisible();
     await expect(page.getByTestId('vehicle-sheet').getByText('Limite 20 km/h')).toBeVisible();
+    // vehicle.status atualiza o contador do chip de status; o "sem sinal" do cabeçalho segue o `online` do rastreador
+    // (painel de bancada P2-11: moto alugada sem sinal continua `rented`), que chega por vehicle.state.
+    const chip = page.getByRole('group', { name: 'Filtrar motos por status' }).getByRole('button', { name: /Sem sinal/ });
+    const chip0 = await chip.innerText();
     const badge0 = await page.getByTestId('fleet-badge').innerText();
     mock.emit('vehicle.status', { vehicleId: 'veh-001', status: 'offline', ts: new Date().toISOString() });
+    await expect.poll(() => chip.innerText(), { timeout: 3000 }).not.toBe(chip0);
+    expect(await page.getByTestId('fleet-badge').innerText()).toBe(badge0);
+    mock.emit('vehicle.state', { vehicleId: 'veh-001', locked: true, online: false, lastSeenAt: new Date().toISOString(), batteryKnown: true, ts: new Date().toISOString() });
     await expect.poll(() => page.getByTestId('fleet-badge').innerText(), { timeout: 3000 }).not.toBe(badge0);
     expect(w.finish('map-rt')).toEqual([]);
   });

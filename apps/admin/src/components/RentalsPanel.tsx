@@ -70,7 +70,12 @@ function RentalDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const [refund, setRefund] = useState(false);
   const [refundAmount, setRefundAmount] = useState('');
 
-  const rental = useQuery({ queryKey: ['rental', id], queryFn: () => unwrap(api.GET('/rentals/{id}', { params: { path: { id } } })) });
+  // P2-12: aluguel em andamento atualiza tempo e valor parcial a cada 30 s.
+  const rental = useQuery({
+    queryKey: ['rental', id],
+    queryFn: () => unwrap(api.GET('/rentals/{id}', { params: { path: { id } } })),
+    refetchInterval: (q) => (q.state.data && ['active', 'paused', 'ending'].includes(q.state.data.status) ? 30_000 : false),
+  });
   const events = useQuery({ queryKey: ['rental-events', id], queryFn: () => unwrap(api.GET('/rentals/{id}/events', { params: { path: { id } } })) });
   const r = rental.data;
   const payment = useQuery({ queryKey: ['payment', r?.paymentId], enabled: !!r?.paymentId, queryFn: () => unwrap(api.GET('/payments/{id}', { params: { path: { id: r!.paymentId! } } })) });
@@ -90,7 +95,7 @@ function RentalDetail({ id, onClose }: { id: string; onClose: () => void }) {
             <KV k="Plano" v={PLAN_LABEL[r.planCode]} />
             <KV k="Seguro" v={COVERAGE_LABEL[r.coverage]} />
             <KV k="Cupom" v={r.couponCode ?? '—'} />
-            <KV k="Valor" v={formatBRL(r.costCents)} />
+            <KV k={finished ? 'Valor' : 'Valor até agora'} v={formatBRL(r.costCents)} />
             {canOpen(groups, 'customers') && <KV k="Cliente" v={<Link href={`/customers?customer=${r.customerId}`} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Abrir ficha</Link>} />}
             {r.forceEndReason && <KV k="Motivo do encerramento" v={r.forceEndReason} />}
           </div>

@@ -1,3 +1,4 @@
+import { timeAgo } from './format';
 import type { RealtimeEvents, S } from './types';
 
 type Vehicle = S<'Vehicle'>;
@@ -47,20 +48,39 @@ export function applyVehicleState(v: Vehicle, e: StateEvent): Vehicle {
 
 /**
  * Campos de `vehicle.position`. `batteryKnown` do evento quando vem (servidor novo); sem ele (servidor antigo), leitura de
- * bateria > 0 é leitura real e a bateria volta a ser conhecida.
+ * bateria > 0 é leitura real e a bateria volta a ser conhecida. `ts` é a hora da medição: vira `positionAt` (e o último sinal;
+ * quem aplica não deixa o último sinal voltar no tempo, ver `applyVehiclePosition`).
  */
 export function positionPatch(p: PositionEvent): Partial<Vehicle> {
   const known = p.batteryKnown !== undefined ? { batteryKnown: p.batteryKnown } : p.batteryPct > 0 ? { batteryKnown: true } : {};
   return {
-    lat: p.lat, lng: p.lng, speedKmh: p.speedKmh, batteryPct: p.batteryPct, status: p.status, speedLimitKmh: p.speedLimitKmh, lastSeenAt: p.ts,
+    lat: p.lat, lng: p.lng, speedKmh: p.speedKmh, batteryPct: p.batteryPct, status: p.status, speedLimitKmh: p.speedLimitKmh, lastSeenAt: p.ts, positionAt: p.ts,
     ...known,
   };
 }
 
-/** Aplica `vehicle.position`; devolve o mesmo objeto se for mais velha que o carregado. `locked`/`online` ficam como estão. */
+/**
+ * Aplica `vehicle.position`; devolve o mesmo objeto se for mais velha que a posição carregada. A ordem é pela hora da posição
+ * (`positionAt`), não pelo último sinal: o heartbeat avança `lastSeenAt` sem posição nova e a posição seria descartada (P3).
+ * O último sinal nunca volta no tempo; `locked`/`online` ficam como estão.
+ */
 export function applyVehiclePosition(v: Vehicle, p: PositionEvent): Vehicle {
-  if (isOlderThanLoaded(v.lastSeenAt, p.ts)) return v;
-  return { ...v, ...positionPatch(p) };
+  if (isOlderThanLoaded(v.positionAt, p.ts)) return v;
+  return { ...v, ...positionPatch(p), lastSeenAt: laterIso(v.lastSeenAt, p.ts) };
+}
+
+/** Posição com mais de 30 s não é a posição atual (J16 sem GPS válido: o heartbeat mantém o último sinal fresco). */
+export const STALE_POSITION_MS = 30_000;
+
+/**
+ * P1-3: a posição e a velocidade exibidas. Posição velha (> 30 s) → aviso "Posição de há X min (sem GPS)" e velocidade "—"
+ * (a velocidade daquela posição não é a atual). Sem `positionAt` (API antiga), não marca como velha.
+ */
+export function positionView(v: Pick<Vehicle, 'positionAt' | 'speedKmh'>, now = Date.now()): { stale: boolean; note: string | undefined; speedText: string } {
+  const at = ms(v.positionAt);
+  const stale = !Number.isNaN(at) && now - at > STALE_POSITION_MS;
+  const speedText = stale || v.speedKmh == null ? '— km/h' : `${Math.round(v.speedKmh)} km/h`;
+  return { stale, note: stale ? `Posição de ${timeAgo(v.positionAt, now)} (sem GPS)` : undefined, speedText };
 }
 
 export interface BatteryView { known: boolean; pctText: string; rangeText: string }
@@ -71,8 +91,12 @@ export function batteryView(v: Pick<Vehicle, 'batteryPct' | 'estimatedRangeKm' |
   return { known: true, pctText: `${v.batteryPct}%`, rangeText: `~${Math.round(v.estimatedRangeKm)} km` };
 }
 
-/** Chip de limite da ficha: o rastreador só relé não controla velocidade, então não há limite a mostrar. */
+/**
+ * Chip de limite da ficha: o rastreador só relé não controla velocidade, então não há limite a mostrar. Tipo do rastreador
+ * desconhecido (cópia sem o campo) → "Limite —" (L4: nunca "Limite 32 km/h" por padrão).
+ */
 export function speedLimitChip(v: Pick<Vehicle, 'trackerControlMode' | 'speedLimitKmh'>): string {
+  if (v.trackerControlMode === undefined) return 'Limite —';
   return v.trackerControlMode === 'relay_only' ? 'Sem controle de velocidade' : `Limite ${v.speedLimitKmh} km/h`;
 }
 
@@ -81,4 +105,15 @@ export function addressView(v: Pick<Vehicle, 'address' | 'addressUpdatedAt'>): {
   if (v.address === null) return { text: 'Sem endereço', updatedAt: undefined };
   if (!v.address) return { text: '—', updatedAt: undefined };
   return { text: v.address, updatedAt: v.addressUpdatedAt ?? undefined };
+}
+
+/**
+ * Ficha: o GET /vehicles/{id} vence em todo campo, exceto os de `vehicle.position` quando a cópia ao vivo da frota tem uma
+ * posição mais nova (evento que chegou com o GET ainda em voo: o `setQueryData` não tinha onde gravar e o GET trazia a velha).
+ */
+export function sheetVehicle(detail: Vehicle | undefined, live: Vehicle | undefined): Vehicle | undefined {
+  if (!detail || !live?.positionAt) return detail ?? live;
+  if (detail.positionAt && !isOlderThanLoaded(live.positionAt, detail.positionAt)) return detail;
+  const { lat, lng, speedKmh, positionAt, batteryPct, batteryKnown, status, speedLimitKmh } = live;
+  return { ...detail, lat, lng, speedKmh, positionAt, batteryPct, batteryKnown, status, speedLimitKmh, lastSeenAt: laterIso(detail.lastSeenAt, live.lastSeenAt) };
 }

@@ -10,6 +10,7 @@ All URIs are relative to *http://localhost:3000*
 Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**createKycUploads**](KycApi.md#createkycuploads) | **POST** /kyc/uploads | URLs pré-assinadas para documento e selfie
+[**getCustomerKycFiles**](KycApi.md#getcustomerkycfiles) | **GET** /customers/{id}/kyc-files | Arquivos da verificação (documento e selfie)
 [**getKycStatus**](KycApi.md#getkycstatus) | **GET** /kyc/status | Status da verificação
 [**reviewCustomerKyc**](KycApi.md#reviewcustomerkyc) | **POST** /customers/{id}/kyc-review | Revisão manual da verificação
 [**submitKyc**](KycApi.md#submitkyc) | **POST** /kyc/submit | Enviar verificação de identidade
@@ -54,6 +55,49 @@ Name | Type | Description  | Notes
 ### HTTP request headers
 
  - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **getCustomerKycFiles**
+> KycFiles getCustomerKycFiles(id)
+
+Arquivos da verificação (documento e selfie)
+
+Links de leitura pré-assinados (curtos, 5 minutos) dos arquivos que o cliente enviou na verificação, para a revisão manual. Cada consulta grava AuditLog (`customer.kyc_files_view`) com quais arquivos, sem as chaves e sem os links; nada disso vai para log (LGPD). O link pré-assinado contém o caminho do objeto (`kyc/{customerId}/...`: só o UUID do cliente, sem dado pessoal). Arquivo não enviado → campo ausente. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getKycApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+
+try {
+    final response = api.getCustomerKycFiles(id);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling KycApi->getCustomerKycFiles: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+
+### Return type
+
+[**KycFiles**](KycFiles.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
  - **Accept**: application/json, application/problem+json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

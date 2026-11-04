@@ -65,3 +65,34 @@ describe('speed_limiter_noncompliant pelo teto legal (auditoria 4, item 3)', () 
     });
   });
 });
+
+describe('command_failed (painel de bancada, L1)', () => {
+  const make = () => {
+    const alerts = { create: jest.fn().mockResolvedValue({}) };
+    const l = new AlertsListeners(alerts as never, { vehicle: { findUnique: jest.fn() }, rental: { findFirst: jest.fn() } } as never, { publish: jest.fn(), subscribe: jest.fn() } as never);
+    return { alerts, l };
+  };
+  const ev = (over: Record<string, unknown>) => ({ commandId: 'c1', vehicleId: VEHICLE, type: 'lock', status: 'failed', payload: {}, ...over }) as never;
+
+  it('comando substituído por um mais novo (superseded) não é falha: nenhum alerta', async () => {
+    const { alerts, l } = make();
+    await l.onCommandChanged(ev({ reason: 'superseded' }));
+    expect(alerts.create).not.toHaveBeenCalled();
+  });
+
+  it('falha real abre alerta com o motivo em português (sem "sem motivo" cru)', async () => {
+    const { alerts, l } = make();
+    await l.onCommandChanged(ev({ reason: 'did_not_stop' }));
+    await l.onCommandChanged(ev({ type: 'unlock', reason: 'timeout' }));
+    await l.onCommandChanged(ev({ type: 'stolen_mode', reason: undefined }));
+    expect(alerts.create).toHaveBeenNthCalledWith(1, { type: 'command_failed', priority: 'high', message: 'Bloqueio falhou: a moto não parou.', vehicleId: VEHICLE });
+    expect(alerts.create).toHaveBeenNthCalledWith(2, { type: 'command_failed', priority: 'medium', message: 'Desbloqueio falhou: sem resposta da moto.', vehicleId: VEHICLE });
+    expect(alerts.create).toHaveBeenNthCalledWith(3, { type: 'command_failed', priority: 'medium', message: 'Modo roubada falhou.', vehicleId: VEHICLE });
+  });
+
+  it('confirmado não abre alerta', async () => {
+    const { alerts, l } = make();
+    await l.onCommandChanged(ev({ status: 'confirmed' }));
+    expect(alerts.create).not.toHaveBeenCalled();
+  });
+});

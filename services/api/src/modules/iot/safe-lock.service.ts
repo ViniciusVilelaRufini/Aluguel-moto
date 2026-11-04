@@ -259,11 +259,11 @@ export class SafeLockService {
     });
   }
 
-  /** Destravar/novo comando conflitante: interrompe a rampa; os locks em curso terminam `failed`. */
+  /** Destravar/novo comando conflitante: interrompe a rampa; os locks em curso terminam `failed`/`superseded`. */
   async cancel(thingName: string): Promise<void> {
     await this.store.withLock(thingName, async () => {
       const ramp = await this.store.get(thingName);
-      if (ramp) await this.finish(ramp, { status: 'failed' });
+      if (ramp) await this.finish(ramp, { status: 'failed', reason: 'superseded' });
     });
   }
 

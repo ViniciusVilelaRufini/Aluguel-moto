@@ -171,6 +171,8 @@ export 'package:volti_api/src/model/insurance_coverage_update.dart';
 export 'package:volti_api/src/model/insurance_policy.dart';
 export 'package:volti_api/src/model/insurance_policy_page.dart';
 export 'package:volti_api/src/model/kyc_decision.dart';
+export 'package:volti_api/src/model/kyc_file_link.dart';
+export 'package:volti_api/src/model/kyc_files.dart';
 export 'package:volti_api/src/model/kyc_review_request.dart';
 export 'package:volti_api/src/model/kyc_status.dart';
 export 'package:volti_api/src/model/kyc_status_response.dart';
