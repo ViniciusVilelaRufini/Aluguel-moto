@@ -14,7 +14,6 @@ import '../../core/geo.dart';
 import '../../core/flash.dart';
 import '../../core/launcher.dart';
 import '../../core/widgets.dart';
-import '../payments/debt_pix_sheet.dart';
 import '../ride/ride_screen.dart';
 
 final receiptProvider = FutureProvider.autoDispose.family<Receipt, String>((ref, id) => ref.watch(backendProvider).receipt(id));
@@ -100,13 +99,6 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   /// Recibo pago (ou de uma API sem `paymentStatus`, que so devolvia recibo pago).
   bool _isPaid(Receipt r) => r.paymentStatus == null || r.paymentStatus == ReceiptPaymentStatus.paid;
 
-  Future<void> _payNow(Receipt r) async {
-    final id = r.paymentId;
-    if (id == null) return;
-    final paid = await payDebtWithPix(context, ref, paymentId: id, amountCents: r.amountDueCents ?? 0);
-    if (paid && mounted) ref.invalidate(receiptProvider(widget.rentalId));
-  }
-
   /// Texto sob "Corrida finalizada": caucao liberada, usada, pagamento pendente ou em processamento.
   String _finishedText(Receipt r) {
     final l = context.l;
@@ -127,7 +119,8 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     };
   }
 
-  /// "Cartao •••• 4821 · NFS-e 2026-77" (ou o numero do recibo).
+  /// "Cartao •••• 4821 · NFS-e 2026-77" (ou o numero do recibo). Pagamento do balcao: o metodo
+  /// registrado pelo atendente (maquininha, Pix no balcao, dinheiro).
   String _paymentLine(Receipt r) {
     final l = context.l;
     if (!_isPaid(r)) return '${l.receiptAwaitingPayment} · ${l.receiptNumber(r.number)}';
@@ -137,7 +130,13 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       else if (r.paymentMethod == PaymentMethod.pix)
         l.paidWithPix
       else if (r.paymentMethod == PaymentMethod.wallet)
-        l.paidWithWallet,
+        l.paidWithWallet
+      else if (r.paymentMethod == PaymentMethod.counterCard)
+        l.paidAtCounterCard
+      else if (r.paymentMethod == PaymentMethod.counterPix)
+        l.paidAtCounterPix
+      else if (r.paymentMethod == PaymentMethod.cash)
+        l.paidInCash,
       r.invoiceNumber != null ? l.invoiceNumberLabel(r.invoiceNumber!) : l.receiptNumber(r.number),
     ];
     return parts.join(' · ');
@@ -232,6 +231,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                       insuranceLabel: r.coverage == InsuranceCoverage.full ? l.coverageFullLong : l.coverageBasicLong,
                       feesLabel: l.fees,
                       discountLabel: l.coupon,
+                      counterPrepaidLabel: l.counterPrepaidLine,
                     ))
                       _Line(row.label, money(row.cents)),
                     const Divider(),
@@ -255,17 +255,15 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                       _Line(l.receiptPaymentLabel, '', value: badge),
                   ]),
                 ),
+                // Nada se paga no app: o saldo (excedente do balcao ou divida antiga) e acertado no galpao.
                 if (r.paymentStatus == ReceiptPaymentStatus.pending) ...[
                   const SizedBox(height: VoltiSpacing.s10),
-                  NoticeBanner(danger: true, icon: LucideIcons.circleAlert, title: l.paymentPendingTitle, message: l.receiptPendingText(money(r.amountDueCents ?? 0))),
-                  const SizedBox(height: VoltiSpacing.s8),
-                  VoltiButton(
-                    key: const Key('receipt-pay-now'),
-                    label: l.payNow,
-                    icon: LucideIcons.qrCode,
-                    size: VoltiButtonSize.lg,
-                    fullWidth: true,
-                    onPressed: r.paymentId == null ? null : () => _payNow(r),
+                  NoticeBanner(
+                    key: const Key('receipt-counter-debt'),
+                    danger: true,
+                    icon: LucideIcons.warehouse,
+                    title: l.counterDebtTitle(money(r.amountDueCents ?? 0)),
+                    message: l.receiptCounterDebtText,
                   ),
                 ] else if (r.paymentStatus == ReceiptPaymentStatus.processing) ...[
                   const SizedBox(height: VoltiSpacing.s10),

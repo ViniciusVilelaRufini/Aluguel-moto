@@ -5449,7 +5449,7 @@ abstract class AppLocalizations {
   /// No description provided for @receiptAmountDue.
   ///
   /// In pt, this message translates to:
-  /// **'A pagar'**
+  /// **'A acertar no galpão'**
   String get receiptAmountDue;
 
   /// No description provided for @receiptPendingText.
@@ -5467,13 +5467,13 @@ abstract class AppLocalizations {
   /// No description provided for @receiptAwaitingPayment.
   ///
   /// In pt, this message translates to:
-  /// **'Aguardando pagamento'**
+  /// **'A acertar no galpão'**
   String get receiptAwaitingPayment;
 
   /// No description provided for @receiptPdfAfterPayment.
   ///
   /// In pt, this message translates to:
-  /// **'O recibo fica disponível depois do pagamento.'**
+  /// **'O recibo fica disponível depois do acerto no galpão.'**
   String get receiptPdfAfterPayment;
 
   /// No description provided for @rideFinishedDepositUsed.
@@ -5485,7 +5485,7 @@ abstract class AppLocalizations {
   /// No description provided for @rideFinishedPending.
   ///
   /// In pt, this message translates to:
-  /// **'Moto travada. Falta pagar {amount}.'**
+  /// **'Moto travada. Falta acertar {amount} no galpão.'**
   String rideFinishedPending(String amount);
 
   /// No description provided for @rideFinishedProcessing.
@@ -5853,6 +5853,84 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'A resposta demorou mais que o esperado. Confira em instantes.'**
   String get errorTimeout;
+
+  /// No description provided for @readOnlyCounterNotice.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fale com o galpão para usar ou cancelar'**
+  String get readOnlyCounterNotice;
+
+  /// No description provided for @counterDebtTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Valor a acertar no galpão: {amount}'**
+  String counterDebtTitle(String amount);
+
+  /// No description provided for @counterDebtHomeText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Acerte no balcão do galpão para pré-reservar de novo.'**
+  String get counterDebtHomeText;
+
+  /// No description provided for @receiptCounterDebtText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Acerte no balcão do galpão. O recibo fica disponível depois do acerto.'**
+  String get receiptCounterDebtText;
+
+  /// No description provided for @paidAtCounterCard.
+  ///
+  /// In pt, this message translates to:
+  /// **'Maquininha (cartão)'**
+  String get paidAtCounterCard;
+
+  /// No description provided for @paidAtCounterPix.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix no balcão'**
+  String get paidAtCounterPix;
+
+  /// No description provided for @paidInCash.
+  ///
+  /// In pt, this message translates to:
+  /// **'Dinheiro'**
+  String get paidInCash;
+
+  /// No description provided for @counterPrepaidLine.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pago no balcão'**
+  String get counterPrepaidLine;
+
+  /// No description provided for @ridePrepaidUntil.
+  ///
+  /// In pt, this message translates to:
+  /// **'Período até {time}'**
+  String ridePrepaidUntil(String time);
+
+  /// No description provided for @ridePrepaidEnding.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seu período termina às {time}. O excedente é acertado no galpão.'**
+  String ridePrepaidEnding(String time);
+
+  /// No description provided for @ridePrepaidOver.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seu período terminou às {time}. O excedente é acertado no galpão.'**
+  String ridePrepaidOver(String time);
+
+  /// No description provided for @rideCounterDueLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'A acertar no galpão'**
+  String get rideCounterDueLabel;
+
+  /// No description provided for @rideCounterDue.
+  ///
+  /// In pt, this message translates to:
+  /// **'A acertar no galpão: {amount}'**
+  String rideCounterDue(String amount);
 }
 
 class _AppLocalizationsDelegate

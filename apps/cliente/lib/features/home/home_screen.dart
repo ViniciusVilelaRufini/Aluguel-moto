@@ -21,7 +21,6 @@ import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
 import '../handover/handover_watch.dart';
-import '../payments/debt_pix_sheet.dart' show openDebtsProvider;
 import '../pick/pick_logic.dart';
 import '../pickup/depot_hours.dart';
 import '../pickup/depot_labels.dart';
@@ -191,7 +190,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   }
 
   /// Relê as dividas em aberto e, com o cliente inadimplente, a sessao (a flag sai quando a
-  /// cobranca conclui): o aviso "Cobranca em andamento" vira "Pagar agora" ou some.
+  /// cobranca conclui): o aviso "Cobranca em andamento" vira o valor a acertar no galpao ou some.
   void _refreshPaymentState() {
     ref.invalidate(openDebtsProvider);
     if (ref.read(sessionProvider).value?.customer?.delinquent ?? false) {
@@ -594,7 +593,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                         ),
                                       ),
                                     ),
-                                  // R2-01: divida em aberto (fechamento sem cartao) com "Pagar agora".
+                                  // Divida em aberto: valor a acertar no galpao (nada se paga no app).
                                   if (rental == null) const PendingPaymentBanner(),
                                 ],
                               ),

@@ -3190,7 +3190,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get receiptDepositReleased => 'Caução devolvida';
 
   @override
-  String get receiptAmountDue => 'A pagar';
+  String get receiptAmountDue => 'A acertar no galpão';
 
   @override
   String receiptPendingText(String amount) {
@@ -3202,11 +3202,11 @@ class AppLocalizationsPt extends AppLocalizations {
       'Estamos confirmando o pagamento. O recibo fica pronto em seguida.';
 
   @override
-  String get receiptAwaitingPayment => 'Aguardando pagamento';
+  String get receiptAwaitingPayment => 'A acertar no galpão';
 
   @override
   String get receiptPdfAfterPayment =>
-      'O recibo fica disponível depois do pagamento.';
+      'O recibo fica disponível depois do acerto no galpão.';
 
   @override
   String rideFinishedDepositUsed(String amount) {
@@ -3215,7 +3215,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String rideFinishedPending(String amount) {
-    return 'Moto travada. Falta pagar $amount.';
+    return 'Moto travada. Falta acertar $amount no galpão.';
   }
 
   @override
@@ -3446,4 +3446,55 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get errorTimeout =>
       'A resposta demorou mais que o esperado. Confira em instantes.';
+
+  @override
+  String get readOnlyCounterNotice => 'Fale com o galpão para usar ou cancelar';
+
+  @override
+  String counterDebtTitle(String amount) {
+    return 'Valor a acertar no galpão: $amount';
+  }
+
+  @override
+  String get counterDebtHomeText =>
+      'Acerte no balcão do galpão para pré-reservar de novo.';
+
+  @override
+  String get receiptCounterDebtText =>
+      'Acerte no balcão do galpão. O recibo fica disponível depois do acerto.';
+
+  @override
+  String get paidAtCounterCard => 'Maquininha (cartão)';
+
+  @override
+  String get paidAtCounterPix => 'Pix no balcão';
+
+  @override
+  String get paidInCash => 'Dinheiro';
+
+  @override
+  String get counterPrepaidLine => 'Pago no balcão';
+
+  @override
+  String ridePrepaidUntil(String time) {
+    return 'Período até $time';
+  }
+
+  @override
+  String ridePrepaidEnding(String time) {
+    return 'Seu período termina às $time. O excedente é acertado no galpão.';
+  }
+
+  @override
+  String ridePrepaidOver(String time) {
+    return 'Seu período terminou às $time. O excedente é acertado no galpão.';
+  }
+
+  @override
+  String get rideCounterDueLabel => 'A acertar no galpão';
+
+  @override
+  String rideCounterDue(String amount) {
+    return 'A acertar no galpão: $amount';
+  }
 }

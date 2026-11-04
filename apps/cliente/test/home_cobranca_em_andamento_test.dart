@@ -3,13 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/home/pending_payment_banner.dart';
-import 'package:volti_cliente/features/payments/debt_pix_sheet.dart';
 
 import 'helpers.dart';
 
 /// Cobranca presa em "Processando" (2026-10-26): cliente inadimplente sem divida `failed`
 /// (a liquidacao ainda retenta) ve "Cobranca em andamento", sem "Pagar agora"; com divida
-/// `failed` o aviso de pagar tem precedencia; sem inadimplencia nada aparece.
+/// `failed` o aviso do valor a acertar no galpao tem precedencia; sem inadimplencia nada aparece.
 
 Payment _debt() => Payment((b) => b
   ..id = 'pay-1'
@@ -47,19 +46,20 @@ void main() {
     expect(find.text('Cobrança em andamento'), findsOneWidget);
     expect(find.text('Estamos processando a cobrança da sua última corrida. Assim que concluir, você poderá reservar de novo.'), findsOneWidget);
     expect(find.byKey(const Key('home-pay-now')), findsNothing);
-    expect(find.byKey(const Key('home-pending-payment')), findsNothing);
+    expect(find.byKey(const Key('home-counter-debt')), findsNothing);
   });
 
-  testWidgets('divida failed → aviso de pagamento pendente com "Pagar agora" (tem precedencia)', (t) async {
+  testWidgets('divida failed → valor a acertar no galpao, sem "Pagar agora" (tem precedencia)', (t) async {
     await _pump(t, delinquent: true, debts: [_debt()]);
-    expect(find.byKey(const Key('home-pending-payment')), findsOneWidget);
-    expect(find.byKey(const Key('home-pay-now')), findsOneWidget);
+    expect(find.byKey(const Key('home-counter-debt')), findsOneWidget);
+    expect(find.text('Valor a acertar no galpão: R\$ 70,00'), findsOneWidget);
+    expect(find.byKey(const Key('home-pay-now')), findsNothing);
     expect(find.byKey(const Key('home-payment-processing')), findsNothing);
   });
 
   testWidgets('nao inadimplente e sem divida → nada', (t) async {
     await _pump(t, delinquent: false);
     expect(find.byKey(const Key('home-payment-processing')), findsNothing);
-    expect(find.byKey(const Key('home-pending-payment')), findsNothing);
+    expect(find.byKey(const Key('home-counter-debt')), findsNothing);
   });
 }

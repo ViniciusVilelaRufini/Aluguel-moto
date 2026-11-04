@@ -39,7 +39,6 @@ class RideBackend extends FakeBackend {
 }
 
 class SubsBackend extends FakeBackend {
-  int cancels = 0;
   @override
   Future<List<Subscription>> subscriptions() async => [
         Subscription((b) => b
@@ -52,8 +51,6 @@ class SubsBackend extends FakeBackend {
           ..cancelAtPeriodEnd = false
           ..createdAt = DateTime.utc(2026, 10, 20)),
       ];
-  @override
-  Future<void> cancelSubscription(String id) async => cancels++;
   @override
   Future<List<PaymentCard>> cards() async => [];
 }
@@ -211,22 +208,12 @@ void main() {
   });
 
   group('conta', () {
-    testWidgets('cancelar a renovacao pede confirmacao', (t) async {
+    testWidgets('plano so leitura: sem cancelar a renovacao, com o aviso do galpao', (t) async {
       phone(t);
-      final backend = SubsBackend();
-      await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
+      await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(SubsBackend())]));
       await t.pumpAndSettle();
-      await t.tap(find.text('Cancelar renovação'));
-      await t.pumpAndSettle();
-      expect(find.text('Cancelar a renovação?'), findsOneWidget);
-      await t.tap(find.text('Manter plano'));
-      await t.pumpAndSettle();
-      expect(backend.cancels, 0);
-      await t.tap(find.text('Cancelar renovação'));
-      await t.pumpAndSettle();
-      await t.tap(find.text('Cancelar renovação').last);
-      await t.pumpAndSettle();
-      expect(backend.cancels, 1);
+      expect(find.text('Cancelar renovação'), findsNothing);
+      expect(find.byKey(const Key('read-only-counter-notice')), findsOneWidget);
     });
 
     testWidgets('historico: esqueleto no carregamento, estado vazio com acao, 200% sem estouro', (t) async {

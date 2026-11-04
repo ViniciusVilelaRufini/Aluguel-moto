@@ -16,7 +16,7 @@ import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
 import '../home/depot_providers.dart';
 import '../home/providers.dart';
-import '../payments/debt_pix_sheet.dart' show openDebtsProvider;
+import '../home/pending_payment_banner.dart' show openDebtsProvider;
 import '../pick/depot_selection.dart';
 import '../plan/plan_common.dart';
 import 'depot_hours.dart';

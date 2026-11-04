@@ -585,11 +585,6 @@ void main() {
       expect(adapter.calls.single.receiveTimeout, kLongReceiveTimeout);
     });
 
-    test('acceptHandover', () async {
-      await _ignore(() => backend.acceptHandover('h1', 'key-12345678'));
-      expect(adapter.calls.single.receiveTimeout, kLongReceiveTimeout);
-    });
-
     test('startRental (sem tela que chame hoje; o Backend ja manda)', () async {
       await _ignore(() => backend.startRental(
           StartRentalRequest((b) => b

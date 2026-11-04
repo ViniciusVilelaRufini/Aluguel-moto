@@ -112,7 +112,6 @@ class HandoverBackend extends GalpaoBackend {
   final handovers = <String, Handover>{'h1': handoverFixture()};
   int handoverCalls = 0;
   /// Chamadas ao aceite antigo (o app nao aceita mais: o atendente inicia no balcao).
-  final acceptKeys = <String>[];
   Rental? rentalNow;
   List<SwapStation> stations = [];
   Object? stationsError;
@@ -131,12 +130,6 @@ class HandoverBackend extends GalpaoBackend {
     final h = handovers[id];
     if (h == null) throw toFailure(problem(404, 'not-found'));
     return h;
-  }
-
-  @override
-  Future<Rental> acceptHandover(String id, String idempotencyKey) async {
-    acceptKeys.add(idempotencyKey);
-    throw toFailure(problem(409, 'handover-counter-checkout'));
   }
 
   @override
@@ -272,7 +265,6 @@ void main() {
       expect(find.byKey(const Key('handover-accept')), findsNothing);
       expect(find.byKey(const Key('handover-report')), findsNothing);
       expect(find.byKey(const Key('handover-counter-note')), findsOneWidget);
-      expect(b.acceptKeys, isEmpty);
       expect(t.takeException(), isNull);
     });
 

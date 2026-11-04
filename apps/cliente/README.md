@@ -19,7 +19,7 @@ Variáveis `--dart-define`: `SENTRY_DSN` (opcional, ver Relatório de falhas), `
 
 O formulário de cartão (`features/payments/card_form_sheet.dart`) envia número, validade, CVV, nome e CPF do titular **direto ao Mercado Pago** (`POST https://api.mercadopago.com/v1/card_tokens?public_key=...`, `core/mercadopago_gateway.dart`). Só o token volta e segue para `POST /payments/cards` (`cardToken`); o backend resolve bandeira e últimos 4 dígitos pelo próprio Mercado Pago. Dados de cartão nunca passam pela API nem vão para log.
 
-**Cartões salvos** (`/account/cards`, `features/account/cards_screen.dart`, Task 30): lista com o selo "Padrão", **Tornar padrão** (`PUT /payments/cards/{id}/default`), **Remover** com confirmação (`DELETE /payments/cards/{id}`; o `409` de caução retida/assinatura ativa aparece com o texto da API; a API promove o cartão mais recente quando o padrão sai) e **Adicionar cartão**. A Conta mostra a linha "Cartões · Padrão: Visa •••• 4242". A exclusão de conta recusada (`409 account-deletion-blocked`) abre um diálogo com o motivo vindo da API (reserva, entrega, caução, aluguel ou pendência).
+**Cartões salvos** (`/account/cards`, `features/account/cards_screen.dart`, Task 30): lista com o selo "Padrão", **Tornar padrão** (`PUT /payments/cards/{id}/default`), **Remover** com confirmação (`DELETE /payments/cards/{id}`; o `409` de caução retida/assinatura ativa aparece com o texto da API; a API promove o cartão mais recente quando o padrão sai) e **Adicionar cartão**. Desde o balcão (2026-11-04) a Conta não mostra mais a linha "Cartões" (a rota continua). A exclusão de conta recusada (`409 account-deletion-blocked`) abre um diálogo com o motivo vindo da API (reserva, entrega, caução, aluguel ou pendência).
 
 - `--dart-define=MP_PUBLIC_KEY=<chave pública>`: **obrigatória em release** (sem ela o app abre em "Configuração inválida do app"). Em debug/profile sem a chave continua o `DevCardTokenizer` (token falso `tok_visa_4242`, para `PAYMENT_PROVIDER=fake`).
 - Chave de teste: painel do Mercado Pago Developers → *Suas integrações* → sua aplicação → *Credenciais de teste* → **Public Key** (`TEST-...`). Use a *Public Key*, nunca o *Access Token*. Cartões de teste e CPF/nome do titular (ex.: `APRO` para aprovar) estão na documentação *Cartões de teste* do Mercado Pago. Combine com a API em `PAYMENT_PROVIDER=mercadopago` e o Access Token de teste correspondente.
@@ -301,7 +301,6 @@ Testes: `test/station_swap_test.dart` (proximidade, QR, taxa, slugs, máquina de
 - Contagem com o relógio do servidor: `clockProvider` usa o `ServerClock` do `volti_flutter`, corrigido pelo cabeçalho `Date` das respostas, e nunca passa da duração da reserva.
 - Resumo de preço (plano e recibo) por `core/breakdown.dart`: o seguro, o cupom e as taxas aparecem uma vez (das linhas da API; os totais só viram linha quando a categoria não veio).
 - Caução: a pré-reserva não tem caução no app (balcão, 2026-11-04).
-- Pix: `core/pix_qr.dart` desenha o QR a partir do "copia e cola" quando o PNG vem vazio ou minúsculo (fake: 1×1).
 - Conta: cadastro por celular mostra o telefone formatado, nunca o e-mail sintético (`@celular.volti.dev`, `@sem-email.volti.invalid`).
 - Testes em `test/emulador_1_test.dart` (carregam as fontes reais para medir texto cortado como no aparelho).
 
@@ -390,11 +389,20 @@ Cobrem login (dev × cognito), código por SMS com reenvio e limite de 60 s, pas
 
 Testes em `test/fechamento_sem_cartao_test.dart` (100% e 200% de fonte).
 
-- **Recibo:** situação do pagamento (Pago / Pendente / Processando, `VoltiBadge`), caução usada e devolvida, "A pagar" e o texto do fechamento conforme o pagamento ("Falta pagar R$ X", "Usamos R$ X da caução"). "Recibo e nota fiscal" mostra "Aguardando pagamento" e só abre o PDF com o recibo pago.
-- **Pagar agora:** quitação por Pix (`POST /payments/{id}/retry`, `Backend.payDebtPix`) com QR e copia e cola no mesmo componente da recarga (`core/pix_charge_panel.dart`, usado também pela `TopUpPixSheet`); acompanha `GET /payments/{id}` até `paid`, fecha e recarrega o recibo.
-- **Home:** `PendingPaymentBanner` com o total em aberto (`Backend.openDebts`: `GET /payments?status=failed` com `outstandingCents`) e "Pagar agora" (dívida mais antiga primeiro).
-- **Cobrança em andamento (2026-10-26):** cliente inadimplente (`Customer.delinquent`) sem dívida `failed` (a liquidação ainda retenta no cartão) vê o aviso informativo "Cobrança em andamento", sem botão; com dívida `failed` o aviso com "Pagar agora" tem precedência. Ao voltar do segundo plano (e a cada 5 min enquanto inadimplente) a home relê as dívidas e a sessão. Testes: `test/home_cobranca_em_andamento_test.dart`.
-- **Reserva:** `409 payment-pending` (ou `403 customer-delinquent`) na confirmação → aviso "Pague o valor pendente para alugar de novo." e volta à home com a pendência.
+- **Recibo:** situação do pagamento (Pago / Pendente / Processando, `VoltiBadge`), caução usada e devolvida, "A acertar no galpão" e o texto do fechamento conforme o pagamento ("Falta acertar R$ X no galpão", "Usamos R$ X da caução"). "Recibo e nota fiscal" mostra "A acertar no galpão" e só abre o PDF com o recibo pago.
+- **Cobrança em andamento (2026-10-26):** cliente inadimplente (`Customer.delinquent`) sem dívida em aberto (a liquidação ainda retenta no cartão) vê o aviso informativo "Cobrança em andamento", sem botão; com dívida o aviso do valor a acertar no galpão tem precedência. Ao voltar do segundo plano (e a cada 5 min enquanto inadimplente) a home relê as dívidas e a sessão. Testes: `test/home_cobranca_em_andamento_test.dart`.
+- **Reserva:** `409 payment-pending` (ou `403 customer-delinquent`) na pré-reserva → "Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo." e volta à home com o aviso.
+
+## Nada se paga no app (pré-reserva/balcão, Task 10, 2026-11-04)
+
+O contrato e o pagamento são feitos no balcão do galpão. Os endpoints de carteira, pacotes, assinatura e cartões continuam no contrato; o app só esconde. Testes em `test/balcao_pagamentos_test.dart`.
+
+- **Conta:** sem "Créditos"/"Pacote de minutos", sem "Recarregar carteira" e sem a linha "Cartões". "Carteira" só aparece com saldo (`Wallet.balanceCents` ou `minutesBalance` > 0) e o plano só com assinatura `active`; o grupo "Plano" some sem nenhum dos dois.
+- **Carteira** (`/account/wallet`) e **Meu plano** (`/account/subscriptions`): só leitura (saldo e extrato; assinatura ativa e anteriores), sem recarga, pacotes, assinar ou cancelar, com o aviso `Key('read-only-counter-notice')` "Fale com o galpão para usar ou cancelar".
+- **Débito:** `Backend.openDebts` junta `GET /payments?status=failed` e `GET /payments?status=pending` (só os métodos de balcão, `isCounterMethod`: `counter_card`, `counter_pix`, `cash`) com `outstandingCents` > 0. A home (`Key('home-counter-debt')`) e o histórico (`Key('history-counter-debt')`) mostram "Valor a acertar no galpão: R$ X" (soma dos saldos), sem "Pagar agora", também para dívidas antigas `failed` de cartão. Saiu a quitação por Pix (`DebtPixSheet`, `Backend.payDebtPix`).
+- **Recibo:** pagamento `pending` mostra "Valor a acertar no galpão: R$ X" (`Key('receipt-counter-debt')`) no lugar do Pix; a linha `counter_prepaid` aparece como "Pago no balcão"; pagamento de balcão mostra "Maquininha (cartão)", "Pix no balcão" ou "Dinheiro".
+- **Corrida do balcão** (`Rental.prepaidUntil`): faixa "Período até HH:MM" (fuso de São Paulo, `Key('ride-prepaid-until')`); a partir de `prepaidUntil − 1 h`, `Key('ride-prepaid-ending')` "Seu período termina às HH:MM. O excedente é acertado no galpão." (mesmo texto do push `rental.prepaid_ending`, que abre `/ride`); depois do fim, `Key('ride-prepaid-over')` "A acertar no galpão: R$ X" (`costCents`) e o custo da corrida vira "A acertar no galpão". A faixa troca sozinha também com a corrida pausada (`prepaidPhase` em `ride_data.dart`).
+- **Removidos:** recarga Pix (`TopUpAmountSheet`, `TopUpPixSheet`, recarga pendente), compra de pacotes, assinar/cancelar plano, `core/pix_charge_panel.dart`, `core/pix_qr.dart`, `features/plan/pix_sheet.dart` e, no `Backend`, `acceptHandover`, `disputeHandover`, `minutePackages`, `topUp`, `topUpStatus`, `deposit`, `payDebtPix`, `payment`, `subscribe` e `cancelSubscription`.
 
 ## Correções do emulador (2026-10-22, branch `feat/cliente-login`)
 

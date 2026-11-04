@@ -27,7 +27,6 @@ import 'package:volti_cliente/core/widgets.dart';
 import 'package:volti_cliente/features/home/home_screen.dart';
 import 'package:volti_cliente/features/onboarding/login_screen.dart';
 import 'package:volti_cliente/features/onboarding/welcome_hero.dart';
-import 'package:volti_cliente/features/plan/pix_sheet.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart' show mapEnabledProvider;
 import 'package:volti_flutter/volti_flutter.dart';
 
@@ -1010,18 +1009,6 @@ void main() {
       expect(find.textContaining('Fora do aluguel, não rastreamos você'), findsOneWidget);
       expect(find.text('Motos por perto'), findsNothing);
       expect(find.textContaining('motos mais próximas'), findsNothing);
-    });
-
-    testWidgets('2. Pix da caucao confirma a reserva; a moto sai na entrega', (t) async {
-      screen(t, size: const Size(412, 915));
-      await t.pumpWidget(testApp(
-        Scaffold(body: PixDepositSheet(deposit: pixDepositFixture(), pollInterval: const Duration(hours: 1))),
-        overrides: [backendProvider.overrideWithValue(GalpaoBackend())],
-      ));
-      await t.pump();
-      expect(find.textContaining('para confirmar a reserva'), findsOneWidget);
-      expect(find.textContaining('liberada na entrega'), findsOneWidget);
-      expect(find.textContaining('liberar a moto'), findsNothing);
     });
 
     for (final scale in [1.0, 2.0]) {

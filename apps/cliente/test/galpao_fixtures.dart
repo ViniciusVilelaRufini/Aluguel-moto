@@ -165,8 +165,6 @@ class GalpaoBackend extends FakeBackend {
   }
 
   @override
-  Future<Deposit> deposit(String id) async => pixDepositFixture();
-  @override
   Future<Rental?> currentRental() async => null;
   @override
   Future<List<SupportConversation>> conversations() async => const [];

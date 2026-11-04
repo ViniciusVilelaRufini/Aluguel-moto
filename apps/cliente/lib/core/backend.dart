@@ -82,11 +82,6 @@ abstract class Backend {
 
   // entrega no galpao ("Confira sua moto")
   Future<Handover> handover(String id);
-  /// Aceite: o aluguel comeca e a moto destrava. [idempotencyKey]: uma por entrega,
-  /// reutilizada no toque duplo e nas novas tentativas.
-  Future<Rental> acceptHandover(String id, String idempotencyKey);
-  /// Problema apontado: a entrega fica `disputed` e o suporte abre uma conversa.
-  Future<Handover> disputeHandover(String id, String reason);
 
   // contratacao
   Future<List<PricingPlan>> plans();
@@ -102,25 +97,13 @@ abstract class Backend {
   /// `DELETE /payments/cards/{id}`: `409` com caucao retida ou assinatura ativa; o padrao removido passa ao mais recente.
   Future<void> deleteCard(String id);
   Future<Wallet> wallet();
-  Future<List<MinutePackage>> minutePackages();
-  /// Recarga Pix: valor livre em reais ([amountCents], R$ 10 a R$ 1.000) ou pacote ([packageId]); um dos dois.
-  /// [idempotencyKey]: uma por tentativa do cliente, reutilizada nas repeticoes da mesma recarga.
-  Future<TopUp> topUp({String? packageId, int? amountCents, String? idempotencyKey});
-  Future<TopUp> topUpStatus(String id);
   Future<List<WalletEntry>> walletLedger();
   Future<RentalStartResult> startRental(StartRentalRequest request, {String? idempotencyKey});
-  Future<Deposit> deposit(String id);
 
-  /// Dividas em aberto do cliente (R2-01): pagamentos `failed` de aluguel/assinatura com saldo devedor
+  /// Dividas em aberto do cliente, acertadas no balcao do galpao (nada se paga no app): pagamentos
+  /// `failed` de aluguel/assinatura e debitos de balcao `pending` ([isCounterMethod]) com saldo devedor
   /// (`outstandingCents` > 0), mais antigas primeiro.
   Future<List<Payment>> openDebts();
-
-  /// Quita a divida [paymentId] por Pix (`POST /payments/{id}/retry`): devolve a cobranca `debt_settlement`
-  /// com o QR. Um Pix pendente e valido da mesma divida e reaproveitado pela API.
-  Future<Payment> payDebtPix(String paymentId, {String? idempotencyKey});
-
-  /// Pagamento do cliente (acompanha a quitacao ate `paid`).
-  Future<Payment> payment(String id);
 
   // aluguel
   Future<Rental?> currentRental();
@@ -151,9 +134,6 @@ abstract class Backend {
   // conta
   Future<List<Rental>> rentals();
   Future<List<Subscription>> subscriptions();
-  /// [idempotencyKey]: uma por tentativa do cliente, reutilizada nas repeticoes. [cardId]: cartao mostrado na confirmacao.
-  Future<Subscription> subscribe(SubscriptionPlanCode code, {String? cardId, String? idempotencyKey});
-  Future<void> cancelSubscription(String id);
   Future<Dispute> dispute(String rentalId, String reason, String? description);
   Future<Claim> claim(String rentalId, ClaimType type, String description, {List<String> photoKeys = const []});
   Future<List<Dispute>> disputes();
@@ -337,22 +317,6 @@ class ApiBackend implements Backend {
   Future<Handover> handover(String id) => _run(() async => (await _api.getHandoversApi().getHandover(id: id)).data!);
 
   @override
-  Future<Rental> acceptHandover(String id, String idempotencyKey) => _run(() async => (await _api.getHandoversApi().acceptHandover(
-        id: id,
-        idempotencyKey: idempotencyKey,
-        validateStatus: (s) => s != null && s >= 200 && s < 300,
-        extra: _longWait,
-      ))
-          .data!);
-
-  @override
-  Future<Handover> disputeHandover(String id, String reason) => _run(() async => (await _api.getHandoversApi().disputeHandover(
-        id: id,
-        handoverDispute: HandoverDispute((b) => b..reason = reason),
-      ))
-          .data!);
-
-  @override
   Future<List<PricingPlan>> plans() =>
       _run(() async => (await _api.getPricingApi().listPricingPlans()).data!.items.toList());
 
@@ -406,26 +370,6 @@ class ApiBackend implements Backend {
   Future<Wallet> wallet() => _run(() async => (await _api.getWalletApi().getWallet()).data!);
 
   @override
-  Future<List<MinutePackage>> minutePackages() =>
-      _run(() async => (await _api.getWalletApi().listMinutePackages()).data!.items.toList());
-
-  @override
-  Future<TopUp> topUp({String? packageId, int? amountCents, String? idempotencyKey}) {
-    assert((packageId == null) != (amountCents == null), 'informe packageId ou amountCents');
-    return _run(() async => (await _api.getWalletApi().createWalletTopUp(
-          idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
-          topUpRequest: TopUpRequest((b) => b
-            ..method = TopUpMethod.pix
-            ..packageId = packageId
-            ..amountCents = amountCents),
-        ))
-            .data!);
-  }
-
-  @override
-  Future<TopUp> topUpStatus(String id) => _run(() async => (await _api.getWalletApi().getWalletTopUp(id: id)).data!);
-
-  @override
   Future<List<WalletEntry>> walletLedger() =>
       _run(() async => (await _api.getWalletApi().listWalletLedger(limit: 50)).data!.items.toList());
 
@@ -441,32 +385,21 @@ class ApiBackend implements Backend {
           .data!);
 
   @override
-  Future<Deposit> deposit(String id) => _run(() async => (await _api.getPaymentsApi().getDeposit(id: id)).data!);
-
-  @override
   Future<List<Payment>> openDebts() => _run(() async {
         // Todas as paginas: o aviso da home soma todas as dividas em aberto.
+        // `pending` so conta quando e debito de balcao: Pix/cartao `pending` ainda e cobranca em curso.
         final debts = <Payment>[];
-        String? cursor;
-        for (var i = 0; i < 20; i++) {
-          final page = (await _api.getPaymentsApi().listPayments(status: PaymentStatus.failed, limit: 100, cursor: cursor)).data!;
-          debts.addAll(page.items.where((p) => (p.outstandingCents ?? 0) > 0));
-          cursor = page.nextCursor;
-          if (cursor == null || cursor.isEmpty) break;
+        for (final status in const [PaymentStatus.failed, PaymentStatus.pending]) {
+          String? cursor;
+          for (var i = 0; i < 20; i++) {
+            final page = (await _api.getPaymentsApi().listPayments(status: status, limit: 100, cursor: cursor)).data!;
+            debts.addAll(page.items.where((p) => (p.outstandingCents ?? 0) > 0 && (status == PaymentStatus.failed || isCounterMethod(p.method))));
+            cursor = page.nextCursor;
+            if (cursor == null || cursor.isEmpty) break;
+          }
         }
         return debts..sort((a, b) => a.createdAt.compareTo(b.createdAt));
       });
-
-  @override
-  Future<Payment> payDebtPix(String paymentId, {String? idempotencyKey}) => _run(() async => (await _api.getPaymentsApi().payDebt(
-            id: paymentId,
-            idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
-            debtPaymentRequest: DebtPaymentRequest((b) => b..method = DebtPaymentRequestMethodEnum.pix),
-          ))
-          .data!);
-
-  @override
-  Future<Payment> payment(String id) => _run(() async => (await _api.getPaymentsApi().getPayment(id: id)).data!);
 
   @override
   Future<Rental?> currentRental() async => (await currentRentalState()).rental;
@@ -571,21 +504,6 @@ class ApiBackend implements Backend {
       _run(() async => (await _api.getPaymentsApi().listSubscriptions()).data!.items.toList());
 
   @override
-  Future<Subscription> subscribe(SubscriptionPlanCode code, {String? cardId, String? idempotencyKey}) =>
-      _run(() async => (await _api.getPaymentsApi().createSubscription(
-            idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
-            subscriptionCreate: SubscriptionCreate((b) => b
-              ..planCode = code
-              ..cardId = cardId),
-          ))
-          .data!);
-
-  @override
-  Future<void> cancelSubscription(String id) => _run(() async {
-        await _api.getPaymentsApi().cancelSubscription(id: id);
-      });
-
-  @override
   Future<Dispute> dispute(String rentalId, String reason, String? description) =>
       _run(() async => (await _api.getSupportApi().createDispute(
             disputeCreate: DisputeCreate((b) => b
@@ -658,5 +576,9 @@ class ApiBackend implements Backend {
   @override
   Future<AccountDeletion> deleteAccount() => _run(() async => (await _api.getLgpdApi().deleteMyAccount()).data!);
 }
+
+/// Metodos registrados pelo atendente no balcao (maquininha, Pix no balcao, dinheiro), sem gateway.
+bool isCounterMethod(PaymentMethod method) =>
+    method == PaymentMethod.counterCard || method == PaymentMethod.counterPix || method == PaymentMethod.cash;
 
 final backendProvider = Provider<Backend>((ref) => ApiBackend(ref.watch(apiClientProvider)));

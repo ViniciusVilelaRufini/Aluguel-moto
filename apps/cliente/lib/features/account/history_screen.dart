@@ -7,6 +7,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/geo.dart';
 import '../../core/widgets.dart';
+import '../home/pending_payment_banner.dart';
 import 'account_common.dart';
 import 'requests_screen.dart';
 
@@ -38,11 +39,16 @@ class HistoryScreen extends ConsumerWidget {
             );
           }
           return VoltiRefresh(
-            onRefresh: () => ref.refresh(historyProvider.future),
+            onRefresh: () {
+              ref.invalidate(openDebtsProvider);
+              return ref.refresh(historyProvider.future);
+            },
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
               children: [
+                // Valor em aberto: acertado no balcao do galpao (nada se paga no app).
+                if (!pick) const HistoryCounterDebtBanner(),
                 if (pick)
                   Padding(
                     padding: const EdgeInsets.only(bottom: VoltiSpacing.s12),

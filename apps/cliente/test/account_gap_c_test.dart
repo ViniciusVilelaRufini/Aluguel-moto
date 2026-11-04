@@ -13,8 +13,6 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import 'helpers.dart';
 
-const _png1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-
 PresignedUpload _target(String key) => PresignedUpload((b) => b
   ..objectKey = key
   ..uploadUrl = 'https://s3.local/$key'
@@ -46,19 +44,6 @@ PaymentCard _card() => PaymentCard((b) => b
   ..isDefault = true
   ..createdAt = DateTime.utc(2026));
 
-PricingPlan _plan(PlanCode code, int price) => PricingPlan((b) => b
-  ..id = code.name
-  ..code = code
-  ..name = code.name
-  ..unit = code == PlanCode.weekly ? PlanUnit.week : PlanUnit.month
-  ..unlockFeeCents = 0
-  ..unitPriceCents = price
-  ..pausePerMinuteCents = 0
-  ..recurring = true
-  ..active = true
-  ..createdAt = DateTime.utc(2026)
-  ..updatedAt = DateTime.utc(2026));
-
 /// Backend unico para a conta: grava o que as telas chamam.
 class AccountBackend extends FakeBackend {
   // sinistro
@@ -66,19 +51,8 @@ class AccountBackend extends FakeBackend {
   int uploadsRequested = 0;
   bool failNextUpload = false;
   final uploadedBytes = <Uint8List>[];
-  // carteira
-  final topUps = <(String?, int?)>[];
-  final topUpKeys = <String?>[];
-  int failTopUps = 0;
-  TopUpStatus statusAfterPoll = TopUpStatus.paid;
-  int statusCalls = 0;
   // plano
-  final subscribed = <SubscriptionPlanCode>[];
-  final subscribeCalls = <(String?, String?)>[]; // (cardId, chave)
-  int failSubscribes = 0;
-  bool withPlans = true;
   List<Subscription> subs = [];
-  int cancels = 0;
   // contato
   final profileUpdates = <(String?, String?)>[];
 
@@ -116,16 +90,6 @@ class AccountBackend extends FakeBackend {
   Future<Wallet> wallet() async => _wallet();
 
   @override
-  Future<List<MinutePackage>> minutePackages() async => [
-        MinutePackage((b) => b
-          ..id = 'pk60'
-          ..name = 'Pacote 60 minutos'
-          ..minutes = 60
-          ..priceCents = 3990
-          ..active = true),
-      ];
-
-  @override
   Future<List<WalletEntry>> walletLedger() async => [
         WalletEntry((b) => b
           ..id = 'e1'
@@ -136,65 +100,11 @@ class AccountBackend extends FakeBackend {
           ..createdAt = DateTime.utc(2026, 10, 20, 15)),
       ];
 
-  TopUp _topUp(TopUpStatus status, {String? packageId, int amount = 2000, int? minutes}) => TopUp((b) => b
-    ..id = 't1'
-    ..status = status
-    ..method = TopUpMethod.pix
-    ..amountCents = amount
-    ..packageId = packageId
-    ..minutes = minutes
-    ..pix = PixCharge((p) => p
-      ..chargeId = 'ch1'
-      ..qrCodeBase64 = _png1x1
-      ..copyPaste = '00020126PIXCOPIAECOLA'
-      ..expiresAt = DateTime.now().toUtc().add(const Duration(hours: 1))).toBuilder()
-    ..createdAt = DateTime.utc(2026, 10, 21));
-
-  @override
-  Future<TopUp> topUp({String? packageId, int? amountCents, String? idempotencyKey}) async {
-    topUpKeys.add(idempotencyKey);
-    if (failTopUps > 0) {
-      failTopUps--;
-      throw AppFailure(kind: FailureKind.network);
-    }
-    topUps.add((packageId, amountCents));
-    return last = _topUp(TopUpStatus.pending, packageId: packageId, amount: amountCents ?? 3990, minutes: packageId == null ? null : 60);
-  }
-
-  TopUp? last;
-
-  @override
-  Future<TopUp> topUpStatus(String id) async {
-    statusCalls++;
-    return last!.rebuild((b) => b.status = statusAfterPoll);
-  }
-
   @override
   Future<List<Subscription>> subscriptions() async => subs;
 
   @override
-  Future<List<PricingPlan>> plans() async => withPlans ? [_plan(PlanCode.weekly, 24900), _plan(PlanCode.monthly, 79900)] : [];
-
-  @override
   Future<List<PaymentCard>> cards() async => [_card()];
-
-  @override
-  Future<Subscription> subscribe(SubscriptionPlanCode code, {String? cardId, String? idempotencyKey}) async {
-    subscribeCalls.add((cardId, idempotencyKey));
-    if (failSubscribes > 0) {
-      failSubscribes--;
-      throw AppFailure(kind: FailureKind.network);
-    }
-    subscribed.add(code);
-    subs = [_sub()];
-    return subs.first;
-  }
-
-  @override
-  Future<void> cancelSubscription(String id) async {
-    cancels++;
-    subs = [_sub(ending: true)];
-  }
 
   @override
   Future<List<Rental>> rentals() async => [sampleRental(status: RentalStatus.ended)];
@@ -218,11 +128,6 @@ class _RefreshingSession extends FakeSession {
   Future<void> refresh() async => refreshes++;
 }
 
-/// Abre o sheet do Pix sem `pumpAndSettle` (que avancaria o relogio ate o polling).
-Future<void> openSheet(WidgetTester t) async {
-  await t.pump();
-  await t.pump(const Duration(seconds: 1));
-}
 
 void main() {
   group('F5/F4 sinistro', () {
@@ -319,129 +224,22 @@ void main() {
     });
   });
 
-  group('F1/A4 recarga Pix', () {
-    Future<AccountBackend> pumpWallet(WidgetTester t, {TopUpStatus result = TopUpStatus.paid}) async {
+  group('F1/A4 carteira (so leitura no balcao)', () {
+    testWidgets('saldo e extrato, sem recarga nem pacotes, com o aviso do galpao', (t) async {
       tallScreen(t);
-      final backend = AccountBackend()..statusAfterPoll = result;
-      await t.pumpWidget(testApp(const WalletScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
+      await t.pumpWidget(testApp(const WalletScreen(), overrides: [backendProvider.overrideWithValue(AccountBackend())]));
       await t.pumpAndSettle();
-      return backend;
-    }
-
-    testWidgets('valor livre: QR + copia e cola, polling ate pago, saldo atualiza', (t) async {
-      final backend = await pumpWallet(t);
+      expect(find.text('R\$ 38,50'), findsOneWidget);
       expect(find.text('Extrato'), findsOneWidget);
       expect(find.text('Recarga Pix'), findsOneWidget);
-      await t.tap(find.text('Recarregar carteira'));
-      await t.pumpAndSettle();
-      await t.tap(find.text('R\$ 20,00'));
-      await t.pump();
-      await t.tap(find.text('Gerar Pix de R\$ 20,00'));
-      await openSheet(t);
-      expect(backend.topUps.single, (null, 2000));
-      expect(find.byKey(const Key('topup-qr')), findsOneWidget);
-      expect(find.text('00020126PIXCOPIAECOLA'), findsOneWidget);
-      expect(find.text('Copiar código Pix'), findsOneWidget);
-      expect(find.text('Aguardando o pagamento…'), findsOneWidget);
-
-      await t.pump(const Duration(seconds: 2));
-      await t.pump();
-      expect(backend.statusCalls, 1);
-      expect(find.text('Pix confirmado'), findsOneWidget);
-      expect(find.text('R\$ 20,00 já estão na sua carteira.'), findsOneWidget);
-      await t.pump(const Duration(milliseconds: 1500));
-      await t.pumpAndSettle();
-      expect(find.text('Pix confirmado'), findsNothing);
-      expect(find.text('Carteira recarregada'), findsOneWidget);
-      await t.pump(const Duration(seconds: 5));
-      await t.pumpAndSettle();
-    });
-
-    testWidgets('valor fora de R\$ 10 a R\$ 1.000 mostra erro e nao gera Pix', (t) async {
-      final backend = await pumpWallet(t);
-      await t.tap(find.text('Recarregar carteira'));
-      await t.pumpAndSettle();
-      await t.enterText(find.byKey(const Key('topup-amount')), '5');
-      await t.pump();
-      expect(find.text('Escolha um valor entre R\$ 10,00 e R\$ 1.000,00'), findsOneWidget);
-      final btn = t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Gerar Pix'));
-      expect(btn.onPressed, isNull);
-      await t.enterText(find.byKey(const Key('topup-amount')), '1001');
-      await t.pump();
-      expect(find.text('Escolha um valor entre R\$ 10,00 e R\$ 1.000,00'), findsOneWidget);
-      await t.enterText(find.byKey(const Key('topup-amount')), '37,5');
-      await t.pump();
-      await t.tap(find.text('Gerar Pix de R\$ 37,50'));
-      await openSheet(t);
-      expect(backend.topUps.single, (null, 3750));
-      await t.tap(find.text('Pagar depois'));
-      await t.pumpAndSettle();
-    });
-
-    testWidgets('pacote de minutos: confirma e paga com Pix pelo packageId', (t) async {
-      final backend = await pumpWallet(t);
-      await t.tap(find.text('Pacote 60 minutos'));
-      await t.pumpAndSettle();
-      expect(find.text('Comprar Pacote 60 minutos?'), findsOneWidget);
-      await t.tap(find.text('Pagar com Pix'));
-      await openSheet(t);
-      expect(backend.topUps.single, ('pk60', null));
-      await t.pump(const Duration(seconds: 2));
-      await t.pump();
-      expect(find.text('60 minutos já estão na sua carteira.'), findsOneWidget);
-      await t.pump(const Duration(milliseconds: 1500));
-      await t.pumpAndSettle();
-      await t.pump(const Duration(seconds: 5));
-      await t.pumpAndSettle();
-    });
-
-    testWidgets('Pix expirado para o polling e avisa', (t) async {
-      await pumpWallet(t, result: TopUpStatus.expired);
-      await t.tap(find.text('Recarregar carteira'));
-      await t.pumpAndSettle();
-      await t.tap(find.text('Gerar Pix de R\$ 50,00'));
-      await openSheet(t);
-      await t.pump(const Duration(seconds: 2));
-      await t.pump();
-      expect(find.text('O Pix expirou. Gere um novo código.'), findsOneWidget);
-      await t.tap(find.text('Fechar'));
-      await t.pumpAndSettle();
-    });
-
-    test('parseReaisToCents', () {
-      expect(parseReaisToCents('50'), 5000);
-      expect(parseReaisToCents('50,9'), 5090);
-      expect(parseReaisToCents('1.000,00'), 100000);
-      expect(parseReaisToCents('abc'), isNull);
-      expect(parseReaisToCents(''), isNull);
+      expect(find.text('Recarregar carteira'), findsNothing);
+      expect(find.text('Pacote 60 minutos'), findsNothing);
+      expect(find.text('Fale com o galpão para usar ou cancelar'), findsOneWidget);
     });
   });
 
-  group('F3/A6 gestao do plano', () {
-    testWidgets('sem plano: escolhe mensal, ve preco, recorrencia e cartao, assina', (t) async {
-      tallScreen(t);
-      final backend = AccountBackend();
-      await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
-      await t.pumpAndSettle();
-      expect(find.text('R\$ 249,00'), findsOneWidget);
-      expect(find.text('R\$ 799,00'), findsOneWidget);
-      await t.tap(find.text('Plano mensal'));
-      await t.pump();
-      await t.tap(find.text('Continuar'));
-      await t.pumpAndSettle();
-      expect(find.text('Assinar o Plano mensal'), findsOneWidget);
-      expect(find.text('R\$ 799,00 por mês'), findsOneWidget);
-      expect(find.textContaining('renovamos todo mês no cartão'), findsOneWidget);
-      expect(find.text('Visa •••• 4821'), findsOneWidget);
-      await t.tap(find.text('Assinar agora'));
-      await t.pumpAndSettle();
-      expect(backend.subscribed, [SubscriptionPlanCode.monthly]);
-      expect(find.text('Próxima cobrança 28/10 · R\$ 249,00'), findsOneWidget);
-      await t.pump(const Duration(seconds: 5));
-      await t.pumpAndSettle();
-    });
-
-    testWidgets('com plano: proxima cobranca, cartao e cancelar a renovacao com confirmacao', (t) async {
+  group('F3/A6 plano (so leitura no balcao)', () {
+    testWidgets('com plano: proxima cobranca e cartao, sem cancelar a renovacao', (t) async {
       tallScreen(t);
       final backend = AccountBackend()..subs = [_sub()];
       await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
@@ -450,21 +248,17 @@ void main() {
       expect(find.text('Ativo'), findsOneWidget);
       expect(find.text('Próxima cobrança 28/10 · R\$ 249,00'), findsOneWidget);
       expect(find.text('Cartão Visa •••• 4821'), findsOneWidget);
-      await t.tap(find.text('Cancelar renovação'));
+      expect(find.text('Cancelar renovação'), findsNothing);
+      expect(find.text('Fale com o galpão para usar ou cancelar'), findsOneWidget);
+    });
+
+    testWidgets('renovacao ja cancelada mostra ate quando vale', (t) async {
+      tallScreen(t);
+      final backend = AccountBackend()..subs = [_sub(ending: true)];
+      await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
       await t.pumpAndSettle();
-      expect(find.text('Cancelar a renovação?'), findsOneWidget);
-      await t.tap(find.text('Manter plano'));
-      await t.pumpAndSettle();
-      expect(backend.cancels, 0);
-      await t.tap(find.text('Cancelar renovação'));
-      await t.pumpAndSettle();
-      await t.tap(find.widgetWithText(VoltiButton, 'Cancelar renovação').last);
-      await t.pumpAndSettle();
-      expect(backend.cancels, 1);
       expect(find.text('Termina em 28/10'), findsOneWidget);
       expect(find.text('A renovação foi cancelada. O plano vale até 28/10.'), findsOneWidget);
-      await t.pump(const Duration(seconds: 5));
-      await t.pumpAndSettle();
     });
   });
 
@@ -532,7 +326,7 @@ void main() {
   });
 
   group('A1-A15 conta', () {
-    testWidgets('perfil com selos, StatTiles, recarga e grupos do design', (t) async {
+    testWidgets('perfil com selos e grupos do design; carteira e plano so leitura, sem cartoes', (t) async {
       tallScreen(t);
       final backend = AccountBackend()..subs = [_sub()];
       await t.pumpWidget(testApp(const AccountScreen(), overrides: [
@@ -544,10 +338,13 @@ void main() {
       expect(find.text('AL'), findsOneWidget);
       expect(find.text('Verificada'), findsOneWidget);
       expect(find.text('18+'), findsOneWidget);
-      expect(find.byType(StatTile), findsNWidgets(2));
+      // Balcao: sem creditos em destaque nem recarga; carteira (com saldo) e plano so leitura.
+      expect(find.byType(StatTile), findsNothing);
+      expect(find.text('Recarregar carteira'), findsNothing);
+      expect(find.text('Carteira'), findsOneWidget);
       expect(find.text('R\$ 38,50'), findsOneWidget);
       expect(find.text('120 min'), findsOneWidget);
-      expect(find.text('Recarregar carteira'), findsOneWidget);
+      expect(find.text('Cartões'), findsNothing);
       for (final g in ['PLANO', 'VIAGENS', 'AJUDA', 'PRIVACIDADE (LGPD)']) {
         expect(find.text(g), findsOneWidget, reason: g);
       }
@@ -608,119 +405,4 @@ void main() {
     });
   });
 
-  group('fix round 1', () {
-    testWidgets('I2 recarga: repetir apos falha de rede reusa a chave; valor novo gera outra', (t) async {
-      tallScreen(t);
-      final backend = AccountBackend()..failTopUps = 1;
-      await t.pumpWidget(testApp(const WalletScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
-      await t.pumpAndSettle();
-      Future<void> generate(String chip, String button) async {
-        await t.tap(find.text('Recarregar carteira'));
-        await t.pumpAndSettle();
-        await t.tap(find.text(chip));
-        await t.pump();
-        await t.tap(find.text(button));
-        await openSheet(t);
-      }
-
-      await generate('R\$ 20,00', 'Gerar Pix de R\$ 20,00');
-      expect(backend.topUps, isEmpty); // falhou na rede
-      await t.pump(const Duration(seconds: 5));
-      await generate('R\$ 20,00', 'Gerar Pix de R\$ 20,00');
-      expect(backend.topUps.single, (null, 2000));
-      expect(backend.topUpKeys.length, 2);
-      expect(backend.topUpKeys[1], backend.topUpKeys[0]);
-      await t.tap(find.text('Pagar depois'));
-      await t.pumpAndSettle();
-
-      await generate('R\$ 50,00', 'Gerar Pix de R\$ 50,00');
-      expect(backend.topUpKeys.length, 3);
-      expect(backend.topUpKeys[2], isNot(backend.topUpKeys[0]));
-      await t.tap(find.text('Pagar depois'));
-      await t.pumpAndSettle();
-      // Mesmo valor depois de um resultado definitivo (recarga criada) gera chave nova.
-      await generate('R\$ 50,00', 'Gerar Pix de R\$ 50,00');
-      expect(backend.topUpKeys[3], isNot(backend.topUpKeys[2]));
-      await t.tap(find.text('Pagar depois'));
-      await t.pumpAndSettle();
-      await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('I2 assinatura: repetir apos falha reusa a chave e cobra o cartao mostrado', (t) async {
-      tallScreen(t);
-      final backend = AccountBackend()..failSubscribes = 1;
-      await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
-      await t.pumpAndSettle();
-      await t.tap(find.text('Continuar'));
-      await t.pumpAndSettle();
-      await t.tap(find.text('Assinar agora'));
-      await t.pumpAndSettle();
-      expect(backend.subscribed, isEmpty);
-      await t.tap(find.text('Assinar agora'));
-      await t.pumpAndSettle();
-      expect(backend.subscribed, [SubscriptionPlanCode.weekly]);
-      expect(backend.subscribeCalls.length, 2);
-      expect(backend.subscribeCalls[0].$1, 'card1');
-      expect(backend.subscribeCalls[0].$2, isNotNull);
-      expect(backend.subscribeCalls[1].$2, backend.subscribeCalls[0].$2);
-      await t.pump(const Duration(seconds: 5));
-      await t.pumpAndSettle();
-    });
-
-    testWidgets('I3 Pix pago depois de "Pagar depois": a Carteira confere e atualiza', (t) async {
-      tallScreen(t);
-      final backend = AccountBackend()..statusAfterPoll = TopUpStatus.pending;
-      await t.pumpWidget(testApp(const WalletScreen(), overrides: [
-        backendProvider.overrideWithValue(backend),
-        pendingTopUpPollProvider.overrideWithValue(const Duration(seconds: 10)),
-      ]));
-      await t.pumpAndSettle();
-      await t.tap(find.text('Recarregar carteira'));
-      await t.pumpAndSettle();
-      await t.tap(find.text('Gerar Pix de R\$ 50,00'));
-      await openSheet(t);
-      await t.tap(find.text('Pagar depois'));
-      await t.pump();
-      await t.pump(const Duration(seconds: 1));
-      expect(find.byKey(const Key('pending-topup')), findsOneWidget);
-      expect(find.text('Pix de R\$ 50,00 aguardando pagamento'), findsOneWidget);
-      final before = backend.statusCalls;
-      backend.statusAfterPoll = TopUpStatus.paid;
-      await t.pump(const Duration(seconds: 10));
-      await t.pump();
-      expect(backend.statusCalls, greaterThan(before));
-      expect(find.byKey(const Key('pending-topup')), findsNothing);
-      expect(find.text('Carteira recarregada'), findsOneWidget);
-      await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('sheet do Pix ja expirado nao consulta o servidor', (t) async {
-      final backend = AccountBackend();
-      final expired = TopUp((b) => b
-        ..id = 't9'
-        ..status = TopUpStatus.pending
-        ..method = TopUpMethod.pix
-        ..amountCents = 2000
-        ..pix = PixCharge((p) => p
-          ..chargeId = 'c'
-          ..qrCodeBase64 = _png1x1
-          ..copyPaste = 'x'
-          ..expiresAt = DateTime.now().toUtc().subtract(const Duration(minutes: 1))).toBuilder()
-        ..createdAt = DateTime.utc(2026, 10, 21));
-      await t.pumpWidget(testApp(Scaffold(body: TopUpPixSheet(topUp: expired, pollInterval: const Duration(seconds: 1))),
-          overrides: [backendProvider.overrideWithValue(backend)]));
-      await t.pump(const Duration(seconds: 3));
-      expect(backend.statusCalls, 0);
-      expect(find.text('O Pix expirou. Gere um novo código.'), findsOneWidget);
-    });
-
-    testWidgets('sem preco do plano nao deixa assinar', (t) async {
-      tallScreen(t);
-      final backend = AccountBackend()..withPlans = false;
-      await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
-      await t.pumpAndSettle();
-      expect(find.text('Preço do plano indisponível agora. Tente de novo em instantes.'), findsOneWidget);
-      expect(t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Continuar')).onPressed, isNull);
-    });
-  });
 }

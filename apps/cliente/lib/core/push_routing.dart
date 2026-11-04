@@ -32,6 +32,8 @@ String routeForPush(Map<String, String> data) {
       final reservation = _id(data, 'reservationId');
       return reservation == null ? '/home' : '/reservation/$reservation';
     case 'rental.updated':
+    // Aviso do fim do periodo pre-pago do balcao (1 h antes): abre a corrida com a faixa.
+    case 'rental.prepaid_ending':
     case 'rental':
     case 'ride':
       return '/ride';

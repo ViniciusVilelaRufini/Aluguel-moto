@@ -11,13 +11,12 @@ import '../../core/legal.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
 import 'account_common.dart';
-import 'cards_screen.dart';
 import 'privacy_screen.dart';
 import 'subscriptions_screen.dart';
-import 'wallet_screen.dart';
 
-/// Conta (AccountScreen do design): perfil com selos, creditos, recarga e grupos
-/// Plano, Viagens, Ajuda e Privacidade (LGPD).
+/// Conta (AccountScreen do design): perfil com selos e grupos Plano, Viagens, Ajuda e
+/// Privacidade (LGPD). Nada se paga no app: carteira e plano so com saldo ou assinatura
+/// ativa (telas so de leitura) e sem cartoes nem recarga.
 ///
 /// Cupons e indicacao, estacoes de troca de bateria e agendamento de manutencao
 /// dependem de contrato (docs/decisoes.md) e ficam fora ate la.
@@ -29,13 +28,13 @@ class AccountScreen extends ConsumerWidget {
     final l = context.l;
     final s = ref.watch(sessionProvider).value;
     final c = s?.customer;
-    final wallet = ref.watch(walletProvider);
-    final subs = ref.watch(subscriptionsProvider);
+    final w = ref.watch(walletProvider).value;
+    final showWallet = w != null && (w.balanceCents > 0 || w.minutesBalance > 0);
+    final subs = ref.watch(subscriptionsProvider).value;
+    final current = subs == null ? null : activeSubscription(subs);
+    final active = current?.status == SubscriptionStatus.active ? current : null;
     final history = ref.watch(historyProvider);
-    final active = subs.value == null ? null : activeSubscription(subs.value!);
     final emergency = c?.emergencyContactName;
-    final cards = ref.watch(accountCardsProvider).value;
-    final defaultCard = cards?.where((x) => x.isDefault).firstOrNull ?? cards?.firstOrNull;
 
     return VoltiScaffold(
       title: l.accountTitle,
@@ -43,62 +42,32 @@ class AccountScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s16, VoltiSpacing.screenGutter, VoltiSpacing.s40),
         children: VoltiStagger.wrap([
           _Profile(customer: c, kyc: s?.kyc ?? KycStatus.notStarted),
-          const SizedBox(height: VoltiSpacing.s16),
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(
-              child: StatTile(
-                icon: LucideIcons.wallet,
-                label: l.credits,
-                value: wallet.value == null ? '—' : money(wallet.value!.balanceCents),
-                onTap: () => context.push('/account/wallet'),
-              ),
-            ),
-            const SizedBox(width: VoltiSpacing.s10),
-            Expanded(
-              child: StatTile(
-                icon: LucideIcons.timer,
-                label: l.minutePackage,
-                value: wallet.value == null ? '—' : l.minutesBalance(wallet.value!.minutesBalance),
-                onTap: () => context.push('/account/wallet'),
-              ),
-            ),
-          ]),
-          const SizedBox(height: VoltiSpacing.s10),
-          VoltiButton(
-            label: l.topUpWallet,
-            icon: LucideIcons.plus,
-            variant: VoltiButtonVariant.secondary,
-            fullWidth: true,
-            onPressed: () => openTopUp(context, ref),
-          ),
-          VoltiListGroup(title: l.groupPlan, children: [
-            ListRow(
-              icon: LucideIcons.calendarClock,
-              iconTone: ListRowTone.brand,
-              title: active == null ? l.myPlan : subscriptionName(context, active.planCode),
-              subtitle: active == null
-                  ? l.noActivePlan
-                  : (active.cancelAtPeriodEnd == true
+          // Nada se paga no app (balcao): carteira e plano so aparecem, para leitura, com
+          // saldo ou assinatura ativa; cartoes nunca.
+          if (showWallet || active != null)
+            VoltiListGroup(title: l.groupPlan, children: [
+              if (active != null)
+                ListRow(
+                  icon: LucideIcons.calendarClock,
+                  iconTone: ListRowTone.brand,
+                  title: subscriptionName(context, active.planCode),
+                  subtitle: active.cancelAtPeriodEnd == true
                       ? l.subscriptionEndsOn(formatDaySp(active.currentPeriodEnd))
-                      : l.subscriptionNextCharge(formatDaySp(active.currentPeriodEnd), money(active.priceCents))),
-              trailing: ListRowTrailing.chevron,
-              onTap: () => context.push('/account/subscriptions'),
-            ),
-            ListRow(
-              icon: LucideIcons.wallet,
-              title: l.walletAndPackages,
-              trailing: ListRowTrailing.chevron,
-              onTap: () => context.push('/account/wallet'),
-            ),
-            ListRow(
-              key: const Key('account-cards'),
-              icon: LucideIcons.creditCard,
-              title: l.cardsTitle,
-              subtitle: cards == null ? null : (defaultCard == null ? l.cardsRowEmpty : l.cardsRowSubtitle(cardLabel(defaultCard))),
-              trailing: ListRowTrailing.chevron,
-              onTap: () => context.push('/account/cards'),
-            ),
-          ]),
+                      : l.subscriptionNextCharge(formatDaySp(active.currentPeriodEnd), money(active.priceCents)),
+                  trailing: ListRowTrailing.chevron,
+                  onTap: () => context.push('/account/subscriptions'),
+                ),
+              if (showWallet)
+                ListRow(
+                  key: const Key('account-wallet'),
+                  icon: LucideIcons.wallet,
+                  title: l.wallet,
+                  value: money(w.balanceCents),
+                  subtitle: w.minutesBalance > 0 ? l.minutesBalance(w.minutesBalance) : null,
+                  trailing: ListRowTrailing.chevron,
+                  onTap: () => context.push('/account/wallet'),
+                ),
+            ]),
           VoltiListGroup(title: l.groupTrips, children: [
             ListRow(
               icon: LucideIcons.history,

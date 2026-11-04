@@ -22,6 +22,7 @@ import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
+import '../account/account_common.dart' show formatTimeSp;
 import '../handover/handover_watch.dart';
 import '../home/depot_providers.dart' show swapStationsProvider;
 import '../station_swap/swap_logic.dart';
@@ -112,6 +113,10 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
 
   /// Um toque so em "Trocar bateria"/"Continuar" (sem empilhar duas telas).
   bool _navigating = false;
+
+  /// Fase do periodo pre-pago do balcao no ultimo build: o timer reconstroi quando ela vira
+  /// (tambem em pausa, quando o tempo nao reconstroi a tela).
+  PrepaidPhase? _shownPrepaidPhase;
 
   @override
   void initState() {
@@ -211,7 +216,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
         _sincePosition++;
         if (_rental?.status == RentalStatus.active) {
           setState(_syncElapsed);
-        } else if (wasStale != _gpsStale) {
+        } else if (wasStale != _gpsStale || prepaidPhase(_rental?.prepaidUntil, ref.read(clockProvider)()) != _shownPrepaidPhase) {
           setState(() {});
         }
       });
@@ -807,9 +812,14 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                   : l.liveBadge,
       semanticsLabel: paused && !pending && fare != null ? l.pausedFareSemantics(fare) : null,
     );
+    // Aluguel do balcao: periodo pre-pago ate `prepaidUntil`; depois o custo e o excedente,
+    // acertado no galpao.
+    final prepaidUntil = r.prepaidUntil;
+    final phase = prepaidPhase(prepaidUntil, ref.read(clockProvider)());
+    _shownPrepaidPhase = phase;
     final stats = <Widget>[
       _Stat(l.fareLabel, fare ?? '—', key: const Key('ride-fare'), stacked: big),
-      _Stat(l.accumulatedCost, money(_cost), ticker: true, stacked: big),
+      _Stat(phase == PrepaidPhase.over ? l.rideCounterDueLabel : l.accumulatedCost, money(_cost), ticker: true, stacked: big),
       _Stat(l.battery, batteryValue(_battery), ticker: true, stacked: big),
     ];
     final center = _vehiclePos ?? _userPos ?? const LatLng(-23.5614, -46.6559);
@@ -1012,6 +1022,10 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                       stateBadge,
                     ]),
                   const SizedBox(height: 12),
+                  if (phase != null && prepaidUntil != null) ...[
+                    _PrepaidStrip(phase: phase, until: formatTimeSp(prepaidUntil), dueCents: _cost),
+                    const SizedBox(height: 12),
+                  ],
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
@@ -1081,6 +1095,30 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
         ),
       ]),
     );
+  }
+}
+
+/// Faixa do periodo pre-pago do balcao: "Periodo ate HH:MM"; na ultima hora, o aviso do fim
+/// (mesmo texto do push); depois do fim, o valor a acertar no galpao.
+class _PrepaidStrip extends StatelessWidget {
+  const _PrepaidStrip({required this.phase, required this.until, required this.dueCents});
+  final PrepaidPhase phase;
+  final String until;
+  final int dueCents;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    return switch (phase) {
+      PrepaidPhase.running => NoticeBanner(key: const Key('ride-prepaid-until'), info: true, icon: LucideIcons.calendarClock, message: l.ridePrepaidUntil(until)),
+      PrepaidPhase.ending => NoticeBanner(key: const Key('ride-prepaid-ending'), icon: LucideIcons.clock, message: l.ridePrepaidEnding(until)),
+      PrepaidPhase.over => NoticeBanner(
+          key: const Key('ride-prepaid-over'),
+          icon: LucideIcons.warehouse,
+          title: l.rideCounterDue(money(dueCents)),
+          message: l.ridePrepaidOver(until),
+        ),
+    };
   }
 }
 

@@ -8,16 +8,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:qr_flutter/qr_flutter.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
 import 'package:volti_cliente/features/account/account_common.dart';
 import 'package:volti_cliente/features/account/account_screen.dart';
-import 'package:volti_cliente/features/account/wallet_screen.dart';
 import 'package:volti_cliente/core/geo.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
-import 'package:volti_cliente/features/plan/pix_sheet.dart';
 import 'package:volti_cliente/features/return_flow/return_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';
 import 'package:volti_cliente/features/summary/summary_screen.dart';
@@ -27,7 +24,6 @@ import 'account_gap_c_test.dart' show AccountBackend;
 import 'helpers.dart';
 import 'zone_fixtures.dart';
 
-const _png1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
 /// Fontes reais do design: a fonte de teste tem glifos quadrados e mede
 /// "cabe ou nao" bem diferente do aparelho.
@@ -50,20 +46,6 @@ void _screen(WidgetTester t, {Size size = const Size(412, 915), double scale = 1
   addTearDown(t.view.reset);
   addTearDown(t.platformDispatcher.clearTextScaleFactorTestValue);
 }
-
-Deposit _deposit(String b64) => Deposit((d) => d
-  ..id = 'd1'
-  ..customerId = 'c1'
-  ..method = DepositMethod.pix
-  ..status = DepositStatus.awaitingPix
-  ..amountCents = 15000
-  ..createdAt = DateTime.utc(2026)
-  ..updatedAt = DateTime.utc(2026)
-  ..pix = PixCharge((p) => p
-    ..chargeId = 'ch1'
-    ..qrCodeBase64 = b64
-    ..copyPaste = '00020126580014BR.GOV.BCB.PIX0136volti-dev'
-    ..expiresAt = DateTime.utc(2030)).toBuilder());
 
 class _ReceiptBackend extends FakeBackend {
   _ReceiptBackend({required this.withInsuranceLine});
@@ -125,24 +107,6 @@ class _ReturnBackend extends FakeBackend {
 
 void main() {
   setUpAll(_loadFonts);
-
-  group('folha do Pix', () {
-    for (final (name, b64) in [('PNG 1x1 do fake', _png1x1), ('imagem vazia', '')]) {
-      testWidgets('$name: desenha o QR a partir do copia e cola', (t) async {
-        tallScreen(t);
-        await t.pumpWidget(testApp(
-          Scaffold(body: PixDepositSheet(deposit: _deposit(b64), pollInterval: const Duration(hours: 1))),
-          overrides: [backendProvider.overrideWithValue(FakeBackend())],
-        ));
-        await t.pump();
-        final qr = t.widget<QrImageView>(find.byType(QrImageView));
-        expect(qr, isNotNull);
-        expect(find.byType(Image), findsNothing, reason: 'o PNG minusculo nao aparece');
-        expect(find.bySemanticsLabel('QR code do Pix'), findsOneWidget);
-        await t.pumpWidget(const SizedBox());
-      });
-    }
-  });
 
   group('recibo', () {
     for (final line in [true, false]) {
@@ -233,25 +197,6 @@ void main() {
     test('linha de contato: e-mail real fica; sintetico sem telefone some', () {
       expect(contactLine(customer()), 'a@b.c');
       expect(contactLine(customer().rebuild((b) => b..email = 'sub-1@sem-email.volti.invalid')), isNull);
-    });
-
-    testWidgets('recarga paga: folha "Pix confirmado" na largura da tela', (t) async {
-      _screen(t);
-      final backend = AccountBackend()..statusAfterPoll = TopUpStatus.paid;
-      await t.pumpWidget(testApp(const WalletScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
-      await t.pumpAndSettle();
-      await t.tap(find.text('Recarregar carteira'));
-      await t.pumpAndSettle();
-      await t.tap(find.text('R\$ 20,00'));
-      await t.pump();
-      await t.tap(find.text('Gerar Pix de R\$ 20,00'));
-      await t.pump();
-      await t.pump(const Duration(seconds: 1));
-      await t.pump(const Duration(seconds: 2));
-      await t.pump();
-      expect(find.text('Pix confirmado'), findsOneWidget);
-      expect(t.getSize(find.byType(VoltiBottomSheet)).width, 412);
-      await t.pumpWidget(const SizedBox());
     });
   });
 }

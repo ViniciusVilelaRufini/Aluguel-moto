@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import '../../core/backend.dart';
 import '../../core/geo.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
-import '../payments/debt_pix_sheet.dart';
 
-/// Aviso da home com divida em aberto (R2-01): soma do saldo devedor e "Pagar agora" (Pix da
-/// divida mais antiga; as outras aparecem depois). Sem divida, mas com o cliente inadimplente
-/// (a cobranca do ultimo aluguel ainda esta sendo retentada no cartao), mostra so "Cobranca em
-/// andamento", sem botao. Sem nenhum dos dois (ou sem resposta) nao ocupa espaco.
+/// Dividas em aberto do cliente (R2-01). Falha (rede, teste sem backend) = sem aviso.
+final openDebtsProvider = FutureProvider.autoDispose<List<Payment>>((ref) => ref.watch(backendProvider).openDebts());
+
+/// Aviso da home com divida em aberto. Nada se paga no app (balcao): mostra so
+/// "Valor a acertar no galpao: R$ X" (soma do saldo devedor), sem botao, tambem para
+/// dividas antigas `failed` de cartao. Sem divida, mas com o cliente inadimplente (a cobranca
+/// do ultimo aluguel ainda esta sendo retentada no cartao), mostra so "Cobranca em andamento".
+/// Sem nenhum dos dois (ou sem resposta) nao ocupa espaco.
 class PendingPaymentBanner extends ConsumerWidget {
   const PendingPaymentBanner({super.key});
 
@@ -30,25 +35,37 @@ class PendingPaymentBanner extends ConsumerWidget {
         child: NoticeBanner(info: true, icon: LucideIcons.hourglass, title: l.paymentProcessingHomeTitle, message: l.paymentProcessingHomeText),
       );
     }
-    final total = debts.fold<int>(0, (acc, p) => acc + (p.outstandingCents ?? 0));
-    final first = debts.first;
     return Padding(
-      key: const Key('home-pending-payment'),
       padding: const EdgeInsets.only(top: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          NoticeBanner(danger: true, icon: LucideIcons.circleAlert, title: l.paymentPendingTitle, message: l.paymentPendingHomeText(money(total))),
-          const SizedBox(height: VoltiSpacing.s8),
-          VoltiButton(
-            key: const Key('home-pay-now'),
-            label: l.payNow,
-            icon: LucideIcons.qrCode,
-            fullWidth: true,
-            onPressed: () => payDebtWithPix(context, ref, paymentId: first.id, amountCents: first.outstandingCents ?? 0),
-          ),
-        ],
-      ),
+      child: CounterDebtNotice(key: const Key('home-counter-debt'), debts: debts),
+    );
+  }
+}
+
+/// "Valor a acertar no galpao: R$ X" com a soma de `outstandingCents` das [debts].
+class CounterDebtNotice extends StatelessWidget {
+  const CounterDebtNotice({super.key, required this.debts});
+  final List<Payment> debts;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    final total = debts.fold<int>(0, (acc, p) => acc + (p.outstandingCents ?? 0));
+    return NoticeBanner(danger: true, icon: LucideIcons.warehouse, title: l.counterDebtTitle(money(total)), message: l.counterDebtHomeText);
+  }
+}
+
+/// O mesmo aviso no historico: so com divida em aberto (sem "Cobranca em andamento").
+class HistoryCounterDebtBanner extends ConsumerWidget {
+  const HistoryCounterDebtBanner({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final debts = ref.watch(openDebtsProvider).value ?? const [];
+    if (debts.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: VoltiSpacing.s12),
+      child: CounterDebtNotice(key: const Key('history-counter-debt'), debts: debts),
     );
   }
 }

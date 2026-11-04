@@ -120,3 +120,21 @@ const kSafeLockSpeedKmh = 3.0;
 /// `vehicle.position` abaixo de [kSafeLockSpeedKmh] (o cliente nao recebe o
 /// estado da trava; e o sinal mais limpo que o app tem).
 const kPausePendingWindow = Duration(seconds: 30);
+
+/// Antecedencia do aviso do fim do periodo pre-pago do balcao (mesma janela do
+/// push `rental.prepaid_ending`).
+const kPrepaidEndingWarning = Duration(hours: 1);
+
+/// Fase do periodo pre-pago no balcao: [running] ate 1 h antes do fim, [ending]
+/// na ultima hora e [over] a partir de `prepaidUntil` (o excedente e acertado no galpao).
+enum PrepaidPhase { running, ending, over }
+
+/// `null` = aluguel sem periodo pre-pago (fora do balcao).
+PrepaidPhase? prepaidPhase(DateTime? prepaidUntil, DateTime now) {
+  if (prepaidUntil == null) return null;
+  final until = prepaidUntil.toUtc();
+  final t = now.toUtc();
+  if (!t.isBefore(until)) return PrepaidPhase.over;
+  if (!t.isBefore(until.subtract(kPrepaidEndingWarning))) return PrepaidPhase.ending;
+  return PrepaidPhase.running;
+}

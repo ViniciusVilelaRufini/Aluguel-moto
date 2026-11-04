@@ -48,7 +48,6 @@ void main() {
     await step('quote', () => b.quote(PlanCode.minute, InsuranceCoverage.basic));
     await step('cards', b.cards);
     await step('wallet', b.wallet);
-    await step('packages', b.minutePackages);
     await step('rentals', b.rentals);
     await step('receipt', () => b.receipt(id));
     await step('subscriptions', b.subscriptions);
