@@ -240,6 +240,10 @@ describe('Galpão: ciclo completo (e2e)', () => {
     const debt = afterEnd[1];
     expect(debt).toMatchObject({ status: 'pending', method: 'counter_pix', amountCents: quote.excessDayCents, providerPaymentId: null, depositId: null });
     expect((await prisma.rental.findUniqueOrThrow({ where: { id: rental.body.id } })).paymentId).toBe(debt.id);
+    // Recibo: excedente a acertar no galpão (pending com o valor), não "processando".
+    const receipt = await http().get(`/rentals/${rental.body.id}/receipt`).set(bearer(c.token)).expect(200);
+    expect(receipt).toSatisfyApiSpec();
+    expect(receipt.body).toMatchObject({ paymentId: debt.id, paymentStatus: 'pending', amountDueCents: quote.excessDayCents });
     await returnDepot(rental.body.id, okChecklist, 200);
     expect(await prisma.payment.count({ where: { rentalId: rental.body.id, kind: 'rental' } })).toBe(2);
 
