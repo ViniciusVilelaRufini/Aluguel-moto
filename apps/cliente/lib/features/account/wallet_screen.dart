@@ -59,6 +59,10 @@ Future<void> openTopUp(BuildContext context, WidgetRef ref) async {
 // Carteira de creditos
 // ---------------------------------------------------------------------------
 
+/// Preco por minuto do pacote em centavos, arredondado ao centavo mais proximo
+/// (3990 / 60 = 66,5 -> 67). So inteiros.
+int perMinuteCents(MinutePackage p) => (2 * p.priceCents + p.minutes) ~/ (2 * p.minutes);
+
 class WalletScreen extends ConsumerStatefulWidget {
   const WalletScreen({super.key});
   @override
@@ -188,7 +192,8 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                       title: p.name,
                       icon: LucideIcons.timer,
                       iconTone: ListRowTone.brand,
-                      subtitle: l.minutesBalance(p.minutes),
+                      // O titulo ja diz os minutos: embaixo, quanto sai cada minuto.
+                      subtitle: p.minutes > 0 ? l.farePerMinute(money(perMinuteCents(p))) : null,
                       value: money(p.priceCents),
                       trailing: ListRowTrailing.chevron,
                       onTap: () => _buyPackage(context, ref, p),
