@@ -1022,7 +1022,12 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                               stats[i],
                             ],
                           ])
-                        : Row(children: stats),
+                        : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            for (var i = 0; i < stats.length; i++) ...[
+                              if (i > 0) const SizedBox(width: VoltiSpacing.s12),
+                              stats[i],
+                            ],
+                          ]),
                   ),
                   const SizedBox(height: 12),
                   Wrap(spacing: 8, runSpacing: 8, children: [
@@ -1090,16 +1095,12 @@ class _Stat extends StatelessWidget {
   final bool ticker;
   @override
   Widget build(BuildContext context) {
+    // Em linha, o valor encolhe para caber na coluna (sem encostar no vizinho:
+    // "R$ 89,00/dia" e o custo ficavam colados em telas de 360 dp).
+    final valueWidget = ticker ? VoltiTicker(value, style: VoltiTypography.heading) : Text(value, style: VoltiTypography.heading, maxLines: 1, softWrap: false);
     final column = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: VoltiTypography.caption),
-          if (ticker)
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: VoltiTicker(value, style: VoltiTypography.heading),
-            )
-          else
-            Text(value, style: VoltiTypography.heading),
+          Text(label, style: VoltiTypography.caption, maxLines: 1, overflow: TextOverflow.ellipsis),
+          if (stacked && !ticker) valueWidget else FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: valueWidget),
     ]);
     return stacked ? column : Expanded(child: column);
   }
