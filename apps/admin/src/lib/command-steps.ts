@@ -9,7 +9,8 @@ export interface CommandStep { key: 'pending' | 'in_progress' | 'result'; label:
  */
 export function commandSteps(status: CommandStatus, reason?: CommandStatusReason): CommandStep[] {
   const failed = status === 'failed';
-  const result: CommandStep = { key: 'result', label: failed ? 'Falhou' : 'Confirmado', state: 'todo' };
+  const superseded = failed && reason === 'superseded';
+  const result: CommandStep = { key: 'result', label: superseded ? 'Substituído' : failed ? 'Falhou' : 'Confirmado', state: 'todo' };
   const pending: CommandStep = { key: 'pending', label: 'Pendente', state: 'todo' };
   const progress: CommandStep = { key: 'in_progress', label: 'Em andamento', state: 'todo' };
   switch (status) {
@@ -25,6 +26,8 @@ export function commandSteps(status: CommandStatus, reason?: CommandStatusReason
       break;
     case 'failed':
       pending.state = 'done';
+      // L1: substituído por um comando mais novo não é falha — a linha para sem vermelho.
+      if (superseded) break;
       // Limite inválido / comando não suportado: recusado antes de chegar à moto.
       progress.state = reason === 'invalid_limit' || reason === 'unsupported_by_tracker' ? 'todo' : 'done';
       result.state = 'failed';
@@ -42,8 +45,9 @@ export function stepProgress(steps: CommandStep[]): number {
 }
 
 /** Texto do toast quando o comando termina; `null` enquanto não terminou. */
-export function commandOutcome(label: string, status: CommandStatus): { msg: string; tone: 'success' | 'danger' } | null {
+export function commandOutcome(label: string, status: CommandStatus, reason?: CommandStatusReason): { msg: string; tone: 'success' | 'danger' | 'info' } | null {
   if (status === 'confirmed') return { msg: `${label}: confirmado pela moto`, tone: 'success' };
+  if (status === 'failed' && reason === 'superseded') return { msg: `${label}: substituído por um comando mais novo`, tone: 'info' };
   if (status === 'failed') return { msg: `${label}: falhou. Veja o motivo na ficha`, tone: 'danger' };
   return null;
 }

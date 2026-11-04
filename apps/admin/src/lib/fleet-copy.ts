@@ -19,8 +19,46 @@ export function commandSentMessage(type: CommandType, extra: { speedLimitKmh?: n
     case 'unlock': return 'Desbloqueio enviado';
     case 'horn': return 'Buzina acionada';
     case 'speed_limit': return extra.speedLimitKmh != null ? `Limite de ${extra.speedLimitKmh} km/h aplicado` : 'Limite de velocidade aplicado';
-    case 'stolen_mode': return extra.on === false ? 'Modo roubada desligado' : 'Modo roubada: bloqueio + posição a cada 5 s';
+    case 'stolen_mode':
+      if (extra.on === false) return 'Modo roubada desligado';
+      return mode === 'relay_only' ? 'Modo roubada ligado · use Bloquear para cortar o relé com a moto parada' : 'Modo roubada: bloqueio + posição a cada 5 s';
   }
+}
+
+/**
+ * P1-1: texto do diálogo do modo roubada. O rastreador só relé (J16) não bloqueia sozinho nem muda a frequência da posição pelo
+ * modo roubada (spec GT06 §11): só marca a moto; o corte é pelo Bloquear, que espera a moto parar.
+ */
+export function stolenModeDescription(mode?: TrackerControlMode): string {
+  return mode === 'relay_only'
+    ? 'Marca a moto como roubada no sistema. Este rastreador só corta o relé: o modo roubada não bloqueia a moto nem muda a frequência da posição. Para cortar, use Bloquear (espera a moto parar).'
+    : 'Bloqueia a moto e passa a enviar a posição a cada 5 segundos.';
+}
+
+/** "1 moto", "2 motos" (P2-8). */
+export function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/** P2-11: "sem sinal" = rastreador desconectado (`online === false`); sem o campo (API antiga), o status `offline`. */
+export function signalCount(vehicles: Array<{ online?: boolean; status: string }>): number {
+  return vehicles.filter((v) => (v.online === undefined ? v.status === 'offline' : v.online === false)).length;
+}
+
+export function fleetBadgeText(total: number, noSignal: number): string {
+  return `${plural(total, 'moto', 'motos')} · ${noSignal} sem sinal`;
+}
+
+const AUDIT_TIME = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+/** P3: hora do log com o dia ("03/11 09:34"): só a hora confundia eventos de dias diferentes. */
+export function auditTime(iso: string): string {
+  return AUDIT_TIME.format(new Date(iso)).replace(',', '');
+}
+
+/** P3: "Ver auditoria completa" já filtrada pela moto. */
+export function auditHref(entityId: string): string {
+  return `/team?tab=audit&entity=${encodeURIComponent(entityId)}`;
 }
 
 export interface AuditRow { id: string; at: string; what: string; who: string; why: string }
@@ -81,6 +119,8 @@ export function assignToast(assigneeId: string, meId: string | undefined, name?:
  * Alertas pendentes = não resolvidos (abertos + atribuídos): total do servidor (`/reports/dashboard`) somado às
  * variações do tempo real desde a última consulta. Nunca negativo.
  */
-export function pendingAlertCount(serverTotal: number | undefined, delta: number): number {
-  return Math.max(0, (serverTotal ?? 0) + delta);
+export function pendingAlertCount(serverTotal: number | undefined, delta: number): number | null {
+  // P2-3: sem o total do servidor (carregando/erro) → `null` ("—"), nunca 0.
+  if (serverTotal === undefined) return null;
+  return Math.max(0, serverTotal + delta);
 }

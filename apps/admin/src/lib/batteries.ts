@@ -118,3 +118,15 @@ export function unloadDestination(dest: string, depotCount: number): { body: { s
   if (dest === 'charging') return depotCount > 1 ? { error: 'Escolha o galpão ou a estação de destino' } : { body: {} };
   return { body: { stationId: dest } };
 }
+
+/** P2-7: carga exibida; bateria numa moto sem leitura (`chargeKnown: false`) → "sem leitura" (o valor gravado é velho). */
+export function batteryChargeText(b: Pick<Battery, 'chargePct' | 'chargeKnown'>): string {
+  return b.chargeKnown === false ? 'sem leitura' : `${b.chargePct}%`;
+}
+
+/** P1-4: linha da bateria retirada na tarefa de troca; sem `vehicleBatteryPct` (moto sem leitura) não mostra "0%". */
+export function taskBatteryText(t: Pick<S<'FieldTask'>, 'vehicleBatterySerial' | 'vehicleBatteryPct' | 'vehicleBatteryCycleCount'>): string {
+  const pct = t.vehicleBatteryPct !== undefined ? ` · ${t.vehicleBatteryPct}%` : '';
+  const cycles = t.vehicleBatteryCycleCount !== undefined ? ` · ${t.vehicleBatteryCycleCount} ciclos` : '';
+  return `Retirada: ${t.vehicleBatterySerial ?? '—'}${pct}${cycles}`;
+}

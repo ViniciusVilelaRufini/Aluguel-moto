@@ -23,8 +23,6 @@ import { activePlanForCode, buildFeeCreate, buildPlanCreate, firstFreePlanCode, 
 
 const UNIT_SUFFIX: Record<S<'PlanUnit'>, string> = { minute: '/min', hour: '/hora', day: '/dia', week: '/semana', month: '/mês' };
 
-/** Taxas cobradas por minuto (pausa, reserva) mostram a unidade como no design: "0,20 /min". */
-const feeSuffix = (code: string) => (/pause|pausa|reserv/i.test(code) ? '/min' : '');
 
 export default function SettingsPage() {
   const { groups } = useAuth();
@@ -128,7 +126,7 @@ export default function SettingsPage() {
         </>}
       </PageHeader>
       {!canEdit && <Alert tone="info" icon="Info">Seu perfil só visualiza preços e planos.</Alert>}
-      <ErrorNote error={err ?? plans.error ?? fees.error} />
+      <ErrorNote error={err ?? plans.error ?? fees.error ?? cov.error ?? coupons.error} onRetry={err ? undefined : () => { void plans.refetch(); void fees.refetch(); void cov.refetch(); void coupons.refetch(); }} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 24, alignItems: 'start' }}>
         {sec('Planos', 'Preço por período, taxa de desbloqueio e pausa (em reais)', (
           <>
@@ -175,7 +173,7 @@ export default function SettingsPage() {
             {(fees.data?.items ?? []).map((f) => (
               <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', borderBottom: '1px solid var(--ink-100)' }}>
                 <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{f.name}{f.system && <span style={{ marginLeft: 8 }}><Pill>Sistema</Pill></span>}</span>
-                {feeSuffix(f.code) && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{feeSuffix(f.code)}</span>}
+
                 {canEdit ? <MiniInput label={f.name} width={110} value={feeEdit[f.id]?.amount ?? toReais(f.amountCents)} error={bad(feeEdit[f.id]?.amount)} onChange={(v) => setFeeEdit((m) => ({ ...m, [f.id]: { ...m[f.id], amount: v } }))} /> : <span style={{ font: '500 13px var(--font-mono)' }}>{toReais(f.amountCents)}</span>}
               </div>
             ))}

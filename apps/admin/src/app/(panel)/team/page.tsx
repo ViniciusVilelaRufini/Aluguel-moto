@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { staffLabel } from '@/lib/staff-label';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
@@ -28,13 +29,14 @@ const ROLE_CARDS: [StaffGroup, string][] = [
 ];
 
 export default function TeamPage() {
-  const [tab, setTab] = useState<'team' | 'audit'>('team');
+  const params = useSearchParams();
+  const [tab, setTab] = useState<'team' | 'audit'>(params.get('tab') === 'audit' ? 'audit' : 'team');
   return (
     <Page>
       <PageHeader subtitle="Cada perfil vê só o que precisa · 2FA obrigatório">
         <SegmentedControl options={[{ value: 'team', label: 'Equipe' }, { value: 'audit', label: 'Auditoria' }]} value={tab} onChange={setTab} style={{ width: 260 }} />
       </PageHeader>
-      <TabPanel k={tab}>{tab === 'team' ? <Team /> : <Audit />}</TabPanel>
+      <TabPanel k={tab}>{tab === 'team' ? <Team /> : <Audit entityId={params.get('entity') ?? undefined} />}</TabPanel>
     </Page>
   );
 }
@@ -125,7 +127,10 @@ function AuditCell({ label, detail }: { label: string; detail: string }) {
   );
 }
 
-function Audit() {
+function Audit({ entityId: initialEntityId }: { entityId?: string }) {
+  const router = useRouter();
+  // P3: "Ver auditoria completa" da ficha da moto abre já filtrado por ela.
+  const [entityId, setEntityId] = useState(initialEntityId);
   const [action, setAction] = useState('');
   const [entity, setEntity] = useState('');
   const [actionCustom, setActionCustom] = useState('');
@@ -135,11 +140,17 @@ function Audit() {
   // Seletores mudam na hora; o identificador digitado em "Outra…" só consulta depois que a digitação para.
   const actionFilter = useDebounced(auditFilterValue(action, actionCustom));
   const entityFilter = useDebounced(auditFilterValue(entity, entityCustom));
-  const { rows, loading, error, pager } = usePagedQuery<S<'AuditLog'>>(['audit', actionFilter, entityFilter, from, to], (cursor) =>
-    unwrap(api.GET('/audit-logs', { params: { query: { cursor, limit: 20, action: actionFilter || undefined, entityType: entityFilter || undefined, from: from ? dayStartIso(from) : undefined, to: to ? dayEndIso(to) : undefined } } })),
+  const { rows, loading, error, pager } = usePagedQuery<S<'AuditLog'>>(['audit', actionFilter, entityFilter, entityId ?? '', from, to], (cursor) =>
+    unwrap(api.GET('/audit-logs', { params: { query: { cursor, limit: 20, action: actionFilter || undefined, entityType: entityFilter || undefined, entityId, from: from ? dayStartIso(from) : undefined, to: to ? dayEndIso(to) : undefined } } })),
   );
   return (
     <>
+      {entityId && (
+        <div data-testid="audit-entity-filter" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+          <Pill tone="info" icon="Filter">Só o registro {entityId.slice(0, 8)}</Pill>
+          <Button size="sm" variant="ghost" icon="X" style={{ height: 26, padding: '0 6px' }} onClick={() => { setEntityId(undefined); router.replace('/team?tab=audit', { scroll: false }); }}>Limpar</Button>
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ width: 200 }}><Field label="Ação"><Select testId="audit-action" value={action} onChange={setAction} options={AUDIT_ACTION_OPTIONS} /></Field></div>
         {action === AUDIT_OTHER && <div style={{ width: 220 }}><Field label="Ação (identificador)"><TextInput testId="audit-action-custom" value={actionCustom} onChange={setActionCustom} placeholder="ex.: vehicle.updated" /></Field></div>}

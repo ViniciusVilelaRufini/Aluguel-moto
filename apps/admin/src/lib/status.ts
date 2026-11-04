@@ -42,6 +42,9 @@ export function priorityTone(p: AlertPriority): Tone {
 export const PRIORITY_LABEL: Record<AlertPriority, string> = { low: 'Baixa', medium: 'Média', high: 'Alta', critical: 'Crítica' };
 export const PRIORITY_ORDER: Record<AlertPriority, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
+/** L1: comando pendente substituído por um mais novo (ex.: pausar e retomar em seguida) — não é falha da moto. */
+export const SUPERSEDED_LABEL = 'substituído por um comando mais novo';
+
 export function commandStateLabel(status: CommandStatus, reason?: CommandStatusReason, ctx: { type?: CommandType; controlMode?: TrackerControlMode } = {}): string {
   const relayLock = ctx.controlMode === 'relay_only' && ctx.type === 'lock';
   const relayUnlock = ctx.controlMode === 'relay_only' && ctx.type === 'unlock';
@@ -53,7 +56,9 @@ export function commandStateLabel(status: CommandStatus, reason?: CommandStatusR
     case 'confirmed':
       return 'confirmado';
     case 'failed':
-      if (reason === 'did_not_stop') return relayLock ? 'falhou: a moto não parou em 120 s; nenhum corte foi enviado' : 'falhou: a moto não parou';
+      if (reason === 'superseded') return SUPERSEDED_LABEL;
+      // P2-5: no só relé a parada é confirmada por posições GPS frescas paradas; sem GPS recente ela não se confirma.
+      if (reason === 'did_not_stop') return relayLock ? 'falhou: não foi possível confirmar a moto parada em 120 s (sem posição GPS recente ou em movimento); nenhum corte foi enviado' : 'falhou: a moto não parou';
       if (reason === 'timeout') return relayUnlock ? RELAY_UNLOCK_TIMEOUT : 'falhou: sem resposta da moto';
       if (reason === 'invalid_limit') return 'falhou: limite inválido';
       if (reason === 'unsupported_by_tracker') return 'falhou: este rastreador não executa este comando';
@@ -63,7 +68,7 @@ export function commandStateLabel(status: CommandStatus, reason?: CommandStatusR
 
 export function commandStateTone(status: CommandStatus, reason?: CommandStatusReason): Tone {
   if (status === 'confirmed') return 'success';
-  if (status === 'failed') return 'danger';
+  if (status === 'failed') return reason === 'superseded' ? 'neutral' : 'danger';
   if (status === 'pending' && reason === 'offline') return 'warning';
   return 'info';
 }

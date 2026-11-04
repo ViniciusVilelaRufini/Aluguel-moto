@@ -1,5 +1,6 @@
 'use client';
 
+import { fleetBadgeText, plural, signalCount } from '@/lib/fleet-copy';
 import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { SideNav } from '@/ds/SideNav';
@@ -86,8 +87,9 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
     );
   }
 
-  const items = menu.map((m) => ({ value: m.href, label: m.label, icon: m.icon, badge: m.key === 'alerts' && openAlerts > 0 ? openAlerts : undefined }));
-  const offline = vehicles.filter((v) => v.status === 'offline').length;
+  const items = menu.map((m) => ({ value: m.href, label: m.label, icon: m.icon, badge: m.key === 'alerts' && openAlerts != null && openAlerts > 0 ? openAlerts : undefined }));
+  // P2-11: "sem sinal" pelo rastreador desconectado (online), não pelo status (moto alugada sem sinal continua `rented`).
+  const offline = signalCount(vehicles);
   const name = me.staff?.name?.trim() || me.email;
   const groupLabel = groups.map((g) => GROUP_LABEL[g]).join(', ');
 
@@ -125,9 +127,9 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
           {canLive && <CriticalAlertToaster vehicles={vehicles} onAlertsPage={current?.key === 'alerts'} />}
           {vehiclesReady && (
             <Badge tone={offline > 0 ? 'warning' : 'success'} icon="Wifi">
-              <span data-testid="fleet-badge" title={`${vehicles.length} motos · ${offline} sem sinal`}>
-                <span className="fb-full">{vehicles.length} motos · {offline} sem sinal</span>
-                <span className="fb-short">{offline > 0 ? `${offline} sem sinal` : `${vehicles.length} motos`}</span>
+              <span data-testid="fleet-badge" title={fleetBadgeText(vehicles.length, offline)}>
+                <span className="fb-full">{fleetBadgeText(vehicles.length, offline)}</span>
+                <span className="fb-short">{offline > 0 ? `${offline} sem sinal` : plural(vehicles.length, 'moto', 'motos')}</span>
               </span>
             </Badge>
           )}

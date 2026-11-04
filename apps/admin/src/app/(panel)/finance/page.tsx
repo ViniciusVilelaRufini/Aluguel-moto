@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { revenueCaption } from '@/lib/finance-revenue';
+import { revenueCaption, revenuePerVehicleDay } from '@/lib/finance-revenue';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { useSubmitGuard } from '@/lib/submit-guard';
@@ -25,6 +25,9 @@ import { Button } from '@/ds/Button';
 import { SegmentedControl } from '@/ds/SegmentedControl';
 
 type Tab = FinanceTab;
+
+/** "0,6%", "14%": uma casa decimal só quando há fração. */
+const formatPct1 = (n: number) => `${(Math.round(n * 10) / 10).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
 
 const WEEKDAY = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short' });
 const DAYMONTH = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
@@ -64,15 +67,17 @@ export default function FinancePage() {
   const occPrev = useQuery({ queryKey: ['occupancy-prev', pk], enabled: on, queryFn: () => unwrap(api.GET('/reports/occupancy', { params: { query: { ...pr, groupBy: 'day' } } })).then(asJson) });
   const perVehiclePrev = useQuery({ queryKey: ['rev-vehicle-prev', pk], enabled: on, queryFn: () => unwrap(api.GET('/reports/revenue-per-vehicle', { params: { query: pr } })).then(asJson) });
 
-  const occAvg = occ.data && occ.data.rows.length ? occ.data.rows.reduce((a, x) => a + x.occupancyPct, 0) / occ.data.rows.length : null;
-  const vehicleDays = perVehicle.data?.rows.length ?? 0;
-  const perVehicleDay = vehicleDays ? Math.round((perVehicle.data!.rows.reduce((a, x) => a + x.revenueCents, 0)) / vehicleDays) : null;
-
-  const occPrevAvg = occPrev.data && occPrev.data.rows.length ? occPrev.data.rows.reduce((a, x) => a + x.occupancyPct, 0) / occPrev.data.rows.length : null;
-  const prevVehicleDays = perVehiclePrev.data?.rows.length ?? 0;
-  const perVehicleDayPrev = prevVehicleDays ? Math.round(perVehiclePrev.data!.rows.reduce((a, x) => a + x.revenueCents, 0) / prevVehicleDays) : null;
+  // L3: ocupação do período ponderada pelo tempo (a API devolve `occupancyPct` do intervalo); sem ela (API antiga), a média.
+  const occOf = (d?: { occupancyPct?: number; rows: Array<{ occupancyPct: number }> }) =>
+    !d ? null : d.occupancyPct ?? (d.rows.length ? d.rows.reduce((a, x) => a + x.occupancyPct, 0) / d.rows.length : null);
+  const occAvg = occOf(occ.data);
+  const occPrevAvg = occOf(occPrev.data);
+  // P2-1: receita ÷ (frota × dias), não ÷ linhas com receita.
+  const perVehicleDay = revenuePerVehicleDay(perVehicle.data?.rows, occ.data?.rows);
+  const perVehicleDayPrev = revenuePerVehicleDay(perVehiclePrev.data?.rows, occPrev.data?.rows);
   const dRevenue = percentDelta(fin.data?.totalRevenueCents ?? null, finPrev.data?.totalRevenueCents ?? null);
-  const dOcc = pointsDelta(occAvg === null ? null : Math.round(occAvg), occPrevAvg === null ? null : Math.round(occPrevAvg));
+  const round1 = (n: number) => Math.round(n * 10) / 10;
+  const dOcc = pointsDelta(occAvg === null ? null : round1(occAvg), occPrevAvg === null ? null : round1(occPrevAvg));
   const dPerVehicle = moneyDelta(perVehicleDay, perVehicleDayPrev);
   const dDelinquent = moneyDelta(fin.data?.delinquentAmountCents ?? null, finPrev.data?.delinquentAmountCents ?? null);
 
@@ -119,8 +124,8 @@ export default function FinancePage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
             {fin.isLoading ? [0, 1, 2, 3].map((i) => <StatTileSkeleton key={i} />) : <>
               <StatTile icon="Wallet" label="Receita" numeric={f ? f.totalRevenueCents : null} format={formatCompactBRL} delta={dRevenue?.text} trend={dRevenue?.trend} caption={revenueCaption(f)} />
-              <StatTile icon="Gauge" label="Taxa de ocupação" numeric={occAvg === null ? null : Math.round(occAvg)} format={(n) => `${n}%`} delta={dOcc?.text} trend={dOcc?.trend} />
-              <StatTile icon="Bike" label="Receita/moto/dia" numeric={perVehicleDay} format={formatBRL} delta={dPerVehicle?.text} trend={dPerVehicle?.trend} />
+              <StatTile icon="Gauge" label="Taxa de ocupação" numeric={occAvg === null ? null : round1(occAvg)} integer={false} format={formatPct1} delta={dOcc?.text} trend={dOcc?.trend} caption="Tempo alugado ÷ tempo da frota" />
+              <StatTile icon="Bike" label="Receita/moto/dia" numeric={perVehicleDay} format={formatBRL} delta={dPerVehicle?.text} trend={dPerVehicle?.trend} caption="Receita ÷ (frota × dias)" />
               <StatTile icon="CircleAlert" label="Inadimplência" numeric={f ? f.delinquentAmountCents : null} format={formatBRL} goodWhen="down" delta={dDelinquent?.text} trend={dDelinquent ? (dDelinquent.trend === 'flat' ? 'flat' : dDelinquent.trend === 'up' ? 'down' : 'up') : undefined}
                 caption={f ? `${f.delinquentCustomers} ${f.delinquentCustomers === 1 ? 'cliente' : 'clientes'}` : undefined} />
             </>}

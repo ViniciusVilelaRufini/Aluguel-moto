@@ -170,10 +170,12 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
           <SegmentedControl options={[{ value: 'kyc', label: 'Verificação' }, { value: 'support', label: 'Atendimento' }, { value: 'history', label: 'Histórico' }]} value={tab} onChange={setTab} />
           {tab === 'kyc' && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <PhotoCapture height={110} label="Documento" icon="IdCard" done={c.kycStatus === 'approved'} />
-                <PhotoCapture height={110} label="Selfie" icon="ScanFace" done={c.kycStatus === 'approved'} />
-              </div>
+              {can(groups, 'kyc.review') && c.kycStatus !== 'not_started' ? <KycFilesView customerId={id} /> : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <PhotoCapture height={110} label={c.kycStatus === 'not_started' ? 'Documento não enviado' : 'Documento'} icon="IdCard" done={c.kycStatus === 'approved'} />
+                  <PhotoCapture height={110} label={c.kycStatus === 'not_started' ? 'Selfie não enviada' : 'Selfie'} icon="ScanFace" done={c.kycStatus === 'approved'} />
+                </div>
+              )}
               <div>
                 <KV k="Verificação" v={KYC_STATUS[c.kycStatus][0]} />
                 <KV k="CPF" v={displayCpf(c.cpf, full)} mono />
@@ -385,5 +387,51 @@ function SubscriptionBox({ subscriptionId, planCode }: { subscriptionId: string;
       {canAssign && <Button size="sm" variant="secondary" icon="Bike" testId="assign-fixed" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)', background: '#fff' }} onClick={() => setAssign(true)}>{fixed ? 'Trocar moto fixa' : 'Definir moto fixa'}</Button>}
       {assign && <SubscriptionVehicleDialog subscriptionId={subscriptionId} currentCode={fixed} onClose={() => setAssign(false)} onDone={setSub} />}
     </div>
+  );
+}
+
+const KYC_FILE_LABEL: Record<'documentFront' | 'documentBack' | 'selfie', string> = { documentFront: 'Documento (frente)', documentBack: 'Documento (verso)', selfie: 'Selfie' };
+
+/**
+ * P2-6: arquivos da verificação para a revisão (GET /customers/{id}/kyc-files). Links pré-assinados de 5 minutos; cada consulta
+ * grava auditoria, então a consulta não se repete sozinha (só ao reabrir depois de 4 min ou ao clicar em "Recarregar").
+ */
+function KycFilesView({ customerId }: { customerId: string }) {
+  const q = useQuery({
+    queryKey: ['kyc-files', customerId],
+    queryFn: () => unwrap(api.GET('/customers/{id}/kyc-files', { params: { path: { id: customerId } } })),
+    staleTime: 240_000,
+    refetchOnWindowFocus: false,
+  });
+  if (q.isLoading) return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}><Skeleton h={110} r={20} /><Skeleton h={110} r={20} /></div>;
+  if (q.error) return <ErrorNote error={q.error} onRetry={() => q.refetch()} />;
+  const files = (['documentFront', 'documentBack', 'selfie'] as const).filter((k) => q.data?.[k]);
+  if (files.length === 0) return <Empty compact icon="IdCard">Nenhum arquivo de verificação enviado</Empty>;
+  return (
+    <div data-testid="kyc-files" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {files.map((k) => <KycFileTile key={k} label={KYC_FILE_LABEL[k]} url={q.data![k]!.url} />)}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+        <span style={{ flex: 1 }}>Links válidos por 5 minutos · acesso registrado na auditoria</span>
+        <Button size="sm" variant="ghost" icon="RefreshCw" style={{ height: 26, padding: '0 6px' }} onClick={() => q.refetch()}>Recarregar</Button>
+      </div>
+    </div>
+  );
+}
+
+function KycFileTile({ label, url }: { label: string; url: string }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" data-testid="kyc-file" aria-label={`${label}: abrir em nova aba`}
+      style={{ display: 'flex', flexDirection: 'column', gap: 4, textDecoration: 'none', color: 'var(--text-primary)' }}>
+      {broken ? (
+        <span style={{ height: 110, borderRadius: 'var(--radius-lg)', background: 'var(--surface-sunken)', border: '1.5px dashed var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: 'var(--text-link)' }}>Abrir arquivo</span>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element -- link pré-assinado externo (S3/MinIO), sem otimização do Next.
+        <img src={url} alt={label} onError={() => setBroken(true)} style={{ width: '100%', height: 110, objectFit: 'cover', borderRadius: 'var(--radius-lg)', background: 'var(--surface-sunken)' }} />
+      )}
+      <span style={{ font: 'var(--type-caption)', color: 'var(--text-secondary)' }}>{label}</span>
+    </a>
   );
 }

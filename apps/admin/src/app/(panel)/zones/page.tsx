@@ -6,6 +6,8 @@ import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
 import type MapboxDraw from '@mapbox/mapbox-gl-draw';
 import { api, problemMessage, unwrap, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useRealtime } from '@/lib/realtime';
+import { automaticZoneRules } from '@/lib/zone-rules';
 import { can } from '@/lib/permissions';
 import { allLayers, filterByLayers, toggleLayer, visibleCount, ZONE_TYPES, zoneTooltip } from '@/lib/zone-layers';
 import { formatBRL } from '@/lib/format';
@@ -55,6 +57,10 @@ export default function ZonesPage() {
 
   const zonesQ = useQuery({ queryKey: ['zones'], queryFn: () => unwrap(api.GET('/zones')) });
   const zones = useMemo(() => (zonesQ.data?.items ?? []).filter((z) => z.active), [zonesQ.data]);
+  // P1-2: com moto de rastreador só relé na frota, as regras automáticas dizem o que vale para ela.
+  const { vehicles } = useRealtime();
+  const relayOnly = vehicles.some((v) => v.trackerControlMode === 'relay_only');
+  const rules = automaticZoneRules({ relayOnly, returnFeeText: returnFee !== undefined ? formatBRL(returnFee) : undefined });
 
   const onReady = useCallback(async (map: MlMap) => {
     mapRef.current = map;
@@ -284,7 +290,9 @@ export default function ZonesPage() {
 
         <Card variant="sunken" padding={4}>
           {zonesQ.isLoading && <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 12 }}>{[0, 1, 2].map((i) => <Skeleton key={i} h={30} />)}</div>}
-          {!zonesQ.isLoading && zones.length === 0 && (
+          {/* P1-5: erro da API não vira "Nenhuma cerca cadastrada". */}
+          <ErrorNote error={zonesQ.error} onRetry={() => zonesQ.refetch()} />
+          {!zonesQ.isLoading && !zonesQ.error && zones.length === 0 && (
             <Empty compact icon="Hexagon" action={canEdit ? <Button size="sm" variant="ghost" icon="PenTool" disabled={!mapReady} onClick={startNew}>Desenhar área</Button> : undefined}>Nenhuma cerca cadastrada</Empty>
           )}
           {zones.map((z) => (
@@ -302,13 +310,8 @@ export default function ZonesPage() {
 
         <SectionTitle>Regras automáticas</SectionTitle>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: -4 }}>Definidas pela plataforma; não são editáveis aqui.</div>
-        {[
-          ['Saiu da área de operação', 'Alerta imediato; reduz e bloqueia com segurança após 5 min'],
-          ['Entrou em área de pedestres ou ciclovia', 'Limite de 6 km/h (pedestres) ou 20 km/h (ciclovia)'],
-          ['Zona proibida', 'Não permite encerrar o aluguel'],
-          ['Fora do ponto de devolução', returnFee !== undefined ? `Só o admin encerra à força, com taxa de ${formatBRL(returnFee)}` : 'Só o admin encerra à força, com taxa'],
-        ].map(([t, d]) => (
-          <div key={t} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--ink-100)' }}>
+        {rules.map(({ title: t, detail: d }) => (
+          <div key={t} data-testid="zone-rule" style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--ink-100)' }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{t}</div>
               <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{d}</div>

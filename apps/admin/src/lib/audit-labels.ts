@@ -9,6 +9,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   'customer.unblock': 'Cliente desbloqueado',
   'customer.delinquency_clear': 'Quitação de dívida',
   'customer.kyc_review': 'Revisão de verificação (KYC)',
+  'customer.kyc_files_view': 'Consulta dos arquivos da verificação (KYC)',
   'customer.pix_refund_key': 'Chave Pix de reembolso',
   'depot.create': 'Galpão criado',
   'depot.update': 'Galpão atualizado',

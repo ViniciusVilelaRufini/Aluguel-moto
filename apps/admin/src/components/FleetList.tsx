@@ -6,6 +6,7 @@ import { matchesVehicle } from '@/lib/fleet-search';
 import { addressView, batteryView } from '@/lib/vehicle-live';
 import { SERVICE_STATUS, formatKm } from '@/lib/maintenance';
 import { timeAgo } from '@/lib/format';
+import { useNow } from '@/lib/use-now';
 import { FleetStatus } from '@/ds/FleetStatus';
 import { Input } from '@/ds/Input';
 import { Button } from '@/ds/Button';
@@ -21,6 +22,8 @@ export function FleetList({ vehicles, selected, onSelect, onlyFixed, onToggleFix
   vehicles: FleetVehicle[]; selected: string | null; onSelect: (id: string) => void; onlyFixed: boolean; onToggleFixed: () => void;
 }) {
   const [q, setQ] = useState('');
+  // P1-8: "Último sinal" avança com a lista aberta.
+  const now = useNow(15_000);
   const rows = useMemo(() => vehicles
     .filter((v) => (!onlyFixed || !!v.assignedSubscriptionId) && matchesVehicle(v, q))
     .sort((a, b) => a.code.localeCompare(b.code, 'pt-BR')), [vehicles, q, onlyFixed]);
@@ -43,7 +46,7 @@ export function FleetList({ vehicles, selected, onSelect, onlyFixed, onToggleFix
           { key: 'address', label: 'Endereço', render: (v) => <span title={v.address ?? undefined} style={{ display: 'inline-block', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'bottom' }}>{addressView(v).text}</span> },
           { key: 'model', label: 'Modelo', render: (v) => v.categoryLabel ? `${v.model} · ${v.categoryLabel}` : v.model },
           { key: 'service', label: 'Revisão', render: (v) => v.service ? <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Pill tone={SERVICE_STATUS[v.service.status][1]}>{SERVICE_STATUS[v.service.status][0]}</Pill><span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{formatKm(v.service.kmSinceService)}</span></span> : '—' },
-          { key: 'lastSeenAt', label: 'Último sinal', render: (v) => timeAgo(v.lastSeenAt) },
+          { key: 'lastSeenAt', label: 'Último sinal', render: (v) => timeAgo(v.lastSeenAt, now) },
         ]} />
       {rows.length > MAX_ROWS && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Mostrando {MAX_ROWS} de {rows.length}. Refine a busca para ver as demais.</div>}
     </div>

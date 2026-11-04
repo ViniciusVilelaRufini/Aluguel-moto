@@ -24,10 +24,17 @@ export function makeStaffMe(group: S<'StaffGroup'> = 'admin'): S<'Me'> {
   };
 }
 
+/**
+ * Moto de bancada (painel de bancada, 2026-11-03): a última da frota imita a VLT-0059 real — Concox J16 `relay_only`, sem
+ * leitura de bateria (`batteryKnown: false`, 0%) e GPS inválido (posição de 10 h antes; o heartbeat mantém o último sinal fresco).
+ */
+export const BENCH_VEHICLE_ID = 'veh-024';
+
 export function makeVehicles(n = 24): S<'Vehicle'>[] {
   return Array.from({ length: n }, (_, i) => {
     const status = STATUSES[i % STATUSES.length]!;
-    return {
+    const bench = `veh-${pad(i + 1)}` === BENCH_VEHICLE_ID;
+    const v: S<'Vehicle'> = {
       id: `veh-${pad(i + 1)}`,
       code: `VLT-${pad(i + 1)}`,
       qrCode: `QR${i + 1}`,
@@ -39,6 +46,8 @@ export function makeVehicles(n = 24): S<'Vehicle'>[] {
       estimatedRangeKm: 8 + ((i * 3) % 40),
       speedLimitKmh: 32,
       thingName: `volti-veh-${pad(i + 1)}`,
+      trackerControlMode: 'speed_control',
+      batteryKnown: true,
       online: status !== 'offline',
       locked: status === 'free' || status === 'blocked',
       ignition: status === 'rented',
@@ -54,6 +63,8 @@ export function makeVehicles(n = 24): S<'Vehicle'>[] {
       createdAt: iso(200000),
       updatedAt: iso(1),
     };
+    if (!bench) return v;
+    return { ...v, trackerControlMode: 'relay_only', batteryKnown: false, batteryPct: 0, estimatedRangeKm: 0, firmwareVersion: 'J16_V2.3', positionAt: iso(600), speedKmh: 9, online: true, lastSeenAt: iso(0) };
   });
 }
 

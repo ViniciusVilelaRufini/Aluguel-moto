@@ -470,7 +470,9 @@ export function usePagedQuery<T>(key: QueryKey, fetchPage: (cursor?: string) => 
   const q = useQuery({
     queryKey: [...key, cursor ?? 'first'],
     queryFn: () => fetchPage(cursor),
-    placeholderData: keepPreviousData,
+    // P2-9: a página anterior fica na tela só enquanto a próxima carrega (mesma lista); ao trocar de aba ou filtro, não —
+    // senão a aba nova mostrava por um instante os itens da anterior.
+    placeholderData: (prev, prevQuery) => (prevQuery && JSON.stringify(prevQuery.queryKey.slice(0, -1)) === keyStr ? keepPreviousData(prev) : undefined),
     enabled,
   });
   const pager: Pager = useMemo(() => ({
