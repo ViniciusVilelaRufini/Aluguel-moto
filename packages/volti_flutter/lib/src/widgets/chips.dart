@@ -146,11 +146,13 @@ class PassCard extends StatelessWidget {
                 child: Icon(icon, size: 22, color: fg),
               ),
               const SizedBox(width: 12),
-              Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(title, maxLines: 1, style: VoltiTypography.label.copyWith(color: scheme.onSurface)),
-                if (subtitle != null)
-                  Text(subtitle!, maxLines: 1, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
+              Flexible(
+                child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: VoltiTypography.label.copyWith(color: scheme.onSurface)),
+                  if (subtitle != null)
+                    Text(subtitle!, maxLines: 2, overflow: TextOverflow.ellipsis, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
               ]),
+              ),
             ]),
           ),
         ),

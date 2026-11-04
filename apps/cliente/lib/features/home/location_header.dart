@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -149,10 +151,17 @@ class _LocationPill extends StatelessWidget {
           container: true,
           label: '$label · $place',
           child: ExcludeSemantics(
-            child: Container(
+            // Vidro com blur: sem ele os rotulos do mapa (ex.: "Res...") aparecem por baixo do texto.
+            child: DecoratedBox(
               key: const Key('home-location'),
+              decoration: const BoxDecoration(borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow1),
+              child: ClipRRect(
+                borderRadius: VoltiRadii.rPill,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: VoltiShadows.glassBlur, sigmaY: VoltiShadows.glassBlur),
+                  child: Container(
               padding: const EdgeInsets.symmetric(horizontal: _padX, vertical: 6),
-              decoration: BoxDecoration(color: context.palette.glassBg, borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow1),
+              color: context.palette.glassBg,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -181,6 +190,9 @@ class _LocationPill extends StatelessWidget {
                       style: placeStyle,
                     ),
                 ],
+              ),
+                  ),
+                ),
               ),
             ),
           ),

@@ -612,20 +612,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                     children: VoltiStagger.wrap([
                                       // Balcao: os planos sao contratados no galpao; o cartao so informa
                                       // (sem abrir a tela do plano, que e so leitura).
-                                      PassCard(
-                                        key: const Key('home-counter-plans'),
-                                        title: l.promoPassTitle,
-                                        subtitle: l.promoPassText,
-                                        icon: LucideIcons.warehouse,
-                                        tone: PassCardTone.sun,
+                                      // Cada cartao cabe na largura com o respiro padrao (texto em ate 2 linhas ou reticencias).
+                                      ConstrainedBox(
+                                        constraints: BoxConstraints(maxWidth: (MediaQuery.sizeOf(context).width - 2 * VoltiSpacing.screenGutter).clamp(0.0, double.infinity)),
+                                        child: PassCard(
+                                          key: const Key('home-counter-plans'),
+                                          title: l.promoPassTitle,
+                                          subtitle: l.promoPassText,
+                                          icon: LucideIcons.warehouse,
+                                          tone: PassCardTone.sun,
+                                        ),
                                       ),
                                       if (promoFirstRide) ...[
                                         const SizedBox(width: VoltiSpacing.s10),
-                                        PassCard(
-                                          title: l.promoFirstRideTitle,
-                                          subtitle: l.promoFirstRideText,
-                                          icon: LucideIcons.gift,
-                                          tone: PassCardTone.coral,
+                                        ConstrainedBox(
+                                          constraints: BoxConstraints(maxWidth: (MediaQuery.sizeOf(context).width - 2 * VoltiSpacing.screenGutter).clamp(0.0, double.infinity)),
+                                          child: PassCard(
+                                            title: l.promoFirstRideTitle,
+                                            subtitle: l.promoFirstRideText,
+                                            icon: LucideIcons.gift,
+                                            tone: PassCardTone.coral,
+                                          ),
                                         ),
                                       ],
                                     ]),
