@@ -4,7 +4,7 @@ Contrato da plataforma Volti: **fonte única da verdade** para a API, o painel e
 
 | Arquivo | Conteúdo |
 |---|---|
-| `openapi.yaml` | API REST (OpenAPI 3.1): 196 operações em 28 tags, erros RFC 7807, paginação por cursor, `Idempotency-Key`, grupos de staff (`x-required-groups`) |
+| `openapi.yaml` | API REST (OpenAPI 3.1): 204 operações em 29 tags, erros RFC 7807, paginação por cursor, `Idempotency-Key`, grupos de staff (`x-required-groups`) |
 | `realtime.md` | Eventos do WebSocket (Socket.IO, namespace `/realtime`), salas e payloads |
 | `generated/ts/schema.d.ts` | Tipos TypeScript gerados com `openapi-typescript` (painel, com `openapi-fetch`) |
 | `generated/dart/` | Pacote Dart `volti_api` gerado com `openapi-generator` (`dart-dio` + `built_value`) para os apps Flutter |
@@ -173,6 +173,35 @@ Slugs novos: `debt-not-payable`, `debt-in-collection`.
 - Reservas com dívida em aberto: `409` `payment-pending` (slug novo). `payDebt` declara `503`.
 - `StartRentalRequest.useWalletCredits` `deprecated` (a carteira sempre abate primeiro no fechamento).
 - `realtime.md`: salas `alerts:ops` e `alerts:finance`.
+
+## Pré-reserva e balcão do galpão (2026-11-04, plano `2026-11-04-volti-pre-reserva-balcao`)
+
+O cliente só pré-reserva no app; plano, seguro, contrato, pagamento e caução são feitos no balcão do galpão, sem gateway.
+
+- **Pré-reserva:** `POST /reservations` com `depotId` exige só `pickupMode` (+ `Idempotency-Key`); `planCode`, `coverage`,
+  `depositMethod`, `cardId` e `couponCode` ficam no schema para os apps beta12 e são ignorados; sem caução (a resposta
+  não traz `deposit`); exige consentimento de localização (`403 location-consent-required`); débito em aberto →
+  `409 payment-pending` ("Há um valor a acertar no galpão…").
+- **Balcão (staff `admin`/`operacao`/`campo`):** `GET /handovers/{id}/counter-quote` (`getHandoverCounterQuote`,
+  `CounterQuote`: plano × quantidade + seguro único, `excessDayCents`, `periodDays`) e
+  `POST /handovers/{id}/counter-checkout` (`counterCheckoutHandover`, `CounterCheckoutRequest` com `CounterPlanCode`
+  `day | weekly | monthly`, `quantity` 30/4/3, `contractPhotoKeys`, `CounterPaymentInput` e `CounterDepositInput` opcional;
+  devolve o `Rental`). `POST /handovers/uploads` aceita `HandoverUploadRequest.purpose` (`HandoverUploadPurpose`:
+  `photo | contract` → prefixo `contracts/`).
+- **Acerto:** `GET /rentals/{id}/counter-balance` (`getRentalCounterBalance`, também `financeiro`; `CounterBalance`,
+  `CounterDebt`, `CounterDepositBalance`), `POST /payments/{id}/counter-settle` (`counterSettlePayment`,
+  `CounterSettleRequest`: exatamente um entre `method` e `fromDepositId`) e `POST /payments/deposits/{id}/counter-refund`
+  (`counterRefundDeposit`, `CounterRefundRequest`). Os três POST com `Idempotency-Key`.
+- **Campos:** `PaymentMethod` e `DepositMethod` ganham `counter_card`, `counter_pix` e `cash` (`CounterPaymentMethod`);
+  `Payment.reference`/`recordedBy`; `Deposit.refundedCents`/`reference`; `Rental.prepaidUntil`;
+  `Handover.contractPhotoKeys` (só staff); `LgpdExport.handovers[].contractPhotoKeys`.
+- **Mudanças de comportamento:** `POST /handovers/{id}/accept` sempre `409 handover-counter-checkout` para o dono (outro
+  cliente → `404`); `POST /payments/{id}/retry` de débito de balcão → `409 debt-not-payable` ("Este valor é acertado no
+  galpão."); `POST /reservations/{id}/test-handover` simula a vistoria e o checkout (`cash`, referência `teste`).
+  `x-ws-events`/`realtime.md`: `handover.pending` abre "Sua moto está sendo preparada" e `handover.updated` `accepted` vem
+  do checkout no balcão.
+
+Slugs novos: `handover-counter-checkout`, `counter-amount-mismatch`, `contract-photos-required`.
 
 ## Regras que o contrato garante
 
