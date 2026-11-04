@@ -81,6 +81,40 @@ describe('Gt06Emulator (contra um "Traccar" TCP em processo)', () => {
     }
   });
 
+  it.each([
+    ['legacy' as const, [true, false], [false, false]],
+    ['j16' as const, [false, true], [true, true]], // como o J16 da bancada: o status logo depois da resposta traz o bit ANTIGO
+  ])('replyStyle %s: bit do status mandado logo depois da resposta', async (replyStyle, bits, stale) => {
+    const t = await fakeTraccar();
+    const lines: Array<Record<string, unknown>> = [];
+    const push = (e: Record<string, unknown>) => void lines.push(e);
+    const emu = new Gt06Emulator({ host: '127.0.0.1', port: t.port, imei: '860000000000901', intervalMs: 60_000, heartbeatMs: 60_000, replyStyle, log: { info: push, warn: push, error: push } });
+    const statusAfterReply = () => {
+      const out: boolean[] = [];
+      t.frames.forEach((f, i) => {
+        if (f.protocol === PROTO.stringInfo) {
+          const next = t.frames.slice(i + 1).find((g) => g.protocol === PROTO.status);
+          if (next) out.push((next.content[0] & 0x80) !== 0);
+        }
+      });
+      return out;
+    };
+    try {
+      await emu.start();
+      t.sock().write(serverCommandPacket('Relay,1#', 9));
+      await waitFor(() => statusAfterReply().length === 1);
+      t.sock().write(serverCommandPacket('Relay,0#', 10));
+      await waitFor(() => statusAfterReply().length === 2);
+      expect(statusAfterReply()).toEqual(bits);
+      const sent = lines.filter((l) => l.msg === 'gt06_status_sent').slice(-2);
+      expect(sent.map((l) => l.stale === true)).toEqual(stale);
+      expect(emu.blocked).toBe(false);
+    } finally {
+      emu.stop();
+      t.server.close();
+    }
+  });
+
   it('logo após o login manda status (bit de corte) e tensão externa 0x94 (para a ponte não segurar a telemetria)', async () => {
     const t = await fakeTraccar();
     const emu = new Gt06Emulator({ host: '127.0.0.1', port: t.port, imei: '860000000000901', intervalMs: 5_000, heartbeatMs: 30_000 });

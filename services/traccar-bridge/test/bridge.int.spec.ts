@@ -732,6 +732,48 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     expect(out(c, `motos/${T}/telemetria`)).toEqual([]);
   });
 
+  it('J16 (bancada 2026-11-03): "RELAY 0 OK" e, 1 s depois, status com o bit antigo blocked:true → reported segue false; o heartbeat seguinte vale', async () => {
+    c = await start();
+    c.traccar.push({ positions: [heartbeat(460, T0, true)] });
+    await waitFor(() => reportedTravada(c).length === 1);
+    c.now.value = T0 + 1_000;
+    await sendDelta(c, { travada: false });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_resume_sent'));
+    c.now.value = T0 + 2_000;
+    c.traccar.push({ positions: [relayReply(461, T0 + 2_000, RESUME_OK)] });
+    await waitFor(() => reportedTravada(c).length === 2);
+    c.now.value = T0 + 3_000;
+    c.traccar.push({ positions: [{ ...heartbeat(462, T0 + 3_000, true), attributes: { blocked: true, ignition: true, power: 72 } }] }); // tipo 19, bit velho
+    await waitFor(() => c.logs.some((l) => l.msg === 'stale_status_after_reply'));
+    expect(c.logs.find((l) => l.msg === 'stale_status_after_reply')).toEqual({ level: 'info', msg: 'stale_status_after_reply', thingName: T, travada: false });
+    await sendDelta(c, { travada: true }); // relock logo depois: nada de eco already_blocked pelo bit velho
+    await sleep(40);
+    expect(reportedTravada(c)).toEqual([true, false]);
+    c.now.value = T0 + 62_000;
+    c.traccar.push({ positions: [heartbeat(463, T0 + 62_000, false)] });
+    await waitFor(() => reportedTravada(c).length === 3);
+    expect(reportedTravada(c)).toEqual([true, false, false]);
+  });
+
+  it('J16: "RELAY 1 OK" e status contrário blocked:false na janela de 5 s → reported segue true; depois de 5 s um false de verdade vale', async () => {
+    c = await start();
+    c.traccar.push({ positions: [position({ id: 470, deviceId: 1, fixTime: iso(T0 - 2_000), serverTime: iso(T0 - 1_000), speed: 0 })] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    await sendDelta(c, { travada: true });
+    await waitFor(() => c.traccar.commands.length === 1);
+    c.now.value = T0 + 1_000;
+    c.traccar.push({ positions: [relayReply(471, T0 + 1_000, STOP_OK)] });
+    await waitFor(() => reportedTravada(c).at(-1) === true);
+    c.now.value = T0 + 2_000;
+    c.traccar.push({ positions: [heartbeat(472, T0 + 2_000, false)] });
+    await waitFor(() => c.logs.some((l) => l.msg === 'stale_status_after_reply'));
+    expect(reportedTravada(c)).toEqual([false, true]);
+    c.now.value = T0 + 6_001;
+    c.traccar.push({ positions: [heartbeat(473, T0 + 6_001, false)] }); // relé que não mudou: aparece fora da janela
+    await waitFor(() => reportedTravada(c).length === 3);
+    expect(reportedTravada(c)).toEqual([false, true, false]);
+  });
+
   it('J16: resposta "RELAY n OK" no replay de conexão do WebSocket não é estado atual (ignorada)', async () => {
     c = await start();
     c.traccar.push({ positions: [heartbeat(440, T0, false)] });

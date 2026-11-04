@@ -60,6 +60,21 @@ describe('checkTimeline (e2e do dev single)', () => {
     expect(checkTimeline([login(), status(false), ...stopped, gotCut(), status(true), login(), locked], T).problems).toEqual([msg]);
   });
 
+  it('GT06_REPLY_STYLE=j16: a resposta "RELAY 1 OK" vale como estado do aparelho; o status velho logo depois (stale) não conta', () => {
+    const reply = (blocked: boolean, s?: number) => emu({ msg: 'gt06_reply_sent', style: 'j16', blocked }, s);
+    const staleStatus = (blocked: boolean, s?: number) => emu({ msg: 'gt06_status_sent', blocked, stale: true }, s);
+    const freed = `$aws/things/${T}/shadow/update ${JSON.stringify({ state: { reported: { travada: false } } })}`;
+    expect(checkTimeline([login(), status(false), ...stopped, gotCut(), reply(true), staleStatus(false), locked], T)).toEqual({ ok: true, problems: [] });
+    // o status velho sozinho (sem resposta) não confirma
+    expect(checkTimeline([login(), status(false), ...stopped, gotCut(), staleStatus(true), locked], T).problems).toEqual([
+      'reported travada:true publicado sem status com bit de corte (blocked:true) depois do corte do emulador e da última conexão',
+    ]);
+    // o painel mostrou o bit velho: reported contrário ao último estado dito pelo aparelho
+    expect(checkTimeline([login(), status(false), ...stopped, gotCut(), reply(true), staleStatus(false), freed, locked], T).problems).toEqual([
+      'reported travada:false contraria o último estado dito pelo aparelho (travada:true)',
+    ]);
+  });
+
   it('oráculo: status com bit de corte velho (> 90 s) quando as linhas têm hora', () => {
     const stale = [login(0), status(false, 1), `${at(2)} ${tel(0, 0)}`, `${at(3)} ${tel(10, 0)}`, `${at(4)} ${cut}`, gotCut(0, 5), status(true, 6), `${at(6 + 91)} ${locked}`];
     expect(checkTimeline(stale, T).problems).toEqual(['reported travada:true publicado 91 s depois do último status com o bit de corte (> 90 s)']);

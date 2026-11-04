@@ -3,7 +3,7 @@ import addFormats from 'ajv-formats';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cutRefusal } from './delta';
-import { applyPosition, BLOCKED_FRESH_MS, COMMAND_ACK_GRACE_MS, currentBlocked, freshBlocked, markCommandSent, markReconnected, parseRelayReply, toDeviceEvents, type DeviceMemory } from './mapping';
+import { applyPosition, BLOCKED_FRESH_MS, COMMAND_ACK_GRACE_MS, currentBlocked, freshBlocked, markCommandSent, markReconnected, parseRelayReply, RELAY_REPLY_SETTLE_MS, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { TraccarEvent, TraccarPosition } from './traccar/types';
 
 const schema = (name: string) => JSON.parse(readFileSync(join(__dirname, '../../../packages/contracts/schemas', name), 'utf8'));
@@ -462,5 +462,66 @@ describe('J16: resposta do aparelho com o estado do relé (attributes.result "RE
     expect(r.telemetry).toBeNull();
     expect(r.memory.commandAckAt).toBe(NOW + 1_500);
     expect(currentBlocked(r.memory)).toBeUndefined();
+  });
+
+  describe('bancada 2026-11-03: status logo depois da resposta ainda traz o bit antigo (RELAY_REPLY_SETTLE_MS)', () => {
+    const hb = (ms: number, blocked: boolean, extra: Record<string, unknown> = {}) =>
+      pos({ outdated: true, fixTime: at(NOW - 60_000), serverTime: at(ms), attributes: { blocked, ...extra } });
+    const unlocked = () => AP(reply(NOW + 2_000, RESUME_OK), markCommandSent(lockedNow, NOW + 1_000, 'resume'), NOW + 2_000).memory;
+    const locked = () => AP(reply(NOW + 2_000, STOP_OK), markCommandSent(freeNow, NOW + 1_000, 'stop'), NOW + 2_000).memory;
+
+    it('RELAY 0 OK e, 1 s depois, status blocked:true → ignorado para o bit (nem blockedAt); bateria/ignição valem', () => {
+      expect(RELAY_REPLY_SETTLE_MS).toBe(5_000);
+      const before = unlocked();
+      const r = AP(hb(NOW + 3_000, true, { ignition: true, power: 60 }), before, NOW + 3_000);
+      expect(r.staleAfterReply).toBe(true);
+      expect(currentBlocked(r.memory)).toBe(false);
+      expect(r.memory.blockedAt).toBe(before.blockedAt);
+      expect(r.memory.ignition).toBe(true);
+      expect(r.memory.batteryPct).not.toBe(before.batteryPct);
+    });
+
+    it('RELAY 1 OK e status blocked:false na janela → ignorado (nada libera um corte respondido)', () => {
+      const r = AP(hb(NOW + 6_900, false), locked(), NOW + 6_900);
+      expect(r.staleAfterReply).toBe(true);
+      expect(freshBlocked(r.memory, NOW + 6_900)).toBe(true);
+    });
+
+    it('status que concorda com a resposta na janela vale normalmente (renova blockedAt)', () => {
+      const r = AP(hb(NOW + 3_000, false), unlocked(), NOW + 3_000);
+      expect(r.staleAfterReply).toBe(false);
+      expect(r.memory.blockedAt).toBe(NOW + 3_000);
+    });
+
+    it('depois de 5 s o status vale (relé que não mudou aparece no heartbeat seguinte)', () => {
+      const edge = AP(hb(NOW + 7_000, true), unlocked(), NOW + 7_000);
+      expect(edge.staleAfterReply).toBe(true); // exatamente 5 s: ainda na janela
+      const after = AP(hb(NOW + 7_001, true), edge.memory, NOW + 7_001);
+      expect(after.staleAfterReply).toBe(false);
+      expect(freshBlocked(after.memory, NOW + 7_001)).toBe(true);
+    });
+
+    it('status recebido pelo Traccar antes da resposta (fila) e contrário também não vale', () => {
+      const r = AP(hb(NOW + 1_500, true), unlocked(), NOW + 3_000);
+      expect(r.staleAfterReply).toBe(true);
+      expect(currentBlocked(r.memory)).toBe(false);
+    });
+
+    it('comando novo ou reconexão encerram a janela: o status seguinte segue as regras de sempre', () => {
+      const relock = markCommandSent(unlocked(), NOW + 2_500, 'stop');
+      const r = AP(hb(NOW + 3_000 + COMMAND_ACK_GRACE_MS, true), relock, NOW + 3_000 + COMMAND_ACK_GRACE_MS);
+      expect(r.staleAfterReply).toBe(false);
+      expect(currentBlocked(r.memory)).toBe(true);
+      const rc = AP(hb(NOW + 3_000, true), markReconnected(unlocked()), NOW + 3_000);
+      expect(rc.staleAfterReply).toBe(false);
+      expect(currentBlocked(rc.memory)).toBe(true);
+    });
+
+    it('nada nesta janela confirma um corte sem resposta: sem resposta aceita, status blocked:true segue a regra P2', () => {
+      const sent = markCommandSent(freeNow, NOW + 1_000, 'stop');
+      const early = AP(hb(NOW + 2_000, true), sent, NOW + 2_000);
+      expect(early.staleAfterReply).toBe(false);
+      expect(currentBlocked(early.memory)).toBeUndefined(); // dentro da folga de 5 s do envio, sem resposta: não vale
+    });
   });
 });

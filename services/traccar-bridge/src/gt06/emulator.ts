@@ -17,7 +17,8 @@ export interface EmulatorOptions {
   /**
    * Texto da resposta `0x15` ao comando. `legacy` (padrão): "Cut off the fuel supply: Success!" / "Restore fuel supply:
    * Success!" (sem estado do relé: a ponte só a usa como ack). `j16`: o texto do J16 real da bancada (2026-11-03),
-   * "Stop engine Succeed\nRELAY 1 OK" / "Resume engine Succeed\nRELAY 0 OK", que a ponte aceita como estado do relé.
+   * "Stop engine Succeed\nRELAY 1 OK" / "Resume engine Succeed\nRELAY 0 OK", que a ponte aceita como estado do relé; e, como aquele J16, o status mandado logo
+   * depois da resposta ainda traz o bit ANTIGO (log `gt06_status_sent` com `stale: true`); o bit novo só no heartbeat seguinte.
    */
   replyStyle?: Gt06ReplyStyle;
 }
@@ -136,11 +137,12 @@ export class Gt06Emulator {
     this.write(locationPacket(this.fix(), this.nextSerial()));
   }
 
-  private sendStatus(): void {
-    const s = this.status();
+  /** `staleBlocked`: manda o status com este bit (o ANTIGO), como o J16 da bancada logo depois da resposta; log com `stale: true`. */
+  private sendStatus(staleBlocked?: boolean): void {
+    const s = staleBlocked === undefined ? this.status() : { ...this.status(), blocked: staleBlocked };
     this.write(statusPacket(s, this.nextSerial()));
     this.write(infoPacket(this.opts.powerVolts ?? defaultPowerVolts('72v'), this.nextSerial()));
-    this.log.info({ msg: 'gt06_status_sent', blocked: s.blocked });
+    this.log.info({ msg: 'gt06_status_sent', blocked: s.blocked, ...(staleBlocked === undefined ? {} : { stale: true }) });
   }
 
   private onData(d: Buffer): void {
@@ -150,6 +152,7 @@ export class Gt06Emulator {
       if (f.protocol === PROTO.login) this.loggedIn?.();
       const text = commandText(f);
       if (text === null) continue;
+      const before = this.blocked;
       const cut = /relay\s*,\s*1|dyd/i.test(text);
       const resume = /relay\s*,\s*0|hfyd/i.test(text);
       if (cut) {
@@ -165,7 +168,9 @@ export class Gt06Emulator {
       const replies = REPLIES[this.opts.replyStyle ?? 'legacy'];
       this.write(stringReplyPacket(cut ? replies.cut : resume ? replies.resume : 'Unknown command', f.serial));
       if (cut || resume) this.log.info({ msg: 'gt06_reply_sent', style: this.opts.replyStyle ?? 'legacy', blocked: this.blocked });
-      this.sendStatus();
+      // j16 (bancada 2026-11-03): o status mandado logo depois da resposta ainda traz o bit de antes do comando; o certo só
+      // vem no heartbeat seguinte. legacy: status já com o bit novo.
+      this.sendStatus(this.opts.replyStyle === 'j16' && (cut || resume) ? before : undefined);
       this.sendLocation();
     }
   }

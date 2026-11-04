@@ -33,8 +33,11 @@ function parseTime(raw: string): number | undefined {
  * Oráculo de segurança do e2e (falha fechada: sem o log do emulador o resultado é um problema, não um "ok"):
  * - corte recebido pelo emulador (`gt06_cut` nas linhas, ou `opts.emulatorCuts`) com a moto a >= 3 km/h;
  * - `desired travada:true` visto sem nenhum `gt06_cut` do emulador;
- * - `reported travada:true` sem um `gt06_status_sent` com `blocked:true` depois do corte do emulador e antes da publicação (e, quando
- *   há hora nas linhas, com no máximo BLOCKED_FRESH_MS de idade). Os logs JSON do emulador entram intercalados, na ordem;
+ * - `reported travada:true` sem um `gt06_status_sent` (não `stale`) ou `gt06_reply_sent` (`GT06_REPLY_STYLE=j16`, "RELAY 1 OK")
+ *   com `blocked:true` depois do corte do emulador e antes da publicação (e, quando há hora nas linhas, com no máximo
+ *   BLOCKED_FRESH_MS de idade). Os logs JSON do emulador entram intercalados, na ordem;
+ * - `reported travada:false` com o último estado dito pelo aparelho (status não `stale` ou resposta) `true`: o painel mostraria o
+ *   bit velho do status que o J16 manda logo depois da resposta (bancada 2026-11-03; o `true` indevido cai na regra acima);
  * - `desired travada:false` (shadow update ou delta) que ninguém pediu (`opts.unlockRequested`).
  */
 export function checkTimeline(lines: string[], thing: string, opts: TimelineOptions = {}): { ok: boolean; problems: string[] } {
@@ -49,6 +52,9 @@ export function checkTimeline(lines: string[], thing: string, opts: TimelineOpti
   let cutSinceLogin = false;
   let blockedStatus: { at?: number } | undefined;
   let reportedWithoutStatus = false;
+  /** Último estado do relé dito pelo aparelho (status não `stale` ou resposta "RELAY n OK"), desde a última conexão. */
+  let deviceSays: boolean | undefined;
+  let contradicted: boolean | undefined;
   let staleStatusSeconds: number | undefined;
   let unrequestedUnlock = false;
   let secondOnly = false;
@@ -74,13 +80,17 @@ export function checkTimeline(lines: string[], thing: string, opts: TimelineOpti
         sawEmulatorEvents = true;
         cutSinceLogin = false;
         blockedStatus = undefined;
+        deviceSays = undefined;
       } else if (ev?.msg === 'gt06_cut') {
         sawEmulatorEvents = true;
         cutSinceLogin = true;
         emulatorCuts.push({ text: String(ev.text ?? 'cut'), speedKmhAtCut: Number(ev.speedKmhAtCut) });
-      } else if (ev?.msg === 'gt06_status_sent' && typeof ev.blocked === 'boolean') {
+      } else if ((ev?.msg === 'gt06_status_sent' || ev?.msg === 'gt06_reply_sent') && typeof ev.blocked === 'boolean') {
         sawEmulatorEvents = true;
+        // `stale`: o status que o J16 manda logo depois da resposta, ainda com o bit antigo (GT06_REPLY_STYLE=j16).
+        if (ev.stale === true) continue;
         blockedStatus = ev.blocked && cutSinceLogin ? { at } : undefined;
+        deviceSays = ev.blocked;
       }
       continue;
     }
@@ -104,6 +114,10 @@ export function checkTimeline(lines: string[], thing: string, opts: TimelineOpti
       if (samples.length && !(samples[samples.length - 1].kmh < 3)) problems.push('corte com a última velocidade >= 3 km/h');
     }
     if (topic === update && cuts > 0 && body?.state?.reported?.travada === true) confirmed = true;
+    // `true` sem estado `true` do aparelho já cai em `reportedWithoutStatus`; aqui, `false` com o aparelho dizendo `true`.
+    if (topic === update && body?.state?.reported?.travada === false && !opts.noEmulatorLog && deviceSays === true && contradicted === undefined) {
+      contradicted = false;
+    }
     if (topic === update && body?.state?.reported?.travada === true && !opts.noEmulatorLog) {
       if (!blockedStatus) reportedWithoutStatus = true;
       else if (blockedStatus.at !== undefined && at !== undefined && at - blockedStatus.at > BLOCKED_FRESH_MS) staleStatusSeconds = Math.round((at - blockedStatus.at) / 1000);
@@ -129,6 +143,7 @@ export function checkTimeline(lines: string[], thing: string, opts: TimelineOpti
         if (!(c.speedKmhAtCut < 3)) problems.push(`emulador recebeu corte "${c.text}" com a moto a ${c.speedKmhAtCut} km/h (>= 3)`);
       }
       if (reportedWithoutStatus) problems.push('reported travada:true publicado sem status com bit de corte (blocked:true) depois do corte do emulador e da última conexão');
+      if (contradicted !== undefined) problems.push(`reported travada:${contradicted} contraria o último estado dito pelo aparelho (travada:${!contradicted})`);
       if (staleStatusSeconds !== undefined) problems.push(`reported travada:true publicado ${staleStatusSeconds} s depois do último status com o bit de corte (> ${BLOCKED_FRESH_MS / 1000} s)`);
     }
   }

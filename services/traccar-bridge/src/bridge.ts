@@ -486,6 +486,11 @@ export class Bridge {
       await this.report(thing, { travada: blocked, ...this.freshSpeed(thing) });
       return;
     }
+    if (r.staleAfterReply) {
+      // Bancada: status logo depois da resposta "RELAY n OK" com o bit antigo. Não muda nem republica a trava (`travada` = a da resposta).
+      this.logLimited(`${thing}|stale_status_after_reply`, 'info', { msg: 'stale_status_after_reply', thingName: thing, travada: blocked });
+      return;
+    }
     // Status com o bit de corte → `reported.travada` do bit ATUAL: na mudança ou, igual, no máximo 1/min (M5).
     if (typeof p.attributes?.blocked === 'boolean' && typeof blocked === 'boolean') {
       const last = this.lastTravada.get(thing);

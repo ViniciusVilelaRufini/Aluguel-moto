@@ -173,6 +173,9 @@ async function world(opts: WorldOpts = {}) {
     push({
       positions: [position({ id: ++seq, deviceId: 1, fixTime: iso(lastFix), serverTime: iso(clock.now()), outdated: true, attributes: { result: 'Cut off the fuel supply: Success!' } })],
     });
+  /** Resposta do J16 real com o estado do relé (bancada 2026-11-03), ex. "Resume engine Succeed" + "RELAY 0 OK". */
+  const relayReply = async (result: string) =>
+    push({ positions: [position({ id: ++seq, deviceId: 1, fixTime: iso(lastFix), serverTime: iso(clock.now()), outdated: true, attributes: { result } })] });
   /** Heartbeat com a ignição informada (o `heartbeat` padrão manda `ignition: false`). */
   const heartbeatWith = async (blocked: boolean, ignition: boolean) =>
     push({
@@ -218,7 +221,7 @@ async function world(opts: WorldOpts = {}) {
 
   return {
     clock, broker, bridgeMqtt, traccar, gateway, telemetry, transport, live, desired, seen, updates,
-    settle, push, step, ride, heartbeat, heartbeatWith, ack, setOnline, stalePosition, lock, unlock,
+    settle, push, step, ride, heartbeat, heartbeatWith, ack, relayReply, setOnline, stalePosition, lock, unlock,
     fromBridge, reportedTravada, cuts, releases, clears, outcomes, iso, stop,
   };
 }
@@ -716,5 +719,42 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     const l = await w.lock('c9');
     expect(l).not.toEqual({ commandId: 'c9', status: 'confirmed' });
     expect(w.reportedTravada()).toEqual([true]); // nenhum eco travada:true do bit anterior ao engineResume
+  });
+
+  it('(12) bancada do J16 (2026-11-03): lock e unlock confirmados pela resposta "RELAY n OK"; o status 1 s depois com o bit antigo não desfaz o que o painel mostra', async () => {
+    w = await world();
+    await connectAndRide(w, 6, 0, { blocked: null }); // parada, 30 s, sem bit de corte na posição
+    expect(await w.lock('c12')).toEqual({ commandId: 'c12', status: 'in_progress' });
+    for (let i = 0; i < 5 && !w.cuts().length; i++) {
+      await w.ride(0, { blocked: null });
+      await w.step(5_000);
+    }
+    expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
+    await w.step(1_000);
+    await w.relayReply('Stop engine Succeed\nRELAY 1 OK');
+    await w.step(1_000);
+    await w.heartbeat(false); // status com o bit antigo, 1 s depois da resposta
+    await w.step(1_000);
+    expect(w.outcomes('c12').at(-1)).toEqual({ commandId: 'c12', status: 'confirmed' });
+    expect((await w.live.load(T))?.locked).toBe(true);
+    expect(w.reportedTravada().at(-1)).toBe(true);
+    await w.step(10_000);
+    // unlock: resposta em ~1 s e, 1 s depois, o status (tipo 19) ainda com blocked:true
+    const u = await w.unlock('u12');
+    expect(w.traccar.commands.map((x) => x.type)).toEqual(['engineStop', 'engineResume']);
+    await w.relayReply('Resume engine Succeed\nRELAY 0 OK');
+    await w.step(1_000);
+    await w.heartbeat(true);
+    await w.step(1_000);
+    expect([u, ...w.outcomes('u12')].some((o) => o.status === 'confirmed')).toBe(true);
+    expect((await w.live.load(T))?.locked).toBe(false);
+    const afterUnlock = w.reportedTravada();
+    expect(afterUnlock.at(-1)).toBe(false);
+    // heartbeat seguinte (60 s) com o bit novo: continua destravada, nenhum travada:true depois da resposta
+    await w.step(58_000);
+    await w.heartbeat(false);
+    await w.step(1_000);
+    expect((await w.live.load(T))?.locked).toBe(false);
+    expect(w.reportedTravada().slice(afterUnlock.length)).not.toContain(true);
   });
 });

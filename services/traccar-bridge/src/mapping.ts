@@ -29,7 +29,19 @@ export interface DeviceMemory {
   pendingCommand?: 'stop' | 'resume';
   /** Hora (min(serverTime, ingestão)) da resposta do aparelho ao comando pendente (`attributes.result` do Traccar). */
   commandAckAt?: number;
+  /**
+   * Última resposta "RELAY n OK" aceita: hora (min(serverTime, ingestão)) e o estado do relé que ela disse. Status contrário
+   * recebido até `at + RELAY_REPLY_SETTLE_MS` ainda traz o bit antigo (bancada) e não vale. Limpa em comando novo e reconexão.
+   */
+  relayReply?: { at: number; blocked: boolean };
 }
+
+/**
+ * Bancada do J16 (2026-11-03): o status recebido ~1 s DEPOIS da resposta "RELAY 0 OK" ainda trazia `blocked: true` (o bit
+ * antigo); o seguinte (60 s) já trazia o novo. Status cujo bit contraria a resposta aceita e recebido até isto depois dela é
+ * ignorado para o bit (log `stale_status_after_reply`); depois, vale normalmente (relé que não mudou aparece no heartbeat).
+ */
+export const RELAY_REPLY_SETTLE_MS = 5_000;
 
 /**
  * Sem resposta do aparelho ao comando (`attributes.result`), status recebido até o envio + isto pode ter sido emitido antes de o
@@ -52,7 +64,7 @@ export function currentBlocked(mem: DeviceMemory): boolean | undefined {
  * a âncora. Só um `attributes.blocked` recebido depois (heartbeat ou posição) volta a valer. Não muta a entrada.
  */
 export function markReconnected(mem: DeviceMemory): DeviceMemory {
-  return { ...mem, blocked: undefined, blockedAt: undefined, lockAnchor: undefined, awaitingStatus: true };
+  return { ...mem, blocked: undefined, blockedAt: undefined, lockAnchor: undefined, awaitingStatus: true, relayReply: undefined };
 }
 
 /**
@@ -73,6 +85,7 @@ export function markCommandSent(mem: DeviceMemory, now: number, kind: 'stop' | '
     commandSentAt: now,
     pendingCommand: kind,
     commandAckAt: undefined,
+    relayReply: undefined,
   };
 }
 
@@ -149,7 +162,16 @@ export function applyPosition(
   mem: DeviceMemory,
   battery: BatteryModel,
   now: number = Date.now(),
-): { telemetry: TelemetryMessage | null; invalid: boolean; movedWhileLocked: boolean; held?: HeldReason; relayReply: boolean; memory: DeviceMemory } {
+): {
+  telemetry: TelemetryMessage | null;
+  invalid: boolean;
+  movedWhileLocked: boolean;
+  held?: HeldReason;
+  relayReply: boolean;
+  /** Status com o bit contrário à resposta "RELAY n OK" aceita há até `RELAY_REPLY_SETTLE_MS`: o bit foi ignorado. */
+  staleAfterReply: boolean;
+  memory: DeviceMemory;
+} {
   const next: DeviceMemory = { ...mem };
   const a = p.attributes ?? {};
   // Hora do Traccar ao receber a mensagem, limitada a agora: um heartbeat parado numa fila (WebSocket, inbound) não é fresco.
@@ -166,12 +188,18 @@ export function applyPosition(
     next.commandAckAt = at;
   }
   const relayReply = relay !== undefined && relayReplyAccepted(next, at, relay);
+  // Bancada: status logo depois da resposta ainda traz o bit antigo. Só o bit é ignorado (nem blockedAt); o resto vale.
+  const staleAfterReply =
+    !relayReply && typeof a.blocked === 'boolean' && next.relayReply !== undefined && a.blocked !== next.relayReply.blocked && at - next.relayReply.at <= RELAY_REPLY_SETTLE_MS;
   if (relayReply) {
     next.blocked = relay === true;
     next.blockedAt = at;
     next.awaitingStatus = false;
     next.pendingCommand = undefined;
     next.commandAckAt = undefined;
+    next.relayReply = { at, blocked: relay === true };
+  } else if (staleAfterReply) {
+    // nada: o bit e a hora continuam os da resposta
   } else if (typeof a.blocked === 'boolean' && statusAccepted(next, at)) {
     next.blocked = a.blocked;
     next.blockedAt = at;
@@ -187,7 +215,7 @@ export function applyPosition(
   }
   const blocked = telemetryBlocked(next, now);
   if (blocked !== true) next.lockAnchor = undefined;
-  const none = { telemetry: null, invalid: false, movedWhileLocked: false, relayReply, memory: next };
+  const none = { telemetry: null, invalid: false, movedWhileLocked: false, relayReply, staleAfterReply, memory: next };
   const fixTime = Date.parse(p.fixTime);
   const newer = !Number.isFinite(fixTime) || next.lastFixTime === undefined || fixTime > next.lastFixTime;
   if (result !== undefined) {
@@ -238,7 +266,7 @@ export function applyPosition(
   }
   if (blocked === undefined) return { ...none, held: 'awaiting_status', memory: next };
   if (next.batteryPct === undefined) return { ...none, movedWhileLocked, held: 'awaiting_battery', memory: next };
-  return { telemetry, invalid: false, movedWhileLocked, relayReply, memory: next };
+  return { telemetry, invalid: false, movedWhileLocked, relayReply, staleAfterReply, memory: next };
 }
 
 /**
