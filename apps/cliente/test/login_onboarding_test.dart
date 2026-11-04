@@ -75,30 +75,6 @@ DevAuthRepository devAuth() => DevAuthRepository(baseUrl: 'http://x');
 CognitoCustomerAuthRepository cognitoAuth(CognitoConfig c) =>
     CognitoCustomerAuthRepository(config: c, client: CognitoIdentityClient(c, FakeTransport()), store: MemoryCognitoTokenStore());
 
-PaymentCard visa({bool isDefault = true}) => PaymentCard((b) => b
-  ..id = 'card1'
-  ..brand = 'visa'
-  ..last4 = '4242'
-  ..expMonth = 12
-  ..expYear = 2030
-  ..isDefault = isDefault
-  ..createdAt = DateTime.utc(2026, 10, 21));
-
-class _CardsBackend extends FakeBackend {
-  _CardsBackend([List<PaymentCard>? initial]) : list = [...?initial];
-  final List<PaymentCard> list;
-  final tokens = <String>[];
-  @override
-  Future<List<PaymentCard>> cards() async => list;
-  @override
-  Future<PaymentCard> addCard(String token) async {
-    tokens.add(token);
-    final c = visa();
-    list.add(c);
-    return c;
-  }
-}
-
 void main() {
   group('boas-vindas', () {
     testWidgets('dev: opcoes do design, badges e aviso de dev; Google so avisa', (t) async {
@@ -433,54 +409,40 @@ void main() {
     });
   });
 
-  group('forma de pagamento', () {
-    Future<_CardsBackend> pumpPay(WidgetTester t, {List<PaymentCard>? cards, VoidCallback? onDone, bool reduced = false}) async {
+  group('pagamento no galpão (passo 4)', () {
+    Future<void> pumpPay(WidgetTester t, {VoidCallback? onDone, VoidCallback? onBack, bool reduced = false}) async {
       tallScreen(t);
-      final backend = _CardsBackend(cards);
-      Widget app = testApp(PaymentStep(onBack: () {}, onDone: onDone ?? () {}), overrides: [
-        backendProvider.overrideWithValue(backend),
-      ]);
+      Widget app = testApp(PaymentStep(onBack: onBack ?? () {}, onDone: onDone ?? () {}));
       if (reduced) app = MediaQuery(data: const MediaQueryData(disableAnimations: true), child: app);
       await t.pumpWidget(app);
       await t.pumpAndSettle();
-      return backend;
     }
 
-    VoltiButton finish(WidgetTester t) => t.widget<VoltiButton>(find.byKey(const Key('pay-finish')));
-
-    testWidgets('sem cartao: adiciona pelo tokenizador e libera "Concluir cadastro"', (t) async {
+    testWidgets('informa que contrato, plano e pagamento são no balcão e conclui sem nenhum dado de pagamento', (t) async {
       var done = 0;
-      final backend = await pumpPay(t, onDone: () => done++);
-      expect(find.text('Forma de pagamento'), findsOneWidget);
+      await pumpPay(t, onDone: () => done++);
+      expect(find.text('O pagamento é feito no galpão'), findsOneWidget);
       expect(find.text('Passo 4 de 4'), findsOneWidget);
-      expect(find.text('Adicione um cartão para a caução'), findsOneWidget);
-      expect(finish(t).onPressed, isNull);
-
-      await t.tap(find.byKey(const Key('pay-add-card')));
-      await t.pumpAndSettle();
-      expect(backend.tokens, ['tok_visa_4242'], reason: 'so o token vai a API');
-      expect(find.text('visa •••• 4242'), findsOneWidget);
-      expect(find.byKey(const Key('pay-add-card')), findsNothing);
-
+      expect(find.byKey(const Key('pay-counter-contract')), findsOneWidget);
+      expect(find.byKey(const Key('pay-counter-plan')), findsOneWidget);
+      expect(find.byKey(const Key('pay-counter-payment')), findsOneWidget);
+      // Nada se paga no app: sem cartão, Pix, carteira nem campos.
+      expect(find.byType(TextField), findsNothing);
+      expect(find.textContaining('cartão', findRichText: true), findsNothing);
+      expect(find.textContaining('QR'), findsNothing);
+      expect(find.textContaining('carteira'), findsNothing);
+      final finish = t.widget<VoltiButton>(find.byKey(const Key('pay-finish')));
+      expect(finish.label, 'Concluir cadastro');
+      expect(finish.onPressed, isNotNull);
       await t.tap(find.byKey(const Key('pay-finish')));
       expect(done, 1);
     });
 
-    testWidgets('Pix: explica a caucao por deposito e libera sem cartao', (t) async {
-      await pumpPay(t);
-      await t.tap(find.byKey(const Key('pay-pix')));
-      await t.pumpAndSettle();
-      expect(find.text('Pix + carteira Volti'), findsOneWidget);
-      expect(find.byKey(const Key('pay-pix-explain')), findsOneWidget);
-      expect(t.widget<OptionCard>(find.byKey(const Key('pay-pix'))).selected, isTrue);
-      expect(finish(t).onPressed, isNotNull);
-      expect(find.textContaining('Chave Pix'), findsNothing, reason: 'chave para estornos fora do contrato');
-    });
-
-    testWidgets('cartao ja cadastrado vem selecionado; reduced motion', (t) async {
-      await pumpPay(t, cards: [visa()], reduced: true);
-      expect(find.text('visa •••• 4242'), findsOneWidget);
-      expect(finish(t).onPressed, isNotNull);
+    testWidgets('voltar leva ao passo anterior; reduced motion', (t) async {
+      var back = 0;
+      await pumpPay(t, onBack: () => back++, reduced: true);
+      await t.tap(find.byType(VoltiIconButton));
+      expect(back, 1);
       expect(t.takeException(), isNull);
     });
   });

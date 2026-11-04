@@ -556,15 +556,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get payAndUnlock => 'Confirmar e destravar';
 
   @override
-  String get payCard => 'Cartão de crédito';
-
-  @override
-  String get payPix => 'Pix';
-
-  @override
-  String get payPixHint => 'Caução por depósito Pix';
-
-  @override
   String get payTest => 'Pagamento de teste';
 
   @override
@@ -2012,21 +2003,32 @@ class AppLocalizationsPt extends AppLocalizations {
   String get docsAlreadySent => 'Documentos já enviados para análise.';
 
   @override
-  String get payTitle => 'Forma de pagamento';
+  String get payTitle => 'O pagamento é feito no galpão';
 
   @override
   String get paySubtitle =>
-      'O cartão garante a caução. Você também pode pagar a caução por Pix em cada aluguel.';
+      'Nada é pago pelo app. Você acerta tudo no balcão do galpão, na retirada da moto.';
 
   @override
-  String get payPixWallet => 'Pix + carteira Volti';
+  String get payCounterContractTitle => 'Contrato';
 
   @override
-  String get payCardMissing => 'Adicione um cartão para a caução';
+  String get payCounterContractText =>
+      'Você assina o contrato de locação no balcão.';
 
   @override
-  String get payPixExplain =>
-      'Com Pix, você paga a caução por um QR antes de cada aluguel e ela cobre o valor da corrida; o que sobrar volta para você. Dá para trocar a forma de pagamento a cada aluguel.';
+  String get payCounterPlanTitle => 'Plano';
+
+  @override
+  String get payCounterPlanText =>
+      'Escolha o plano no balcão: diária, semanal ou mensal.';
+
+  @override
+  String get payCounterPaymentTitle => 'Pagamento';
+
+  @override
+  String get payCounterPaymentText =>
+      'Pague o plano (e a caução, quando houver) no balcão: maquininha, Pix ou dinheiro.';
 
   @override
   String get payFinish => 'Concluir cadastro';

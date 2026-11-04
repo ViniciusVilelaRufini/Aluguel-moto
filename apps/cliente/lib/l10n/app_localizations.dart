@@ -1114,24 +1114,6 @@ abstract class AppLocalizations {
   /// **'Confirmar e destravar'**
   String get payAndUnlock;
 
-  /// No description provided for @payCard.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cartão de crédito'**
-  String get payCard;
-
-  /// No description provided for @payPix.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pix'**
-  String get payPix;
-
-  /// No description provided for @payPixHint.
-  ///
-  /// In pt, this message translates to:
-  /// **'Caução por depósito Pix'**
-  String get payPixHint;
-
   /// No description provided for @payTest.
   ///
   /// In pt, this message translates to:
@@ -3565,32 +3547,50 @@ abstract class AppLocalizations {
   /// No description provided for @payTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Forma de pagamento'**
+  /// **'O pagamento é feito no galpão'**
   String get payTitle;
 
   /// No description provided for @paySubtitle.
   ///
   /// In pt, this message translates to:
-  /// **'O cartão garante a caução. Você também pode pagar a caução por Pix em cada aluguel.'**
+  /// **'Nada é pago pelo app. Você acerta tudo no balcão do galpão, na retirada da moto.'**
   String get paySubtitle;
 
-  /// No description provided for @payPixWallet.
+  /// No description provided for @payCounterContractTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Pix + carteira Volti'**
-  String get payPixWallet;
+  /// **'Contrato'**
+  String get payCounterContractTitle;
 
-  /// No description provided for @payCardMissing.
+  /// No description provided for @payCounterContractText.
   ///
   /// In pt, this message translates to:
-  /// **'Adicione um cartão para a caução'**
-  String get payCardMissing;
+  /// **'Você assina o contrato de locação no balcão.'**
+  String get payCounterContractText;
 
-  /// No description provided for @payPixExplain.
+  /// No description provided for @payCounterPlanTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Com Pix, você paga a caução por um QR antes de cada aluguel e ela cobre o valor da corrida; o que sobrar volta para você. Dá para trocar a forma de pagamento a cada aluguel.'**
-  String get payPixExplain;
+  /// **'Plano'**
+  String get payCounterPlanTitle;
+
+  /// No description provided for @payCounterPlanText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha o plano no balcão: diária, semanal ou mensal.'**
+  String get payCounterPlanText;
+
+  /// No description provided for @payCounterPaymentTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagamento'**
+  String get payCounterPaymentTitle;
+
+  /// No description provided for @payCounterPaymentText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pague o plano (e a caução, quando houver) no balcão: maquininha, Pix ou dinheiro.'**
+  String get payCounterPaymentText;
 
   /// No description provided for @payFinish.
   ///

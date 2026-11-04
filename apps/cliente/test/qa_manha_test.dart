@@ -173,7 +173,7 @@ void main() {
 
   test('E-04 caucao cobre o valor da corrida; o que sobrar volta', () {
     final l = AppLocalizationsPt();
-    final texts = [l.pixText('R\$ 200,00'), l.helpFaq2Text, l.depositHint, l.payPixExplain];
+    final texts = [l.pixText('R\$ 200,00'), l.helpFaq2Text, l.depositHint];
     for (final s in texts) {
       expect(s, contains('cobre o valor da corrida'), reason: s);
       expect(s, contains('o que sobrar volta para você'), reason: s);

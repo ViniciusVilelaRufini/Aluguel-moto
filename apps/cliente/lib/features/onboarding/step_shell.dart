@@ -4,7 +4,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/widgets.dart';
 
-/// Total de passos do cadastro no design: codigo, dados, identidade e pagamento.
+/// Total de passos do cadastro no design: codigo, dados, identidade e pagamento no galpao.
 const onboardingTotalSteps = 4;
 
 /// Deslocamento horizontal do conteudo na troca de passo (eixo X compartilhado).

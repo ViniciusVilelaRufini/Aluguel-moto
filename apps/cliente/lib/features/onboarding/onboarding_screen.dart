@@ -17,8 +17,9 @@ import 'payment_step.dart';
 import 'step_shell.dart';
 
 /// Cadastro depois do login (o codigo e o passo 1 de 4, em otp_step.dart):
-/// 2 dados + termos (localizacao opcional), 3 documento e selfie, 4 forma de
-/// pagamento. Ao concluir vai ao mapa com o toast "Cadastro enviado". O status da
+/// 2 dados + termos (localizacao opcional), 3 documento e selfie, 4 "O pagamento é
+/// feito no galpão" (so informa). Ao concluir vai ao mapa com o toast
+/// "Cadastro enviado". O status da
 /// verificacao aparece ao retomar com KYC ja enviado (ex.: recusado).
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
