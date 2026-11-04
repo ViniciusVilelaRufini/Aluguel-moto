@@ -80,3 +80,32 @@ export function checkoutErrorMessage(e: unknown): string {
   }
   return e instanceof Error ? e.message : 'Algo deu errado. Tente de novo.';
 }
+
+/** Quanto tempo uma `Idempotency-Key` guardada no painel ainda vale (a API também não memoriza chave velha). */
+export const IDEMPOTENCY_KEY_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * `Idempotency-Key` estável por assinatura dos dados da ação, com prazo: a mesma chave enquanto a ação não der certo
+ * (nova tentativa, fechar e reabrir o diálogo) e chave nova depois de `ttlMs`, para nunca reaproveitar uma chave velha.
+ */
+export class IdempotencyKeys {
+  private readonly keys = new Map<string, { key: string; at: number }>();
+  constructor(private readonly ttlMs = IDEMPOTENCY_KEY_TTL_MS, private readonly now: () => number = Date.now) {}
+
+  keyFor(signature: string): string {
+    const t = this.now();
+    const hit = this.keys.get(signature);
+    if (hit && t - hit.at < this.ttlMs) return hit.key;
+    const key = crypto.randomUUID();
+    this.keys.set(signature, { key, at: t });
+    // Faxina: nada expirado fica para trás.
+    for (const [s, v] of this.keys) if (t - v.at >= this.ttlMs) this.keys.delete(s);
+    return key;
+  }
+
+  /** Sai do mapa só quando a ação dá certo. */
+  clear(signature: string): void { this.keys.delete(signature); }
+}
+
+/** Chaves do acerto e do checkout do balcão; no módulo, para sobreviver a fechar e reabrir o diálogo. */
+export const counterKeys = new IdempotencyKeys();

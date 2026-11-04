@@ -3,7 +3,7 @@ import { can } from '@/lib/permissions';
 import { AUDIT_ACTION_LABEL } from '@/lib/audit-labels';
 import { ApiError, problemMessage } from '@/lib/api';
 import {
-  COUNTER_METHOD_LABEL, COUNTER_PLAN_LABEL, COUNTER_QUANTITY_MAX, checkoutErrorMessage, clampQuantity, reaisToCents, isRentalOpen, isGatewayRefundable,
+  COUNTER_METHOD_LABEL, COUNTER_PLAN_LABEL, COUNTER_QUANTITY_MAX, IDEMPOTENCY_KEY_TTL_MS, IdempotencyKeys, checkoutErrorMessage, clampQuantity, reaisToCents, isRentalOpen, isGatewayRefundable,
 } from '@/lib/counter';
 
 describe('balcão no painel (Task 13)', () => {
@@ -84,4 +84,21 @@ describe('estorno só para pagamento do gateway (revisão final)', () => {
     expect(isGatewayRefundable('pix')).toBe(true);
     expect(isGatewayRefundable(undefined)).toBe(false);
   });
+});
+
+describe('chaves de idempotência com prazo', () => {
+  it('mesma chave até o prazo, nova depois; clear solta a chave', () => {
+    let t = 1_000;
+    const keys = new IdempotencyKeys(IDEMPOTENCY_KEY_TTL_MS, () => t);
+    const a = keys.keyFor('x');
+    t += IDEMPOTENCY_KEY_TTL_MS - 1;
+    expect(keys.keyFor('x')).toBe(a);
+    expect(keys.keyFor('y')).not.toBe(a);
+    t += 1;
+    const b = keys.keyFor('x');
+    expect(b).not.toBe(a);
+    keys.clear('x');
+    expect(keys.keyFor('x')).not.toBe(b);
+  });
+  it('prazo de 24 h', () => { expect(IDEMPOTENCY_KEY_TTL_MS).toBe(86_400_000); });
 });

@@ -117,3 +117,5 @@ Auditoria e evoluções em `docs/design/auditoria-admin.md` e `docs/design/evolu
 - Financeiro: o grupo `suporte` abre a seção só para a lista de Pagamentos (`GET /payments`); a Visão geral, Aluguéis, Cauções e Carteira seguem fechadas. Com `?tab=` e grupos ainda carregando, a página não mostra aba nenhuma (sem piscar a visão geral).
 - Baterias: descarregar a van com mais de um galpão exige escolher o destino no painel (antes a API respondia 422).
 - Estações: textos e vínculos extraídos para `src/lib/stations.ts` e cobertos em `tests/t18-painel.test.ts`.
+
+- Balcão: o botão "Acertar no balcão" (detalhe do aluguel e Entregas) só aparece com dívida ou caução a devolver (`GET /rentals/{id}/counter-balance`). Se a resposta do acerto se perde mas o débito já foi quitado por inteiro, o diálogo mostra "Acerto registrado". As `Idempotency-Key` do acerto e do checkout ficam em `counterKeys` (`src/lib/counter.ts`), por dados da ação, e expiram em 24 h.

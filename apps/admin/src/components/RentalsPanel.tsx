@@ -11,7 +11,7 @@ import { dayEndIso, dayStartIso, formatBRL, formatDateTime, formatDuration } fro
 import { toCents } from '@/lib/money';
 import { isGatewayRefundable } from '@/lib/counter';
 import type { S } from '@/lib/types';
-import { CounterSettleDialog } from './CounterSettleDialog';
+import { CounterSettleButton, CounterSettleDialog } from './CounterSettleDialog';
 import { ForceEndRentalDialog } from './ForceEndRentalDialog';
 import { DataTable, ErrorNote, Field, KV, Page, Pill, ReasonDialog, SectionTitle, Select, SidePanel, TextInput, usePagedQuery, useToast } from './ui';
 import { Alert } from '@/ds/Alert';
@@ -126,7 +126,7 @@ function RentalDetail({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8, borderTop: '1px solid var(--border-subtle)' }}>
             {can(groups, 'rental.forceEnd') && !finished && <Button size="sm" variant="danger" icon="Square" testId="force-end" onClick={() => setForceEnd(true)}>Encerrar à força</Button>}
-            {can(groups, 'counter.settle') && <Button size="sm" variant="secondary" icon="Wallet" testId="rental-counter-settle" onClick={() => setSettle(true)}>Acertar no balcão</Button>}
+            {can(groups, 'counter.settle') && <CounterSettleButton rentalId={id} testId="rental-counter-settle" onClick={() => setSettle(true)} />}
             {can(groups, 'payment.refund') && r.paymentId && finished && isGatewayRefundable(payment.data?.method) && <Button size="sm" variant="dark" icon="Undo2" testId="refund" onClick={() => { setRefundAmount(''); setRefund(true); }}>Estornar pagamento</Button>}
           </div>
         </>
