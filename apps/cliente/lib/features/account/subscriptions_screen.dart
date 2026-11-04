@@ -12,8 +12,6 @@ import 'wallet_screen.dart' show ReadOnlyCounterNotice;
 String subscriptionName(BuildContext context, SubscriptionPlanCode code) =>
     code == SubscriptionPlanCode.weekly ? context.l.planWeekly : context.l.planMonthly;
 
-String _cardLabel(PaymentCard c) => '${c.brand[0].toUpperCase()}${c.brand.substring(1)} •••• ${c.last4}';
-
 // ---------------------------------------------------------------------------
 // Plano semanal e mensal (so leitura)
 // ---------------------------------------------------------------------------
@@ -64,16 +62,14 @@ class SubscriptionsScreen extends ConsumerWidget {
   }
 }
 
-class _ActivePlanCard extends ConsumerWidget {
+class _ActivePlanCard extends StatelessWidget {
   const _ActivePlanCard({required this.sub});
   final Subscription sub;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final l = context.l;
     final ending = sub.cancelAtPeriodEnd == true;
-    final cards = ref.watch(accountCardsProvider).value ?? const [];
-    final card = cards.where((c) => c.id == sub.cardId).firstOrNull ?? cards.where((c) => c.isDefault).firstOrNull;
     final end = formatDaySp(sub.currentPeriodEnd);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Container(
@@ -102,9 +98,8 @@ class _ActivePlanCard extends ConsumerWidget {
           const SizedBox(height: VoltiSpacing.s12),
           _InfoLine(
             icon: LucideIcons.calendarClock,
-            text: ending ? l.subscriptionEndsOn(end) : l.subscriptionNextCharge(end, money(sub.priceCents)),
+            text: ending ? l.subscriptionEndsOn(end) : l.subscriptionValidUntil(end),
           ),
-          if (card != null) _InfoLine(icon: LucideIcons.creditCard, text: l.subscriptionCard(_cardLabel(card))),
           _InfoLine(icon: LucideIcons.motorbike, text: l.subscriptionBenefit),
         ]),
       ),

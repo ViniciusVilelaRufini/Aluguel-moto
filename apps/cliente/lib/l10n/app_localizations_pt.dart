@@ -55,13 +55,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get allowAndContinue => 'Permitir e continuar';
 
   @override
-  String get apply => 'Aplicar';
-
-  @override
   String get back => 'Voltar';
-
-  @override
-  String get backToMap => 'Voltar ao mapa';
 
   @override
   String get backToRide => 'Voltar à corrida';
@@ -104,24 +98,11 @@ class AppLocalizationsPt extends AppLocalizations {
   String get callPoliceSemantics => 'Ligar para a Polícia, telefone 190';
 
   @override
-  String get cameraUnavailable =>
-      'Não foi possível abrir a câmera. Digite o número da moto.';
-
-  @override
   String get cancel => 'Cancelar';
 
   @override
   String get checkReturnText =>
       'Estacione numa área verde do mapa antes de encerrar.';
-
-  @override
-  String get checkReturnTitle => 'Confira o ponto de devolução';
-
-  @override
-  String get chooseInsurance => 'Escolha o seguro';
-
-  @override
-  String get choosePlan => 'Escolha o plano';
 
   @override
   String get claimAccident => 'Acidente';
@@ -154,9 +135,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get continueWithEmail => 'Entrar com e-mail';
 
   @override
-  String get copyPixCode => 'Copiar código Pix';
-
-  @override
   String get coupon => 'Cupom';
 
   @override
@@ -166,16 +144,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get couponHint => 'Código do cupom';
 
   @override
-  String get couponInvalid => 'Cupom inválido ou expirado';
-
-  @override
   String get coverage => 'Seguro';
-
-  @override
-  String get coverageBasic => 'Básico';
-
-  @override
-  String get coverageFull => 'Completo';
 
   @override
   String get cpf => 'CPF';
@@ -203,9 +172,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get deposit => 'Caução';
 
   @override
-  String get blockedNow => 'Bloqueado agora (caução)';
-
-  @override
   String get pickupWhenLine => 'Retirada';
 
   @override
@@ -214,14 +180,8 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String get depositAmount => 'Caução (devolvida)';
-
-  @override
   String get depositHint =>
       'A caução cobre o valor da corrida; o que sobrar volta para você.';
-
-  @override
-  String get discount => 'Desconto';
 
   @override
   String get disputeCharge => 'Contestar cobrança';
@@ -258,9 +218,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get email => 'E-mail';
-
-  @override
-  String get endRide => 'Encerrar corrida';
 
   @override
   String get endRideText =>
@@ -345,16 +302,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get errorUnauthorized => 'Sua sessão expirou. Entre de novo.';
 
   @override
-  String get estimatedTotal => 'Total estimado';
-
-  @override
   String get exportData => 'Exportar meus dados';
 
   @override
   String get fees => 'Taxas';
-
-  @override
-  String get filterBattery => 'Bateria acima de 50%';
 
   @override
   String get fullName => 'Nome completo';
@@ -420,16 +371,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get included => 'Incluído';
 
   @override
-  String get insideReturnText => 'Você pode encerrar a corrida aqui.';
-
-  @override
-  String get insideReturnTitle => 'Ponto de devolução';
-
-  @override
   String get insurance => 'Seguro';
-
-  @override
-  String get kycApprovedShort => 'Aprovada';
 
   @override
   String get kycApprovedText =>
@@ -487,12 +429,6 @@ class AppLocalizationsPt extends AppLocalizations {
       'Para andar, precisamos da sua localização durante o aluguel. Ela só é usada com uma corrida ativa.';
 
   @override
-  String get locationConsentTitle => 'Permitir localização?';
-
-  @override
-  String get lockedBye => 'Moto travada. Até a próxima!';
-
-  @override
   String get loginCognitoPending =>
       'A entrada pelo Cognito ainda não está configurada neste ambiente.';
 
@@ -510,9 +446,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get message => 'Mensagem';
 
   @override
-  String get minutePackages => 'Pacotes de minutos';
-
-  @override
   String get myPlan => 'Meu plano';
 
   @override
@@ -522,29 +455,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get newConversation => 'Nova conversa';
 
   @override
-  String get noCard => 'Nenhum cartão salvo';
-
-  @override
-  String get noKmNotice =>
-      'Você paga pelo tempo de uso. Não cobramos nem mostramos km rodados.';
-
-  @override
-  String get noReservation => 'Nenhuma reserva ativa';
-
-  @override
-  String get noVehiclesNearby => 'Nenhuma moto por perto agora';
-
-  @override
   String get notNow => 'Agora não';
 
   @override
   String get openClaim => 'Abrir sinistro';
-
-  @override
-  String get outsideReturnText => 'Estacione numa área verde para encerrar.';
-
-  @override
-  String get outsideReturnTitle => 'Fora do ponto de devolução';
 
   @override
   String get pause => 'Pausar';
@@ -554,24 +468,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get payAndUnlock => 'Confirmar e destravar';
-
-  @override
-  String get payTest => 'Pagamento de teste';
-
-  @override
-  String get payTestHint => 'Aprova na hora · só na versão de teste';
-
-  @override
-  String get pixCopied => 'Código Pix copiado';
-
-  @override
-  String get pixFailed => 'O Pix não foi concluído. Tente de novo.';
-
-  @override
-  String get pixTitle => 'Pague com Pix';
-
-  @override
-  String get pixWaiting => 'Aguardando o pagamento…';
 
   @override
   String get planMonthly => 'Plano mensal';
@@ -605,9 +501,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get problemTire => 'Pneu';
 
   @override
-  String get rateRide => 'Como foi a corrida?';
-
-  @override
   String get refreshStatus => 'Atualizar status';
 
   @override
@@ -624,10 +517,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get reportProblem => 'Reportar problema';
 
   @override
-  String get reportSentText =>
-      'Recebemos o seu relato. Quer trocar de moto sem nova taxa?';
-
-  @override
   String get reportSentTitle => 'Problema reportado';
 
   @override
@@ -637,39 +526,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get reservationActive => 'Moto reservada';
 
   @override
-  String get reservationExpiredText =>
-      'A moto voltou a ficar disponível. Escolha outra no mapa.';
-
-  @override
-  String get reservationExpiredTitle => 'Reserva expirada';
-
-  @override
-  String get reservationTimeLeft => 'Tempo de reserva restante';
-
-  @override
-  String get reserve15 => 'Reservar por 15 min';
-
-  @override
-  String get reservedTitle => 'Moto reservada';
-
-  @override
   String get resume => 'Retomar';
 
   @override
   String get retry => 'Tentar de novo';
-
-  @override
-  String get returnPhoto => 'Foto da moto estacionada';
-
-  @override
-  String get returnPhotoHint => 'Mostre a moto inteira e o entorno';
-
-  @override
-  String get returnPhotoText =>
-      'Tire uma foto da moto estacionada. Ela é obrigatória para encerrar.';
-
-  @override
-  String get returnTitle => 'Devolver moto';
 
   @override
   String get returnVehicle => 'Devolver moto';
@@ -682,25 +542,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get rideTitle => 'Corrida';
-
-  @override
-  String get ringHorn => 'Piscar e buzinar';
-
-  @override
-  String get ringSent => 'Sinal enviado. Procure a moto piscando.';
-
-  @override
-  String get scanCameraSemantics => 'Câmera para ler o QR code da moto';
-
-  @override
-  String get scanHint =>
-      'Aponte para o QR no guidão ou digite o número da moto.';
-
-  @override
-  String get scanTitle => 'Escanear para andar';
-
-  @override
-  String get scanToRide => 'Escanear para andar';
 
   @override
   String get selfiePhoto => 'Selfie com prova de vida';
@@ -743,12 +584,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get subject => 'Assunto';
 
   @override
-  String get subscribe => 'Assinar';
-
-  @override
-  String get subscriptionEnding => 'Termina no fim do período';
-
-  @override
   String get summary => 'Resumo';
 
   @override
@@ -759,21 +594,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get supportEmpty => 'Nenhuma conversa ainda';
-
-  @override
-  String get swapDone => 'Moto trocada';
-
-  @override
-  String get swapTitle => 'Trocar de moto';
-
-  @override
-  String get swapVehicle => 'Trocar de moto';
-
-  @override
-  String get swipeToCancel => 'Deslize para cancelar';
-
-  @override
-  String get tapToCancel => 'Toque em um plano para cancelar a renovação.';
 
   @override
   String get thanksRating => 'Obrigado pela avaliação';
@@ -790,18 +610,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get typeMessage => 'Digite sua mensagem';
-
-  @override
-  String get typeNumber => 'Digitar número da moto';
-
-  @override
-  String get useCamera => 'Usar a câmera';
-
-  @override
-  String get useWallet => 'Usar créditos da carteira';
-
-  @override
-  String get vehicleNumber => 'Número da moto';
 
   @override
   String get verificationTitle => 'Verificação de identidade';
@@ -827,10 +635,6 @@ class AppLocalizationsPt extends AppLocalizations {
       'Escolha a moto no app e retire no galpão. Por dia, semana ou mês.';
 
   @override
-  String get wellbeingText =>
-      'Detectamos uma possível queda. Sem resposta em 60 segundos, acionamos o suporte.';
-
-  @override
   String get wellbeingTitle => 'Você está bem?';
 
   @override
@@ -843,15 +647,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get cardCvvInvalid => 'CVV com 3 ou 4 dígitos';
 
   @override
-  String get planDayDescription => '24 horas · devolva até o fim do dia';
-
-  @override
   String get zoneNotice => 'Aviso de zona';
-
-  @override
-  String greeting(String name) {
-    return 'Olá, $name';
-  }
 
   @override
   String minutesBalance(int minutes) {
@@ -876,11 +672,6 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String reservationRemaining(String time) {
     return 'Reserva expira em $time';
-  }
-
-  @override
-  String shareLocationMessage(String url) {
-    return 'Estou numa corrida Volti e preciso de ajuda. Minha localização: $url';
   }
 
   @override
@@ -910,11 +701,6 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String subscriptionRenews(String date) {
-    return 'Renova em $date';
-  }
-
-  @override
   String unlockFee(String fee) {
     return 'Taxa de desbloqueio $fee';
   }
@@ -933,21 +719,6 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String vehicleCode(String code) {
     return 'Moto $code';
-  }
-
-  @override
-  String vehicleSemantics(String model, int pct) {
-    return '$model, bateria $pct por cento';
-  }
-
-  @override
-  String walletBalance(String money, int minutes) {
-    return 'Saldo $money e $minutes min';
-  }
-
-  @override
-  String zoneLimit(int limit) {
-    return 'Velocidade máxima: $limit km/h';
   }
 
   @override
@@ -996,24 +767,7 @@ class AppLocalizationsPt extends AppLocalizations {
       'Quando precisar, abra uma conversa. A equipe responde por aqui mesmo.';
 
   @override
-  String get noVehiclesNearbyText =>
-      'Afaste o mapa ou tente de novo em alguns minutos.';
-
-  @override
-  String get noReservationText =>
-      'Escolha uma moto no mapa e reserve por 15 minutos sem custo.';
-
-  @override
   String get sosHint => 'Ligar para o suporte ou compartilhar sua localização';
-
-  @override
-  String get cancelRenewalTitle => 'Cancelar a renovação?';
-
-  @override
-  String get cancelRenewalConfirm => 'Cancelar renovação';
-
-  @override
-  String get keepPlan => 'Manter plano';
 
   @override
   String get unitMinute => 'minuto';
@@ -1031,47 +785,15 @@ class AppLocalizationsPt extends AppLocalizations {
   String get unitMonth => 'mês';
 
   @override
-  String get pixPaid => 'Pix confirmado';
-
-  @override
   String get realtimeOfflineText =>
       'O tempo e o custo seguem contando. Estamos reconectando.';
-
-  @override
-  String get lockConfirmed => 'Moto travada';
-
-  @override
-  String get dragToClose => 'Arraste para baixo para fechar';
-
-  @override
-  String get packagesEmpty => 'Nenhum pacote disponível agora.';
 
   @override
   String get subscriptionsEmpty =>
       'Você ainda não tem plano semanal ou mensal.';
 
   @override
-  String cancelRenewalText(String date) {
-    return 'Seu plano continua valendo até $date. Depois disso, não renova.';
-  }
-
-  @override
   String get pickTitle => 'Escolha sua moto';
-
-  @override
-  String pickAvailable(int count) {
-    String _temp0 = intl.Intl.pluralLogic(
-      count,
-      locale: localeName,
-      other: '$count disponíveis perto de você',
-      one: '1 disponível perto de você',
-      zero: 'Nenhuma disponível perto de você',
-    );
-    return '$_temp0';
-  }
-
-  @override
-  String get pickSeeMap => 'Ver no mapa';
 
   @override
   String get pickAllModels => 'Todas';
@@ -1080,34 +802,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get pickModelFilters => 'Filtrar por modelo';
 
   @override
-  String get categoryUrban => 'Urbana';
-
-  @override
-  String get categoryDoubleSeat => 'Assento duplo';
-
-  @override
-  String get categoryCargo => 'Com baú · entregas';
-
-  @override
-  String get firstRideFreeBadge => '1ª grátis';
-
-  @override
-  String pickHoldNote(int minutes) {
-    return 'A moto fica reservada por $minutes min, sem custo.';
-  }
-
-  @override
-  String reserveModelCode(String model, String code) {
-    return 'Reservar $model · $code';
-  }
-
-  @override
   String get selectABike => 'Selecione uma moto';
-
-  @override
-  String walkSemantics(String distance, int minutes) {
-    return '$distance a pé, $minutes minutos';
-  }
 
   @override
   String rangeSemantics(int km) {
@@ -1118,9 +813,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String priceSemantics(String price) {
     return '$price por minuto';
   }
-
-  @override
-  String get selectedSemantics => 'selecionada';
 
   @override
   String get blockKycPending =>
@@ -1150,15 +842,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get chooseBike => 'Escolher moto';
 
   @override
-  String get filterAll => 'Todas';
-
-  @override
-  String get filterRange10 => 'Autonomia 10+ km';
-
-  @override
-  String get filterPickupPoints => 'Pontos de retirada';
-
-  @override
   String get promoPassTitle => 'Planos no galpão';
 
   @override
@@ -1172,25 +855,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get promoFirstRideText => 'Até 15 minutos';
 
   @override
-  String yourLocationAt(String place) {
-    return 'Sua localização · $place';
-  }
-
-  @override
   String get nearYou => 'Perto de você';
 
   @override
   String batterySemantics(int pct) {
     return 'bateria $pct por cento';
   }
-
-  @override
-  String get pickVehicleTaken =>
-      'Essa moto acabou de ser reservada. Escolha outra.';
-
-  @override
-  String get pickupZonesError =>
-      'Não conseguimos carregar os pontos de retirada.';
 
   @override
   String get fareLabel => 'Tarifa';
@@ -1231,9 +901,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get reportOnly => 'Só reportar';
-
-  @override
-  String get swapNoFee => 'Trocar de moto sem nova taxa';
 
   @override
   String get returnPointTitle => 'Ponto de devolução';
@@ -1409,16 +1076,6 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String buyPackageText(int minutes, String price) {
-    return '$minutes minutos por $price, pagos com Pix. Os minutos entram assim que o pagamento for confirmado.';
-  }
-
-  @override
-  String buyPackageTitle(String name) {
-    return 'Comprar $name?';
-  }
-
-  @override
   String get chatAttach => 'Anexar foto';
 
   @override
@@ -1506,9 +1163,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get consentsRow => 'Consentimentos e privacidade';
-
-  @override
-  String get credits => 'Créditos';
 
   @override
   String get disputeDetailsLabel => 'Detalhes (opcional)';
@@ -1629,46 +1283,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get kycVerified => 'Verificada';
 
   @override
-  String get minutePackage => 'Pacote de minutos';
-
-  @override
   String minutesDelta(int minutes) {
     return '$minutes min';
   }
-
-  @override
-  String get noActivePlan => 'Sem plano ativo · semanal ou mensal';
-
-  @override
-  String get payWithPix => 'Pagar com Pix';
-
-  @override
-  String get perMonth => '/mês';
-
-  @override
-  String get perWeek => '/semana';
-
-  @override
-  String get pixExpired => 'O Pix expirou. Gere um novo código.';
-
-  @override
-  String pixExpiresAt(String date) {
-    return 'Válido até $date';
-  }
-
-  @override
-  String get pixPayLater => 'Pagar depois';
-
-  @override
-  String get pixQrLabel => 'QR code do Pix';
-
-  @override
-  String get planMonthlyDescription =>
-      'Renova automaticamente, cancele quando quiser';
-
-  @override
-  String get planWeeklyDescription =>
-      'Renova automaticamente, cancele quando quiser';
 
   @override
   String get remove => 'Remover';
@@ -1719,54 +1336,11 @@ class AppLocalizationsPt extends AppLocalizations {
   String get statusUnderReview => 'Em análise';
 
   @override
-  String get subscribeCardHint => 'Cobrança recorrente neste cartão';
-
-  @override
-  String get subscribeConfirm => 'Assinar agora';
-
-  @override
-  String subscribeConfirmTitle(String plan) {
-    return 'Assinar o $plan';
-  }
-
-  @override
-  String get subscribeContinue => 'Continuar';
-
-  @override
-  String subscribePriceMonthly(String price) {
-    return '$price por mês';
-  }
-
-  @override
-  String subscribePriceWeekly(String price) {
-    return '$price por semana';
-  }
-
-  @override
-  String get subscribeRecurringMonthly =>
-      'Cobramos hoje e renovamos todo mês no cartão. Corridas no plano mensal não cobram tempo, só seguro e taxas. Cancele quando quiser.';
-
-  @override
-  String get subscribeRecurringWeekly =>
-      'Cobramos hoje e renovamos toda semana no cartão. Corridas no plano semanal não cobram tempo, só seguro e taxas. Cancele quando quiser.';
-
-  @override
   String get subscriptionActive => 'Ativo';
 
   @override
   String get subscriptionBenefit =>
       'Corridas no plano não cobram tempo, só seguro e taxas';
-
-  @override
-  String get subscriptionCanceled => 'Renovação cancelada';
-
-  @override
-  String subscriptionCard(String card) {
-    return 'Cartão $card';
-  }
-
-  @override
-  String get subscriptionCreated => 'Plano assinado';
 
   @override
   String subscriptionEndedOn(String date) {
@@ -1787,8 +1361,8 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
-  String subscriptionNextCharge(String date, String price) {
-    return 'Próxima cobrança $date · $price';
+  String subscriptionValidUntil(String date) {
+    return 'Válido até $date';
   }
 
   @override
@@ -1801,56 +1375,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get supportChat => 'Chat com o suporte';
 
   @override
-  String get topUpAmountError =>
-      'Escolha um valor entre R\$ 10,00 e R\$ 1.000,00';
-
-  @override
-  String get topUpAmountHint =>
-      'O crédito entra na carteira assim que o Pix for confirmado.';
-
-  @override
-  String get topUpAmountLabel => 'Valor';
-
-  @override
-  String get topUpDone => 'Carteira recarregada';
-
-  @override
-  String topUpGeneratePix(String amount) {
-    return 'Gerar Pix de $amount';
-  }
-
-  @override
-  String get topUpGeneratePixDisabled => 'Gerar Pix';
-
-  @override
-  String get topUpPaid => 'Pix confirmado';
-
-  @override
-  String topUpPaidAmount(String amount) {
-    return '$amount já estão na sua carteira.';
-  }
-
-  @override
-  String topUpPaidMinutes(int minutes) {
-    return '$minutes minutos já estão na sua carteira.';
-  }
-
-  @override
-  String topUpPixText(String amount) {
-    return 'Pague $amount com o QR ou o código copia e cola no app do seu banco.';
-  }
-
-  @override
-  String get topUpWallet => 'Recarregar carteira';
-
-  @override
   String get trafficRules => 'Regras de trânsito para autopropelidos';
 
   @override
   String get trafficRulesTitle => 'Regras de trânsito';
-
-  @override
-  String get walletAndPackages => 'Carteira e pacotes de minutos';
 
   @override
   String get walletLedgerEmpty => 'Nenhum lançamento ainda.';
@@ -1865,19 +1393,6 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get emergencyConsentText =>
       'Só compartilhamos sua localização com este contato quando você aciona o SOS. Confirme que a pessoa concorda em receber esses avisos.';
-
-  @override
-  String pendingTopUpTitle(String amount) {
-    return 'Pix de $amount aguardando pagamento';
-  }
-
-  @override
-  String get pendingTopUpText =>
-      'O saldo atualiza sozinho quando o pagamento for confirmado. Puxe a tela para baixo para conferir agora.';
-
-  @override
-  String get subscriptionPriceUnavailable =>
-      'Preço do plano indisponível agora. Tente de novo em instantes.';
 
   @override
   String get welcomePhone => 'Continuar com celular';
@@ -2038,49 +1553,13 @@ class AppLocalizationsPt extends AppLocalizations {
       'Cadastro enviado. Verificação em até 2 min.';
 
   @override
-  String get vehicleCategoryDefault => 'Moto elétrica';
-
-  @override
-  String pricePerMinutePlusFee(String price) {
-    return '$price/min + taxa';
-  }
-
-  @override
-  String get promoFirstRideBadge => 'Grátis na 1ª corrida';
-
-  @override
-  String get hornAndFlash => 'Buzinar e piscar';
-
-  @override
-  String get hornNeedsReservation => 'Reserve a moto para buzinar e piscar.';
-
-  @override
-  String get navigate => 'Navegar';
-
-  @override
   String get navigateFailed => 'Não foi possível abrir o app de mapas.';
-
-  @override
-  String get promoCoupon => 'Cupom promocional';
-
-  @override
-  String get couponSaved => 'Cupom guardado. Ele entra na cotação do plano.';
-
-  @override
-  String get couponRemove => 'Remover cupom';
-
-  @override
-  String get couponSave => 'Guardar cupom';
 
   @override
   String get scanQr => 'Escanear QR';
 
   @override
   String get reserve => 'Reservar';
-
-  @override
-  String get reportVehicleSentText =>
-      'Recebemos o seu relato. Obrigado por avisar.';
 
   @override
   String get reservationCanceled => 'Reserva cancelada';
@@ -2090,33 +1569,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get offlineText => 'Tentando reconectar. Algumas ações podem falhar.';
-
-  @override
-  String get backOnline => 'Conexão restabelecida';
-
-  @override
-  String get torch => 'Lanterna';
-
-  @override
-  String get scanAimTitle => 'Aponte para o QR no guidão';
-
-  @override
-  String get scanAimText => 'Ou digite o número da moto.';
-
-  @override
-  String vehicleFound(String code) {
-    return 'Moto $code encontrada';
-  }
-
-  @override
-  String lookingFor(String code) {
-    return 'Procurando $code';
-  }
-
-  @override
-  String planSubtitle(String code, String model, int pct) {
-    return '$code · $model · $pct%';
-  }
 
   @override
   String perUnitShort(String unit) {
@@ -2137,20 +1589,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get unitMonthShort => 'mês';
-
-  @override
-  String get perRental => '/aluguel';
-
-  @override
-  String get couponOrCredit => 'Cupom ou crédito';
-
-  @override
-  String get walletCredits => 'Créditos da carteira';
-
-  @override
-  String walkRouteSemantics(int minutes, String distance) {
-    return 'Rota a pé até a moto: $minutes min, $distance';
-  }
 
   @override
   String get thanksForRiding => 'Obrigado por andar de Volti';
@@ -2226,11 +1664,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get depotPicker => 'Escolha o galpão';
 
   @override
-  String depotOptionSemantics(String name, String distance) {
-    return '$name, $distance';
-  }
-
-  @override
   String depotPinSemantics(String name) {
     return 'Galpão $name';
   }
@@ -2265,26 +1698,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get pickDepotEmptyText => 'Volte mais tarde ou escolha outro galpão.';
 
   @override
-  String get planOtherOptions => 'Outras opções';
-
-  @override
-  String get planRenews => 'Renova automaticamente, cancele quando quiser';
-
-  @override
-  String get planChargedAtPickup =>
-      'O plano é acertado no fim do aluguel; a caução fica como garantia.';
-
-  @override
   String vehicleModelCode(String model, String code) {
     return '$model · $code';
   }
 
   @override
   String get insuranceTitle => 'Seguro';
-
-  @override
-  String get insuranceSubtitle =>
-      'O básico já vem incluído. O completo é opcional.';
 
   @override
   String get pickupTitle => 'Retirada';
@@ -2320,13 +1739,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get pickupChooseTime => 'Escolha um horário';
 
   @override
-  String get pickupPlan => 'Plano';
-
-  @override
-  String get pickupDepositNote =>
-      'Confirmar bloqueia só a caução. O plano é acertado no fim do aluguel; a caução fica como garantia.';
-
-  @override
   String get pickupPreReserveTitle => 'Pré-reserva';
 
   @override
@@ -2352,6 +1764,10 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get pickupConsentRequired =>
+      'Sem o consentimento de localização não dá para pré-reservar.';
+
+  @override
   String get pickupLocationConsentTitle =>
       'Permitir localização durante o aluguel';
 
@@ -2367,9 +1783,6 @@ class AppLocalizationsPt extends AppLocalizations {
       'Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.';
 
   @override
-  String get confirmReservation => 'Confirmar reserva';
-
-  @override
   String get vehicleJustTaken => 'Essa moto acabou de ser reservada';
 
   @override
@@ -2379,7 +1792,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get reservationQrHint => 'Mostre este código no galpão';
 
   @override
-  String get reservationQrLabel => 'QR da reserva';
+  String get reservationQrLabel => 'QR da pré-reserva';
 
   @override
   String reservationPickupUntil(String time) {
@@ -2423,13 +1836,6 @@ class AppLocalizationsPt extends AppLocalizations {
       'Sua moto está sendo preparada no galpão.';
 
   @override
-  String get reservationPixPending =>
-      'Pague a caução por Pix para garantir a moto.';
-
-  @override
-  String get payPixDeposit => 'Pagar caução Pix';
-
-  @override
   String get reservationNotFound => 'Reserva não encontrada';
 
   @override
@@ -2438,10 +1844,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get goHome => 'Ir para o início';
-
-  @override
-  String get planNeedsCard =>
-      'Adicione um cartão ou escolha Pix para a caução.';
 
   @override
   String get returnLockTitle => 'Trave e encerre';
@@ -2527,45 +1929,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get handoverItemCarenagem => 'Carenagem';
 
   @override
-  String get handoverStartsNow =>
-      'Ao aceitar, o aluguel começa agora e a moto destrava. O plano é acertado no fim do aluguel, com a caução como garantia.';
-
-  @override
-  String get handoverAccept => 'Aceitar e destravar';
-
-  @override
-  String get handoverReport => 'Apontar problema';
-
-  @override
-  String get handoverPaymentDeclined =>
-      'O pagamento não foi aprovado. Tente de novo ou fale com o operador.';
-
-  @override
-  String get handoverDepositNotHeld =>
-      'A caução da reserva não está retida. Fale com o suporte.';
-
-  @override
-  String get handoverAcceptFailed =>
-      'Não foi possível aceitar agora. Tente de novo ou fale com o operador.';
-
-  @override
   String get handoverNotFound => 'Essa entrega não foi encontrada.';
-
-  @override
-  String get handoverDisputeTitle => 'Apontar problema';
-
-  @override
-  String get handoverDisputeText =>
-      'Conte o que está errado. O suporte recebe junto com as fotos da saída.';
-
-  @override
-  String get handoverDisputeLabel => 'O que está errado com a moto?';
-
-  @override
-  String get handoverDisputeHint => 'Ex.: retrovisor quebrado';
-
-  @override
-  String get handoverDisputeSend => 'Enviar ao suporte';
 
   @override
   String get handoverDisputedTitle => 'Problema apontado';
@@ -2825,12 +2189,12 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String homeReservationA11yNow(String vehicle, String time) {
-    return 'Reserva da $vehicle, retire até $time';
+    return 'Pré-reserva da $vehicle, retire até $time';
   }
 
   @override
   String homeReservationA11yScheduled(String vehicle, String day, String time) {
-    return 'Reserva da $vehicle, retirada agendada $day às $time';
+    return 'Pré-reserva da $vehicle, retirada agendada $day às $time';
   }
 
   @override
@@ -2840,7 +2204,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String homeReservationA11yExpired(String vehicle) {
-    return 'Reserva da $vehicle, o prazo de retirada acabou';
+    return 'Pré-reserva da $vehicle, o prazo de retirada acabou';
   }
 
   @override
@@ -3122,20 +2486,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get privacyPolicy => 'Política de privacidade';
 
   @override
-  String couponUpTo(String amount) {
-    return 'até $amount';
-  }
-
-  @override
-  String couponPercentOfTime(int percent) {
-    return '-$percent% do tempo';
-  }
-
-  @override
-  String get couponClosingNote =>
-      'O desconto é aplicado no fechamento do aluguel, limitado ao valor do tempo de uso.';
-
-  @override
   String get fixCpf => 'Corrigir CPF';
 
   @override
@@ -3155,26 +2505,11 @@ class AppLocalizationsPt extends AppLocalizations {
   String get accountUnread => 'Conta, mensagens novas do suporte';
 
   @override
-  String get payNow => 'Pagar agora';
-
-  @override
-  String get paymentPendingTitle => 'Pagamento pendente';
-
-  @override
-  String paymentPendingHomeText(String amount) {
-    return '$amount em aberto. Pague para alugar de novo.';
-  }
-
-  @override
   String get paymentProcessingHomeTitle => 'Cobrança em andamento';
 
   @override
   String get paymentProcessingHomeText =>
       'Estamos processando a cobrança da sua última corrida. Assim que concluir, você poderá reservar de novo.';
-
-  @override
-  String get paymentPendingBlock =>
-      'Pague o valor pendente para alugar de novo.';
 
   @override
   String get receiptPaymentLabel => 'Pagamento';
@@ -3193,14 +2528,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get receiptDepositReleased => 'Caução devolvida';
-
-  @override
-  String get receiptAmountDue => 'A acertar no galpão';
-
-  @override
-  String receiptPendingText(String amount) {
-    return 'Não conseguimos cobrar $amount. Pague com Pix para liberar o recibo e novos aluguéis.';
-  }
 
   @override
   String get receiptProcessingText =>
@@ -3225,20 +2552,6 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get rideFinishedProcessing =>
       'Moto travada. Pagamento em processamento.';
-
-  @override
-  String get debtPixTitle => 'Pague a pendência com Pix';
-
-  @override
-  String debtPixText(String amount) {
-    return 'Pague $amount com o QR ou o código copia e cola no app do seu banco.';
-  }
-
-  @override
-  String get debtPaid => 'Pendência paga';
-
-  @override
-  String get debtPaidText => 'Pronto! Você já pode alugar de novo.';
 
   @override
   String get sheetExpand => 'Expandir';
@@ -3290,14 +2603,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get cardsTitle => 'Cartões';
-
-  @override
-  String cardsRowSubtitle(String card) {
-    return 'Padrão: $card';
-  }
-
-  @override
-  String get cardsRowEmpty => 'Nenhum cartão salvo';
 
   @override
   String get cardsDefaultHint =>
@@ -3451,13 +2756,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get retryEnd => 'Tentar encerrar de novo';
-
-  @override
-  String get handoverUnlocking => 'Destravando a moto… pode levar até 30 s';
-
-  @override
-  String get handoverUnlockSlow =>
-      'A moto ainda está destravando. Aguarde um pouco e confira de novo.';
 
   @override
   String get errorTimeout =>

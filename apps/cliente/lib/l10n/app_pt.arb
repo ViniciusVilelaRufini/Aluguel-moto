@@ -14,9 +14,7 @@
   "addCard": "Adicionar cartão",
   "adultOnly": "É preciso ter 18 anos ou mais",
   "allowAndContinue": "Permitir e continuar",
-  "apply": "Aplicar",
   "back": "Voltar",
-  "backToMap": "Voltar ao mapa",
   "backToRide": "Voltar à corrida",
   "badgeAdult": "18+",
   "badgeNoLicense": "Sem CNH",
@@ -30,12 +28,8 @@
   "callSamuSemantics": "Ligar para o SAMU, telefone 192",
   "callPolice": "Ligar 190 (Polícia)",
   "callPoliceSemantics": "Ligar para a Polícia, telefone 190",
-  "cameraUnavailable": "Não foi possível abrir a câmera. Digite o número da moto.",
   "cancel": "Cancelar",
   "checkReturnText": "Estacione numa área verde do mapa antes de encerrar.",
-  "checkReturnTitle": "Confira o ponto de devolução",
-  "chooseInsurance": "Escolha o seguro",
-  "choosePlan": "Escolha o plano",
   "claimAccident": "Acidente",
   "claimDamage": "Dano à moto",
   "claimDescription": "Conte o que aconteceu",
@@ -46,14 +40,10 @@
   "consentLocationTitle": "Localização durante o aluguel",
   "continueLabel": "Continuar",
   "continueWithEmail": "Entrar com e-mail",
-  "copyPixCode": "Copiar código Pix",
   "coupon": "Cupom",
   "couponApplied": "Cupom aplicado",
   "couponHint": "Código do cupom",
-  "couponInvalid": "Cupom inválido ou expirado",
   "coverage": "Seguro",
-  "coverageBasic": "Básico",
-  "coverageFull": "Completo",
   "cpf": "CPF",
   "dataSubtitle": "Não pedimos CNH. Só confirmamos que é você.",
   "dataTitle": "Seus dados",
@@ -62,13 +52,10 @@
   "deleteAccountText": "Seus dados pessoais serão apagados. Aluguéis e pagamentos podem ser mantidos pelo prazo legal.",
   "deleteAccountTitle": "Excluir conta?",
   "deposit": "Caução",
-  "blockedNow": "Bloqueado agora (caução)",
   "pickupWhenLine": "Retirada",
   "pickupWhenValue": "{weekday} {date} às {time}",
   "@pickupWhenValue": {"placeholders": {"weekday": {"type": "String"}, "date": {"type": "String"}, "time": {"type": "String"}}},
-  "depositAmount": "Caução (devolvida)",
   "depositHint": "A caução cobre o valor da corrida; o que sobrar volta para você.",
-  "discount": "Desconto",
   "disputeCharge": "Contestar cobrança",
   "disputeHint": "Explique o motivo da contestação",
   "disputeSent": "Contestação enviada",
@@ -81,7 +68,6 @@
   "documentPhotoHint": "Frente, sem reflexo",
   "duration": "Duração",
   "email": "E-mail",
-  "endRide": "Encerrar corrida",
   "endRideText": "A moto será travada. Você paga só pelos minutos usados.",
   "endRideTitle": "Encerrar corrida?",
   "errorGeneric": "Algo deu errado. Tente de novo.",
@@ -106,10 +92,8 @@
   "cardErrorUnavailable": "O Mercado Pago está indisponível agora. Tente em instantes.",
   "cardErrorGeneric": "Não foi possível validar o cartão. Tente de novo.",
   "errorUnauthorized": "Sua sessão expirou. Entre de novo.",
-  "estimatedTotal": "Total estimado",
   "exportData": "Exportar meus dados",
   "fees": "Taxas",
-  "filterBattery": "Bateria acima de 50%",
   "fullName": "Nome completo",
   "fullNameHint": "Como no documento",
   "goToMap": "Ir para o mapa",
@@ -129,10 +113,7 @@
   "historyEmpty": "Você ainda não fez nenhuma corrida.",
   "imFine": "Estou bem",
   "included": "Incluído",
-  "insideReturnText": "Você pode encerrar a corrida aqui.",
-  "insideReturnTitle": "Ponto de devolução",
   "insurance": "Seguro",
-  "kycApprovedShort": "Aprovada",
   "kycApprovedText": "Sua identidade foi confirmada. Já dá para andar.",
   "kycApprovedTitle": "Tudo certo",
   "kycHomeNotice": "Você pode reservar depois da aprovação. Toque para ver o status.",
@@ -149,34 +130,19 @@
   "loading": "Carregando",
   "locateMe": "Minha localização",
   "locationConsentText": "Para andar, precisamos da sua localização durante o aluguel. Ela só é usada com uma corrida ativa.",
-  "locationConsentTitle": "Permitir localização?",
-  "lockedBye": "Moto travada. Até a próxima!",
   "loginCognitoPending": "A entrada pelo Cognito ainda não está configurada neste ambiente.",
   "loginDevHint": "Modo de desenvolvimento: informe um e-mail para entrar.",
   "loginTitle": "Entrar",
   "mandatory": "Obrigatório",
   "message": "Mensagem",
-  "minutePackages": "Pacotes de minutos",
   "myPlan": "Meu plano",
   "needHelp": "Preciso de ajuda",
   "newConversation": "Nova conversa",
-  "noCard": "Nenhum cartão salvo",
-  "noKmNotice": "Você paga pelo tempo de uso. Não cobramos nem mostramos km rodados.",
-  "noReservation": "Nenhuma reserva ativa",
-  "noVehiclesNearby": "Nenhuma moto por perto agora",
   "notNow": "Agora não",
   "openClaim": "Abrir sinistro",
-  "outsideReturnText": "Estacione numa área verde para encerrar.",
-  "outsideReturnTitle": "Fora do ponto de devolução",
   "pause": "Pausar",
   "pausedBadge": "Pausada",
   "payAndUnlock": "Confirmar e destravar",
-  "payTest": "Pagamento de teste",
-  "payTestHint": "Aprova na hora · só na versão de teste",
-  "pixCopied": "Código Pix copiado",
-  "pixFailed": "O Pix não foi concluído. Tente de novo.",
-  "pixTitle": "Pague com Pix",
-  "pixWaiting": "Aguardando o pagamento…",
   "planMonthly": "Plano mensal",
   "planTitle": "Escolha seu plano",
   "planWeekly": "Plano semanal",
@@ -187,37 +153,20 @@
   "problemLights": "Luzes",
   "problemOther": "Outro",
   "problemTire": "Pneu",
-  "rateRide": "Como foi a corrida?",
   "refreshStatus": "Atualizar status",
   "rentalInProgress": "Corrida em andamento",
   "rentalOngoingBadge": "Em andamento",
   "receiptAfterRideEnds": "O recibo fica disponível quando a corrida terminar.",
   "reportProblem": "Reportar problema",
-  "reportSentText": "Recebemos o seu relato. Quer trocar de moto sem nova taxa?",
   "reportSentTitle": "Problema reportado",
   "reportTitle": "Qual o problema?",
   "reservationActive": "Moto reservada",
-  "reservationExpiredText": "A moto voltou a ficar disponível. Escolha outra no mapa.",
-  "reservationExpiredTitle": "Reserva expirada",
-  "reservationTimeLeft": "Tempo de reserva restante",
-  "reserve15": "Reservar por 15 min",
-  "reservedTitle": "Moto reservada",
   "resume": "Retomar",
   "retry": "Tentar de novo",
-  "returnPhoto": "Foto da moto estacionada",
-  "returnPhotoHint": "Mostre a moto inteira e o entorno",
-  "returnPhotoText": "Tire uma foto da moto estacionada. Ela é obrigatória para encerrar.",
-  "returnTitle": "Devolver moto",
   "returnVehicle": "Devolver moto",
   "rideLive": "Em corrida",
   "ridePaused": "Corrida pausada",
   "rideTitle": "Corrida",
-  "ringHorn": "Piscar e buzinar",
-  "ringSent": "Sinal enviado. Procure a moto piscando.",
-  "scanCameraSemantics": "Câmera para ler o QR code da moto",
-  "scanHint": "Aponte para o QR no guidão ou digite o número da moto.",
-  "scanTitle": "Escanear para andar",
-  "scanToRide": "Escanear para andar",
   "selfiePhoto": "Selfie com prova de vida",
   "selfiePhotoHint": "Olhe para a câmera em local iluminado",
   "send": "Enviar",
@@ -231,26 +180,15 @@
   "sosText": "Sua localização em tempo real é compartilhada enquanto o SOS estiver ativo.",
   "sosTitle": "SOS",
   "subject": "Assunto",
-  "subscribe": "Assinar",
-  "subscriptionEnding": "Termina no fim do período",
   "summary": "Resumo",
   "summaryTitle": "Recibo",
   "support": "Suporte",
   "supportEmpty": "Nenhuma conversa ainda",
-  "swapDone": "Moto trocada",
-  "swapTitle": "Trocar de moto",
-  "swapVehicle": "Trocar de moto",
-  "swipeToCancel": "Deslize para cancelar",
-  "tapToCancel": "Toque em um plano para cancelar a renovação.",
   "thanksRating": "Obrigado pela avaliação",
   "total": "Total",
   "trackingNotificationText": "Sua localização é usada só enquanto a corrida está ativa.",
   "trackingNotificationTitle": "Corrida em andamento",
   "typeMessage": "Digite sua mensagem",
-  "typeNumber": "Digitar número da moto",
-  "useCamera": "Usar a câmera",
-  "useWallet": "Usar créditos da carteira",
-  "vehicleNumber": "Número da moto",
   "verificationTitle": "Verificação de identidade",
   "viewReceipt": "Ver recibo",
   "waitingLock": "Aguardando a moto travar",
@@ -258,21 +196,11 @@
   "wallet": "Carteira",
   "walletBalanceTitle": "Saldo",
   "welcomeSubtitle": "Escolha a moto no app e retire no galpão. Por dia, semana ou mês.",
-  "wellbeingText": "Detectamos uma possível queda. Sem resposta em 60 segundos, acionamos o suporte.",
   "wellbeingTitle": "Você está bem?",
   "yourLocation": "Sua localização",
   "pickupAtLabel": "Retire em",
   "cardCvvInvalid": "CVV com 3 ou 4 dígitos",
-  "planDayDescription": "24 horas · devolva até o fim do dia",
   "zoneNotice": "Aviso de zona",
-  "greeting": "Olá, {name}",
-  "@greeting": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
   "minutesBalance": "{minutes} min",
   "@minutesBalance": {
     "placeholders": {
@@ -309,14 +237,6 @@
   "@reservationRemaining": {
     "placeholders": {
       "time": {
-        "type": "String"
-      }
-    }
-  },
-  "shareLocationMessage": "Estou numa corrida Volti e preciso de ajuda. Minha localização: {url}",
-  "@shareLocationMessage": {
-    "placeholders": {
-      "url": {
         "type": "String"
       }
     }
@@ -359,14 +279,6 @@
       }
     }
   },
-  "subscriptionRenews": "Renova em {date}",
-  "@subscriptionRenews": {
-    "placeholders": {
-      "date": {
-        "type": "String"
-      }
-    }
-  },
   "unlockFee": "Taxa de desbloqueio {fee}",
   "@unlockFee": {
     "placeholders": {
@@ -391,36 +303,6 @@
       }
     }
   },
-  "vehicleSemantics": "{model}, bateria {pct} por cento",
-  "@vehicleSemantics": {
-    "placeholders": {
-      "model": {
-        "type": "String"
-      },
-      "pct": {
-        "type": "int"
-      }
-    }
-  },
-  "walletBalance": "Saldo {money} e {minutes} min",
-  "@walletBalance": {
-    "placeholders": {
-      "money": {
-        "type": "String"
-      },
-      "minutes": {
-        "type": "int"
-      }
-    }
-  },
-  "zoneLimit": "Velocidade máxima: {limit} km/h",
-  "@zoneLimit": {
-    "placeholders": {
-      "limit": {
-        "type": "int"
-      }
-    }
-  },
   "lockNotConfirmed": "Não conseguimos confirmar a trava",
   "lockNotConfirmedText": "A moto ainda não confirmou que travou. Deixe-a parada e tente encerrar de novo, volte para a corrida ou fale com o suporte para não ser cobrado a mais.",
   "contactSupport": "Falar com o suporte",
@@ -435,78 +317,18 @@
   "birthUnderage": "É preciso ter 18 anos ou mais.",
   "historyEmptyTitle": "Nenhuma corrida ainda",
   "supportEmptyText": "Quando precisar, abra uma conversa. A equipe responde por aqui mesmo.",
-  "noVehiclesNearbyText": "Afaste o mapa ou tente de novo em alguns minutos.",
-  "noReservationText": "Escolha uma moto no mapa e reserve por 15 minutos sem custo.",
   "sosHint": "Ligar para o suporte ou compartilhar sua localização",
-  "cancelRenewalTitle": "Cancelar a renovação?",
-  "cancelRenewalConfirm": "Cancelar renovação",
-  "keepPlan": "Manter plano",
   "unitMinute": "minuto",
   "unitHour": "hora",
   "unitDay": "dia",
   "unitWeek": "semana",
   "unitMonth": "mês",
-  "pixPaid": "Pix confirmado",
   "realtimeOfflineText": "O tempo e o custo seguem contando. Estamos reconectando.",
-  "lockConfirmed": "Moto travada",
-  "dragToClose": "Arraste para baixo para fechar",
-  "packagesEmpty": "Nenhum pacote disponível agora.",
   "subscriptionsEmpty": "Você ainda não tem plano semanal ou mensal.",
-  "cancelRenewalText": "Seu plano continua valendo até {date}. Depois disso, não renova.",
-  "@cancelRenewalText": {
-    "placeholders": {
-      "date": {
-        "type": "String"
-      }
-    }
-  },
   "pickTitle": "Escolha sua moto",
-  "pickAvailable": "{count, plural, =0{Nenhuma disponível perto de você} =1{1 disponível perto de você} other{{count} disponíveis perto de você}}",
-  "@pickAvailable": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
-  "pickSeeMap": "Ver no mapa",
   "pickAllModels": "Todas",
   "pickModelFilters": "Filtrar por modelo",
-  "categoryUrban": "Urbana",
-  "categoryDoubleSeat": "Assento duplo",
-  "categoryCargo": "Com baú · entregas",
-  "firstRideFreeBadge": "1ª grátis",
-  "pickHoldNote": "A moto fica reservada por {minutes} min, sem custo.",
-  "@pickHoldNote": {
-    "placeholders": {
-      "minutes": {
-        "type": "int"
-      }
-    }
-  },
-  "reserveModelCode": "Reservar {model} · {code}",
-  "@reserveModelCode": {
-    "placeholders": {
-      "model": {
-        "type": "String"
-      },
-      "code": {
-        "type": "String"
-      }
-    }
-  },
   "selectABike": "Selecione uma moto",
-  "walkSemantics": "{distance} a pé, {minutes} minutos",
-  "@walkSemantics": {
-    "placeholders": {
-      "distance": {
-        "type": "String"
-      },
-      "minutes": {
-        "type": "int"
-      }
-    }
-  },
   "rangeSemantics": "autonomia de cerca de {km} quilômetros",
   "@rangeSemantics": {
     "placeholders": {
@@ -523,7 +345,6 @@
       }
     }
   },
-  "selectedSemantics": "selecionada",
   "blockKycPending": "Você pode reservar depois da aprovação dos seus documentos.",
   "blockKycRejected": "Sua verificação foi recusada. Envie novos documentos em Conta.",
   "blockDelinquent": "Há um pagamento pendente. Regularize para reservar.",
@@ -532,21 +353,10 @@
   "pickEmptyModel": "Nenhuma moto deste modelo por perto",
   "pickEmptyModelText": "Escolha outro modelo ou veja todas.",
   "chooseBike": "Escolher moto",
-  "filterAll": "Todas",
-  "filterRange10": "Autonomia 10+ km",
-  "filterPickupPoints": "Pontos de retirada",
   "promoPassTitle": "Planos no galpão",
   "promoPassText": "Diária, semanal e mensal são contratados no balcão, com o contrato.",
   "promoFirstRideTitle": "1ª corrida grátis",
   "promoFirstRideText": "Até 15 minutos",
-  "yourLocationAt": "Sua localização · {place}",
-  "@yourLocationAt": {
-    "placeholders": {
-      "place": {
-        "type": "String"
-      }
-    }
-  },
   "nearYou": "Perto de você",
   "batterySemantics": "bateria {pct} por cento",
   "@batterySemantics": {
@@ -556,8 +366,6 @@
       }
     }
   },
-  "pickVehicleTaken": "Essa moto acabou de ser reservada. Escolha outra.",
-  "pickupZonesError": "Não conseguimos carregar os pontos de retirada.",
   "fareLabel": "Tarifa",
   "coverageBasicLong": "Seguro básico",
   "coverageFullLong": "Seguro completo",
@@ -571,7 +379,6 @@
   "addEmergencyContact": "Cadastrar contato de emergência",
   "noEmergencyContactHint": "Com um contato salvo, o link vai direto para ele.",
   "reportOnly": "Só reportar",
-  "swapNoFee": "Trocar de moto sem nova taxa",
   "returnPointTitle": "Ponto de devolução",
   "returnOutsideShort": "Fora dos pontos verdes",
   "returnCheckingShort": "Procurando pontos de devolução",
@@ -732,25 +539,6 @@
       }
     }
   },
-  "buyPackageText": "{minutes} minutos por {price}, pagos com Pix. Os minutos entram assim que o pagamento for confirmado.",
-  "@buyPackageText": {
-    "placeholders": {
-      "minutes": {
-        "type": "int"
-      },
-      "price": {
-        "type": "String"
-      }
-    }
-  },
-  "buyPackageTitle": "Comprar {name}?",
-  "@buyPackageTitle": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
   "chatAttach": "Anexar foto",
   "chatAttachments": "{count, plural, =1{1 foto anexada} other{{count} fotos anexadas}}",
   "@chatAttachments": {
@@ -801,7 +589,6 @@
   "claimSend": "Enviar sinistro",
   "claimTypeTitle": "O que aconteceu?",
   "consentsRow": "Consentimentos e privacidade",
-  "credits": "Créditos",
   "disputeDetailsLabel": "Detalhes (opcional)",
   "disputeOrClaim": "Contestar cobrança / sinistro",
   "disputeReasonLabel": "Motivo",
@@ -845,7 +632,6 @@
   "historyTitle": "Histórico e recibos",
   "kycNotVerified": "Não verificada",
   "kycVerified": "Verificada",
-  "minutePackage": "Pacote de minutos",
   "minutesDelta": "{minutes} min",
   "@minutesDelta": {
     "placeholders": {
@@ -854,23 +640,6 @@
       }
     }
   },
-  "noActivePlan": "Sem plano ativo · semanal ou mensal",
-  "payWithPix": "Pagar com Pix",
-  "perMonth": "/mês",
-  "perWeek": "/semana",
-  "pixExpired": "O Pix expirou. Gere um novo código.",
-  "pixExpiresAt": "Válido até {date}",
-  "@pixExpiresAt": {
-    "placeholders": {
-      "date": {
-        "type": "String"
-      }
-    }
-  },
-  "pixPayLater": "Pagar depois",
-  "pixQrLabel": "QR code do Pix",
-  "planMonthlyDescription": "Renova automaticamente, cancele quando quiser",
-  "planWeeklyDescription": "Renova automaticamente, cancele quando quiser",
   "remove": "Remover",
   "requestsClaims": "Sinistros",
   "requestsClaimsEmpty": "Nenhum sinistro aberto.",
@@ -887,47 +656,8 @@
   "statusRejected": "Recusado",
   "statusSubmitted": "Enviado",
   "statusUnderReview": "Em análise",
-  "subscribeCardHint": "Cobrança recorrente neste cartão",
-  "subscribeConfirm": "Assinar agora",
-  "subscribeConfirmTitle": "Assinar o {plan}",
-  "@subscribeConfirmTitle": {
-    "placeholders": {
-      "plan": {
-        "type": "String"
-      }
-    }
-  },
-  "subscribeContinue": "Continuar",
-  "subscribePriceMonthly": "{price} por mês",
-  "@subscribePriceMonthly": {
-    "placeholders": {
-      "price": {
-        "type": "String"
-      }
-    }
-  },
-  "subscribePriceWeekly": "{price} por semana",
-  "@subscribePriceWeekly": {
-    "placeholders": {
-      "price": {
-        "type": "String"
-      }
-    }
-  },
-  "subscribeRecurringMonthly": "Cobramos hoje e renovamos todo mês no cartão. Corridas no plano mensal não cobram tempo, só seguro e taxas. Cancele quando quiser.",
-  "subscribeRecurringWeekly": "Cobramos hoje e renovamos toda semana no cartão. Corridas no plano semanal não cobram tempo, só seguro e taxas. Cancele quando quiser.",
   "subscriptionActive": "Ativo",
   "subscriptionBenefit": "Corridas no plano não cobram tempo, só seguro e taxas",
-  "subscriptionCanceled": "Renovação cancelada",
-  "subscriptionCard": "Cartão {card}",
-  "@subscriptionCard": {
-    "placeholders": {
-      "card": {
-        "type": "String"
-      }
-    }
-  },
-  "subscriptionCreated": "Plano assinado",
   "subscriptionEndedOn": "Terminou em {date}",
   "@subscriptionEndedOn": {
     "placeholders": {
@@ -953,13 +683,10 @@
       }
     }
   },
-  "subscriptionNextCharge": "Próxima cobrança {date} · {price}",
-  "@subscriptionNextCharge": {
+  "subscriptionValidUntil": "Válido até {date}",
+  "@subscriptionValidUntil": {
     "placeholders": {
       "date": {
-        "type": "String"
-      },
-      "price": {
         "type": "String"
       }
     }
@@ -967,62 +694,12 @@
   "subscriptionPastDue": "Pagamento pendente",
   "subscriptionsPast": "Planos anteriores",
   "supportChat": "Chat com o suporte",
-  "topUpAmountError": "Escolha um valor entre R$ 10,00 e R$ 1.000,00",
-  "topUpAmountHint": "O crédito entra na carteira assim que o Pix for confirmado.",
-  "topUpAmountLabel": "Valor",
-  "topUpDone": "Carteira recarregada",
-  "topUpGeneratePix": "Gerar Pix de {amount}",
-  "@topUpGeneratePix": {
-    "placeholders": {
-      "amount": {
-        "type": "String"
-      }
-    }
-  },
-  "topUpGeneratePixDisabled": "Gerar Pix",
-  "topUpPaid": "Pix confirmado",
-  "topUpPaidAmount": "{amount} já estão na sua carteira.",
-  "@topUpPaidAmount": {
-    "placeholders": {
-      "amount": {
-        "type": "String"
-      }
-    }
-  },
-  "topUpPaidMinutes": "{minutes} minutos já estão na sua carteira.",
-  "@topUpPaidMinutes": {
-    "placeholders": {
-      "minutes": {
-        "type": "int"
-      }
-    }
-  },
-  "topUpPixText": "Pague {amount} com o QR ou o código copia e cola no app do seu banco.",
-  "@topUpPixText": {
-    "placeholders": {
-      "amount": {
-        "type": "String"
-      }
-    }
-  },
-  "topUpWallet": "Recarregar carteira",
   "trafficRules": "Regras de trânsito para autopropelidos",
   "trafficRulesTitle": "Regras de trânsito",
-  "walletAndPackages": "Carteira e pacotes de minutos",
   "walletLedgerEmpty": "Nenhum lançamento ainda.",
   "walletLedgerTitle": "Extrato",
   "emergencyConsentLabel": "Tenho autorização desta pessoa para receber minha localização em emergências",
   "emergencyConsentText": "Só compartilhamos sua localização com este contato quando você aciona o SOS. Confirme que a pessoa concorda em receber esses avisos.",
-  "pendingTopUpTitle": "Pix de {amount} aguardando pagamento",
-  "@pendingTopUpTitle": {
-    "placeholders": {
-      "amount": {
-        "type": "String"
-      }
-    }
-  },
-  "pendingTopUpText": "O saldo atualiza sozinho quando o pagamento for confirmado. Puxe a tela para baixo para conferir agora.",
-  "subscriptionPriceUnavailable": "Preço do plano indisponível agora. Tente de novo em instantes.",
   "welcomePhone": "Continuar com celular",
   "welcomeApple": "Apple",
   "welcomeAppleLabel": "Entrar com Apple",
@@ -1109,64 +786,12 @@
   "payCounterPaymentText": "Pague o plano (e a caução, quando houver) no balcão: maquininha, Pix ou dinheiro.",
   "payFinish": "Concluir cadastro",
   "onboardingSentToast": "Cadastro enviado. Verificação em até 2 min.",
-  "vehicleCategoryDefault": "Moto elétrica",
-  "pricePerMinutePlusFee": "{price}/min + taxa",
-  "@pricePerMinutePlusFee": {
-    "placeholders": {
-      "price": {
-        "type": "String"
-      }
-    }
-  },
-  "promoFirstRideBadge": "Grátis na 1ª corrida",
-  "hornAndFlash": "Buzinar e piscar",
-  "hornNeedsReservation": "Reserve a moto para buzinar e piscar.",
-  "navigate": "Navegar",
   "navigateFailed": "Não foi possível abrir o app de mapas.",
-  "promoCoupon": "Cupom promocional",
-  "couponSaved": "Cupom guardado. Ele entra na cotação do plano.",
-  "couponRemove": "Remover cupom",
-  "couponSave": "Guardar cupom",
   "scanQr": "Escanear QR",
   "reserve": "Reservar",
-  "reportVehicleSentText": "Recebemos o seu relato. Obrigado por avisar.",
   "reservationCanceled": "Reserva cancelada",
   "offlineTitle": "Sem conexão",
   "offlineText": "Tentando reconectar. Algumas ações podem falhar.",
-  "backOnline": "Conexão restabelecida",
-  "torch": "Lanterna",
-  "scanAimTitle": "Aponte para o QR no guidão",
-  "scanAimText": "Ou digite o número da moto.",
-  "vehicleFound": "Moto {code} encontrada",
-  "@vehicleFound": {
-    "placeholders": {
-      "code": {
-        "type": "String"
-      }
-    }
-  },
-  "lookingFor": "Procurando {code}",
-  "@lookingFor": {
-    "placeholders": {
-      "code": {
-        "type": "String"
-      }
-    }
-  },
-  "planSubtitle": "{code} · {model} · {pct}%",
-  "@planSubtitle": {
-    "placeholders": {
-      "code": {
-        "type": "String"
-      },
-      "model": {
-        "type": "String"
-      },
-      "pct": {
-        "type": "int"
-      }
-    }
-  },
   "perUnitShort": "/{unit}",
   "@perUnitShort": {
     "placeholders": {
@@ -1180,20 +805,6 @@
   "unitDayShort": "dia",
   "unitWeekShort": "semana",
   "unitMonthShort": "mês",
-  "perRental": "/aluguel",
-  "couponOrCredit": "Cupom ou crédito",
-  "walletCredits": "Créditos da carteira",
-  "walkRouteSemantics": "Rota a pé até a moto: {minutes} min, {distance}",
-  "@walkRouteSemantics": {
-    "placeholders": {
-      "minutes": {
-        "type": "int"
-      },
-      "distance": {
-        "type": "String"
-      }
-    }
-  },
   "thanksForRiding": "Obrigado por andar de Volti",
   "depotCardTitle": "Galpão Volti · {district}",
   "@depotCardTitle": {
@@ -1263,17 +874,6 @@
     }
   },
   "depotPicker": "Escolha o galpão",
-  "depotOptionSemantics": "{name}, {distance}",
-  "@depotOptionSemantics": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      },
-      "distance": {
-        "type": "String"
-      }
-    }
-  },
   "depotPinSemantics": "Galpão {name}",
   "@depotPinSemantics": {
     "placeholders": {
@@ -1302,9 +902,6 @@
   },
   "pickDepotEmpty": "Nenhuma moto no galpão agora",
   "pickDepotEmptyText": "Volte mais tarde ou escolha outro galpão.",
-  "planOtherOptions": "Outras opções",
-  "planRenews": "Renova automaticamente, cancele quando quiser",
-  "planChargedAtPickup": "O plano é acertado no fim do aluguel; a caução fica como garantia.",
   "vehicleModelCode": "{model} · {code}",
   "@vehicleModelCode": {
     "placeholders": {
@@ -1317,7 +914,6 @@
     }
   },
   "insuranceTitle": "Seguro",
-  "insuranceSubtitle": "O básico já vem incluído. O completo é opcional.",
   "pickupTitle": "Retirada",
   "pickupNow": "Retirar agora",
   "pickupNowUntil": "Até {time}",
@@ -1335,8 +931,6 @@
   "pickupTime": "Horário",
   "pickupNoSlots": "Sem horários neste dia",
   "pickupChooseTime": "Escolha um horário",
-  "pickupPlan": "Plano",
-  "pickupDepositNote": "Confirmar bloqueia só a caução. O plano é acertado no fim do aluguel; a caução fica como garantia.",
   "pickupPreReserveTitle": "Pré-reserva",
   "pickupPreReserve": "Pré-reservar",
   "pickupVehicleLine": "Moto",
@@ -1345,15 +939,15 @@
   "pickupReferencePrices": "Preços de referência; o plano é escolhido no galpão",
   "pickupInsuranceLine": "Seguro {name}",
   "@pickupInsuranceLine": {"placeholders": {"name": {"type": "String"}}},
+  "pickupConsentRequired": "Sem o consentimento de localização não dá para pré-reservar.",
   "pickupLocationConsentTitle": "Permitir localização durante o aluguel",
   "cancelPreReservationFree": "Cancelar (grátis)",
   "handoverCounterNote": "O atendente inicia o aluguel depois do contrato e do pagamento no balcão. A corrida abre aqui sozinha.",
   "pickupDebtAtCounter": "Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.",
-  "confirmReservation": "Confirmar reserva",
   "vehicleJustTaken": "Essa moto acabou de ser reservada",
   "depotReservationTitle": "Pré-reserva confirmada",
   "reservationQrHint": "Mostre este código no galpão",
-  "reservationQrLabel": "QR da reserva",
+  "reservationQrLabel": "QR da pré-reserva",
   "reservationPickupUntil": "Retire até {time}",
   "@reservationPickupUntil": {
     "placeholders": {
@@ -1389,12 +983,9 @@
   "cancelReservationText": "O cancelamento é grátis.",
   "keepReservation": "Manter pré-reserva",
   "reservationInHandover": "Sua moto está sendo preparada no galpão.",
-  "reservationPixPending": "Pague a caução por Pix para garantir a moto.",
-  "payPixDeposit": "Pagar caução Pix",
   "reservationNotFound": "Reserva não encontrada",
   "reservationNotFoundText": "Ela pode ter sido cancelada ou expirado.",
   "goHome": "Ir para o início",
-  "planNeedsCard": "Adicione um cartão ou escolha Pix para a caução.",
   "returnLockTitle": "Trave e encerre",
   "returnInsideRule": "Parece que a moto está num ponto verde. Se estiver, dá para encerrar sem taxa.",
   "returnOutsideRejected": "A moto precisa estar dentro da área verde para encerrar (vale a posição da moto, não a do seu celular). Leve a moto até lá ou devolva no galpão. Encerrar fora da área só com o suporte, com taxa.",
@@ -1462,18 +1053,7 @@
   "handoverItemBuzina": "Buzina",
   "handoverItemPainel": "Painel",
   "handoverItemCarenagem": "Carenagem",
-  "handoverStartsNow": "Ao aceitar, o aluguel começa agora e a moto destrava. O plano é acertado no fim do aluguel, com a caução como garantia.",
-  "handoverAccept": "Aceitar e destravar",
-  "handoverReport": "Apontar problema",
-  "handoverPaymentDeclined": "O pagamento não foi aprovado. Tente de novo ou fale com o operador.",
-  "handoverDepositNotHeld": "A caução da reserva não está retida. Fale com o suporte.",
-  "handoverAcceptFailed": "Não foi possível aceitar agora. Tente de novo ou fale com o operador.",
   "handoverNotFound": "Essa entrega não foi encontrada.",
-  "handoverDisputeTitle": "Apontar problema",
-  "handoverDisputeText": "Conte o que está errado. O suporte recebe junto com as fotos da saída.",
-  "handoverDisputeLabel": "O que está errado com a moto?",
-  "handoverDisputeHint": "Ex.: retrovisor quebrado",
-  "handoverDisputeSend": "Enviar ao suporte",
   "handoverDisputedTitle": "Problema apontado",
   "handoverDisputedText": "O suporte vai falar com você.",
   "handoverDisputedReason": "Você disse: {reason}",
@@ -1632,7 +1212,7 @@
       }
     }
   },
-  "homeReservationA11yNow": "Reserva da {vehicle}, retire até {time}",
+  "homeReservationA11yNow": "Pré-reserva da {vehicle}, retire até {time}",
   "@homeReservationA11yNow": {
     "placeholders": {
       "vehicle": {
@@ -1643,7 +1223,7 @@
       }
     }
   },
-  "homeReservationA11yScheduled": "Reserva da {vehicle}, retirada agendada {day} às {time}",
+  "homeReservationA11yScheduled": "Pré-reserva da {vehicle}, retirada agendada {day} às {time}",
   "@homeReservationA11yScheduled": {
     "placeholders": {
       "vehicle": {
@@ -1665,7 +1245,7 @@
       }
     }
   },
-  "homeReservationA11yExpired": "Reserva da {vehicle}, o prazo de retirada acabou",
+  "homeReservationA11yExpired": "Pré-reserva da {vehicle}, o prazo de retirada acabou",
   "@homeReservationA11yExpired": {
     "placeholders": {
       "vehicle": {
@@ -1840,11 +1420,6 @@
   "returnSwapOpenAction": "Continuar troca",
   "termsOfUse": "Termos de uso",
   "privacyPolicy": "Política de privacidade",
-  "couponUpTo": "até {amount}",
-  "@couponUpTo": {"placeholders": {"amount": {"type": "String"}}},
-  "couponPercentOfTime": "-{percent}% do tempo",
-  "@couponPercentOfTime": {"placeholders": {"percent": {"type": "int"}}},
-  "couponClosingNote": "O desconto é aplicado no fechamento do aluguel, limitado ao valor do tempo de uso.",
   "fixCpf": "Corrigir CPF",
   "cpfAlreadyUsed": "Este CPF já está cadastrado em outra conta.",
   "dayChipEnded": "{label} · Encerrado",
@@ -1852,22 +1427,14 @@
   "dayChipUnavailable": "{label} · Indisponível",
   "@dayChipUnavailable": {"placeholders": {"label": {"type": "String"}}},
   "accountUnread": "Conta, mensagens novas do suporte",
-  "payNow": "Pagar agora",
-  "paymentPendingTitle": "Pagamento pendente",
-  "paymentPendingHomeText": "{amount} em aberto. Pague para alugar de novo.",
-  "@paymentPendingHomeText": {"placeholders": {"amount": {"type": "String"}}},
   "paymentProcessingHomeTitle": "Cobrança em andamento",
   "paymentProcessingHomeText": "Estamos processando a cobrança da sua última corrida. Assim que concluir, você poderá reservar de novo.",
-  "paymentPendingBlock": "Pague o valor pendente para alugar de novo.",
   "receiptPaymentLabel": "Pagamento",
   "receiptStatusPaid": "Pago",
   "receiptStatusPending": "Pendente",
   "receiptStatusProcessing": "Processando",
   "receiptDepositUsed": "Caução usada",
   "receiptDepositReleased": "Caução devolvida",
-  "receiptAmountDue": "A acertar no galpão",
-  "receiptPendingText": "Não conseguimos cobrar {amount}. Pague com Pix para liberar o recibo e novos aluguéis.",
-  "@receiptPendingText": {"placeholders": {"amount": {"type": "String"}}},
   "receiptProcessingText": "Estamos confirmando o pagamento. O recibo fica pronto em seguida.",
   "receiptAwaitingPayment": "A acertar no galpão",
   "receiptPdfAfterPayment": "O recibo fica disponível depois do acerto no galpão.",
@@ -1875,11 +1442,6 @@
   "@rideFinishedDepositUsed": {"placeholders": {"amount": {"type": "String"}}},
   "rideFinishedPending": "Moto travada. O valor restante é acertado no galpão.",
   "rideFinishedProcessing": "Moto travada. Pagamento em processamento.",
-  "debtPixTitle": "Pague a pendência com Pix",
-  "debtPixText": "Pague {amount} com o QR ou o código copia e cola no app do seu banco.",
-  "@debtPixText": {"placeholders": {"amount": {"type": "String"}}},
-  "debtPaid": "Pendência paga",
-  "debtPaidText": "Pronto! Você já pode alugar de novo.",
   "sheetExpand": "Expandir",
   "sheetCollapse": "Recolher",
   "sheetHandleHint": "Arraste para cima ou para baixo",
@@ -1895,9 +1457,6 @@
   "depotDirectionsSemantics": "Como chegar ao {name}",
   "@depotDirectionsSemantics": {"placeholders": {"name": {"type": "String"}}},
   "cardsTitle": "Cartões",
-  "cardsRowSubtitle": "Padrão: {card}",
-  "@cardsRowSubtitle": {"placeholders": {"card": {"type": "String"}}},
-  "cardsRowEmpty": "Nenhum cartão salvo",
   "cardsDefaultHint": "O cartão padrão é usado na caução, no plano e nas recargas quando você não escolhe outro.",
   "cardsDefaultBadge": "Padrão",
   "cardsMakeDefault": "Tornar padrão",
@@ -1948,8 +1507,6 @@
   "returnNoGps": "Ela só trava quando o GPS confirma que está parada. Leve a moto para um lugar aberto, com céu visível, antes de encerrar.",
   "endRevertedNoGps": "A moto não travou porque está sem sinal de GPS. Leve-a para um lugar aberto, com céu visível, e encerre de novo. Se não der, fale com o suporte.",
   "retryEnd": "Tentar encerrar de novo",
-  "handoverUnlocking": "Destravando a moto… pode levar até 30 s",
-  "handoverUnlockSlow": "A moto ainda está destravando. Aguarde um pouco e confira de novo.",
   "errorTimeout": "A resposta demorou mais que o esperado. Confira em instantes.",
   "readOnlyCounterNotice": "Fale com o galpão para usar ou cancelar",
   "counterDebtTitle": "Valor a acertar no galpão: {amount}",

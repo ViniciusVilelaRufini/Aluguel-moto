@@ -81,6 +81,17 @@ class _BalcaoBackend extends GalpaoBackend {
   Rental? rentalNow;
   final createErrors = <Object>[];
   final testHandoverCalls = <String>[];
+  /// Quantas leituras de `coverages` falham antes de responder.
+  int coveragesFailures = 0;
+
+  @override
+  Future<List<InsuranceCoverageOption>> coverages() async {
+    if (coveragesFailures > 0) {
+      coveragesFailures--;
+      throw AppFailure(kind: FailureKind.network);
+    }
+    return super.coverages();
+  }
 
   @override
   Future<Reservation> createDepotReservation(ReservationCreate request, {String? idempotencyKey}) async {
@@ -322,6 +333,35 @@ void main() {
       expect(_where(router), '/reservation/res1');
     });
 
+
+    testWidgets('403 location-consent-required e depois recusar explica que sem consentimento não dá para pré-reservar', (t) async {
+      _phone(t);
+      final b = _BalcaoBackend()..createErrors.add(_problem(403, 'location-consent-required'));
+      final router = await _pump(t, b, extra: _selection());
+      await _tapKey(t, 'pickup-pre-reserve');
+      expect(find.byKey(const Key('pickup-consent-dialog')), findsOneWidget);
+      await _tapText(t, 'Agora não');
+      expect(find.text('Sem o consentimento de localização não dá para pré-reservar.'), findsOneWidget);
+      expect(b.creates, 1);
+      expect(_where(router), '/pickup');
+    });
+
+    testWidgets('falha ao carregar os seguros mostra o erro com Tentar de novo e recarrega', (t) async {
+      _phone(t);
+      final b = _BalcaoBackend()..coveragesFailures = 1;
+      await _pump(t, b, extra: _selection());
+      await t.scrollUntilVisible(find.byKey(const Key('pickup-reference-prices')), 200, scrollable: find.byType(Scrollable).first);
+      final box = find.byKey(const Key('pickup-reference-prices'));
+      expect(find.descendant(of: box, matching: find.text('Tentar de novo')), findsOneWidget);
+      expect(find.byKey(const Key('pickup-price-insurance')), findsNothing);
+      await t.ensureVisible(find.descendant(of: box, matching: find.text('Tentar de novo')));
+      await t.pump();
+      await t.tap(find.descendant(of: box, matching: find.text('Tentar de novo')));
+      await t.pumpAndSettle();
+      expect(find.byKey(const Key('pickup-price-insurance')), findsOneWidget);
+      expect(find.descendant(of: box, matching: find.text('Tentar de novo')), findsNothing);
+
+    });
     testWidgets('escolher moto vai direto para a pré-reserva', (t) async {
       _phone(t);
       final router = await _pump(t, _BalcaoBackend(), initial: '/pick');

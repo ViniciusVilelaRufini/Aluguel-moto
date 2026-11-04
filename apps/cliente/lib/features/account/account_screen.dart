@@ -53,7 +53,7 @@ class AccountScreen extends ConsumerWidget {
                   title: subscriptionName(context, active.planCode),
                   subtitle: active.cancelAtPeriodEnd == true
                       ? l.subscriptionEndsOn(formatDaySp(active.currentPeriodEnd))
-                      : l.subscriptionNextCharge(formatDaySp(active.currentPeriodEnd), money(active.priceCents)),
+                      : l.subscriptionValidUntil(formatDaySp(active.currentPeriodEnd)),
                   trailing: ListRowTrailing.chevron,
                   onTap: () => context.push('/account/subscriptions'),
                 ),

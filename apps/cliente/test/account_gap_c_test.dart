@@ -239,15 +239,16 @@ void main() {
   });
 
   group('F3/A6 plano (so leitura no balcao)', () {
-    testWidgets('com plano: proxima cobranca e cartao, sem cancelar a renovacao', (t) async {
+    testWidgets('com plano: validade, sem cobranca nem cartao nem cancelar a renovacao', (t) async {
       tallScreen(t);
       final backend = AccountBackend()..subs = [_sub()];
       await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
       await t.pumpAndSettle();
       expect(find.text('Plano semanal'), findsOneWidget);
       expect(find.text('Ativo'), findsOneWidget);
-      expect(find.text('Próxima cobrança 28/10 · R\$ 249,00'), findsOneWidget);
-      expect(find.text('Cartão Visa •••• 4821'), findsOneWidget);
+      expect(find.text('Válido até 28/10'), findsOneWidget);
+      expect(find.textContaining('Próxima cobrança'), findsNothing);
+      expect(find.textContaining('Cartão'), findsNothing);
       expect(find.text('Cancelar renovação'), findsNothing);
       expect(find.text('Fale com o galpão para usar ou cancelar'), findsOneWidget);
     });
@@ -349,7 +350,7 @@ void main() {
         expect(find.text(g), findsOneWidget, reason: g);
       }
       expect(find.text('Plano semanal'), findsOneWidget);
-      expect(find.text('Próxima cobrança 28/10 · R\$ 249,00'), findsOneWidget);
+      expect(find.text('Válido até 28/10'), findsOneWidget);
       expect(find.text('Histórico e recibos'), findsOneWidget);
       expect(find.text('1'), findsOneWidget); // contagem do historico
       expect(find.text('Contestar cobrança / sinistro'), findsOneWidget);

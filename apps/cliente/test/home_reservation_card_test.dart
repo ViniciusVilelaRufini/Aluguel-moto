@@ -313,9 +313,9 @@ void main() {
       var now = DateTime.utc(2026, 10, 22, 17);
       final b = GalpaoBackend()..current = res();
       await pumpHome(t, b, clock: () => now);
-      expect(find.bySemanticsLabel('Reserva da Volti Urbana VLT-0026, retire até 15:28'), findsOneWidget);
+      expect(find.bySemanticsLabel('Pré-reserva da Volti Urbana VLT-0026, retire até 15:28'), findsOneWidget);
       final node = t.getSemantics(find.byKey(const Key('home-reservation-card')));
-      expect(node.label, contains('Reserva da Volti Urbana VLT-0026, retire até 15:28'));
+      expect(node.label, contains('Pré-reserva da Volti Urbana VLT-0026, retire até 15:28'));
       expect(find.bySemanticsLabel('Faltam 88 minutos'), findsOneWidget);
       // O texto por segundo nao vai para o leitor de tela.
       expect(find.bySemanticsLabel('1:28:00'), findsNothing);
@@ -335,7 +335,7 @@ void main() {
         GalpaoBackend()..current = res(mode: PickupMode.scheduled, pickupAt: at, expiresAt: at.add(const Duration(minutes: 30))),
         clock: () => DateTime.utc(2026, 10, 22, 17),
       );
-      expect(find.bySemanticsLabel('Reserva da Volti Urbana VLT-0026, retirada agendada amanhã às 09:00'), findsOneWidget);
+      expect(find.bySemanticsLabel('Pré-reserva da Volti Urbana VLT-0026, retirada agendada amanhã às 09:00'), findsOneWidget);
       await t.pumpWidget(const SizedBox());
       await pumpHome(
         t,

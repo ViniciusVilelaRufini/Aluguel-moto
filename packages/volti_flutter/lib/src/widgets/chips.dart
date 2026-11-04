@@ -128,37 +128,36 @@ class PassCard extends StatelessWidget {
       PassCardTone.sky => (p.surfaceMedia, p.onSurfaceMedia),
       PassCardTone.coral => (p.dangerSoft, p.dangerInk),
     };
-    return VoltiPressable(
-      onTap: onTap,
-      scale: .96,
-      semanticLabel: subtitle == null ? title : '$title. $subtitle',
-      child: DecoratedBox(
-        decoration: const BoxDecoration(borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
-        child: ClipRRect(
-          borderRadius: VoltiRadii.rLg,
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: VoltiShadows.glassBlur, sigmaY: VoltiShadows.glassBlur),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(8, 8, 18, 8),
-              color: p.glassBg,
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
-                  child: Icon(icon, size: 22, color: fg),
-                ),
-                const SizedBox(width: 12),
-                Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(title, maxLines: 1, style: VoltiTypography.label.copyWith(color: scheme.onSurface)),
-                  if (subtitle != null)
-                    Text(subtitle!, maxLines: 1, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
-                ]),
+    final label = subtitle == null ? title : '$title. $subtitle';
+    final card = DecoratedBox(
+      decoration: const BoxDecoration(borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
+      child: ClipRRect(
+        borderRadius: VoltiRadii.rLg,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: VoltiShadows.glassBlur, sigmaY: VoltiShadows.glassBlur),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(8, 8, 18, 8),
+            color: p.glassBg,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
+                child: Icon(icon, size: 22, color: fg),
+              ),
+              const SizedBox(width: 12),
+              Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, maxLines: 1, style: VoltiTypography.label.copyWith(color: scheme.onSurface)),
+                if (subtitle != null)
+                  Text(subtitle!, maxLines: 1, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
               ]),
-            ),
+            ]),
           ),
         ),
       ),
     );
+    // Sem onTap e so informacao: um no de texto, nao um botao desabilitado.
+    if (onTap == null) return Semantics(container: true, label: label, excludeSemantics: true, child: card);
+    return VoltiPressable(onTap: onTap, scale: .96, semanticLabel: label, child: card);
   }
 }

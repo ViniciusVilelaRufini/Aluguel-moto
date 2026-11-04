@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -156,7 +157,7 @@ Rental counterRental({int costCents = 0, bool withBreakdown = true}) => sampleRe
 
 late PagamentosBackend backend;
 
-Future<void> _pump(WidgetTester t, Widget child, {DateTime? now}) async {
+Future<void> _pump(WidgetTester t, Widget child, {DateTime? now, DateTime Function()? clock}) async {
   tallScreen(t);
   await t.pumpWidget(testApp(child, overrides: [
     backendProvider.overrideWithValue(backend),
@@ -165,6 +166,7 @@ Future<void> _pump(WidgetTester t, Widget child, {DateTime? now}) async {
     locationServiceProvider.overrideWithValue(FakeLocation()),
     rentalTrackProvider.overrideWith((ref, id) async => const []),
     if (now != null) clockProvider.overrideWithValue(() => now),
+    if (clock != null) clockProvider.overrideWithValue(clock),
   ]));
   await t.pump();
   await t.pump(const Duration(milliseconds: 50));
@@ -279,6 +281,26 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
 
+    testWidgets('pausado: a faixa muda de fase com o relógio (running → ending → over)', (t) async {
+      // Pausado, o timer de 1 s nao chama _syncElapsed; so a mudanca de fase refaz a tela.
+      backend.rentalValue = counterRental(costCents: 6000).rebuild((b) => b.status = RentalStatus.paused);
+      var now = _until.subtract(const Duration(hours: 3));
+      await _pump(t, const RideScreen(), clock: () => now);
+      expect(find.byKey(const Key('ride-prepaid-until')), findsOneWidget);
+      expect(find.byKey(const Key('ride-prepaid-ending')), findsNothing);
+
+      now = _until.subtract(const Duration(minutes: 59));
+      await t.pump(const Duration(seconds: 2));
+      expect(find.byKey(const Key('ride-prepaid-ending')), findsOneWidget);
+      expect(find.byKey(const Key('ride-prepaid-until')), findsNothing);
+
+      now = _until.add(const Duration(minutes: 1));
+      await t.pump(const Duration(seconds: 2));
+      expect(find.byKey(const Key('ride-prepaid-over')), findsOneWidget);
+      expect(find.byKey(const Key('ride-prepaid-ending')), findsNothing);
+      await t.pumpWidget(const SizedBox());
+    });
+
     testWidgets('periodo sem o pre-pago no breakdown esconde a metrica de custo', (t) async {
       backend.rentalValue = counterRental(withBreakdown: false);
       await _pump(t, const RideScreen(), now: _until.subtract(const Duration(minutes: 30)));
@@ -390,6 +412,21 @@ void main() {
       expect(debts.map((p) => p.id), ['f1', 'p1']);
       expect(adapter.statuses, containsAll(['failed', 'pending']));
     });
+
+    test('pede failed e pending em paralelo e mantém a ordem (mais antigas primeiro)', () async {
+      final adapter = _PaymentsAdapter({
+        'failed': [_json('f1', 'card', 'failed', 2500, '2026-11-01T10:00:00Z')],
+        'pending': [_json('p1', 'cash', 'pending', 6000, '2026-10-20T10:00:00Z')],
+      })
+        ..failedGate = Completer<void>();
+      final api = ApiBackend(buildVoltiApi(baseUrl: 'http://x', auth: _StubAuth(), httpClientAdapter: adapter, maxAttempts: 1));
+      final future = api.openDebts();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      // `failed` ainda nao respondeu e `pending` ja foi pedido.
+      expect(adapter.statuses, containsAll(['failed', 'pending']));
+      adapter.failedGate!.complete();
+      expect((await future).map((p) => p.id), ['p1', 'f1']);
+    });
   });
 }
 
@@ -409,11 +446,14 @@ Map<String, Object?> _json(String id, String method, String status, int? outstan
 class _PaymentsAdapter implements HttpClientAdapter {
   _PaymentsAdapter(this.byStatus);
   final Map<String, List<Map<String, Object?>>> byStatus;
+  /// Segura a resposta de `failed` ate completar (prova que `pending` ja foi pedido).
+  Completer<void>? failedGate;
   final statuses = <String>[];
   @override
   Future<ResponseBody> fetch(RequestOptions o, Stream<Uint8List>? s, Future<void>? c) async {
     final status = o.uri.queryParameters['status'] ?? '';
     statuses.add(status);
+    if (status == 'failed') await failedGate?.future;
     return ResponseBody.fromString(jsonEncode({'items': byStatus[status] ?? const []}), 200, headers: {
       Headers.contentTypeHeader: ['application/json'],
     });

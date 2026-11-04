@@ -178,23 +178,11 @@ abstract class AppLocalizations {
   /// **'Permitir e continuar'**
   String get allowAndContinue;
 
-  /// No description provided for @apply.
-  ///
-  /// In pt, this message translates to:
-  /// **'Aplicar'**
-  String get apply;
-
   /// No description provided for @back.
   ///
   /// In pt, this message translates to:
   /// **'Voltar'**
   String get back;
-
-  /// No description provided for @backToMap.
-  ///
-  /// In pt, this message translates to:
-  /// **'Voltar ao mapa'**
-  String get backToMap;
 
   /// No description provided for @backToRide.
   ///
@@ -274,12 +262,6 @@ abstract class AppLocalizations {
   /// **'Ligar para a Polícia, telefone 190'**
   String get callPoliceSemantics;
 
-  /// No description provided for @cameraUnavailable.
-  ///
-  /// In pt, this message translates to:
-  /// **'Não foi possível abrir a câmera. Digite o número da moto.'**
-  String get cameraUnavailable;
-
   /// No description provided for @cancel.
   ///
   /// In pt, this message translates to:
@@ -291,24 +273,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Estacione numa área verde do mapa antes de encerrar.'**
   String get checkReturnText;
-
-  /// No description provided for @checkReturnTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Confira o ponto de devolução'**
-  String get checkReturnTitle;
-
-  /// No description provided for @chooseInsurance.
-  ///
-  /// In pt, this message translates to:
-  /// **'Escolha o seguro'**
-  String get chooseInsurance;
-
-  /// No description provided for @choosePlan.
-  ///
-  /// In pt, this message translates to:
-  /// **'Escolha o plano'**
-  String get choosePlan;
 
   /// No description provided for @claimAccident.
   ///
@@ -370,12 +334,6 @@ abstract class AppLocalizations {
   /// **'Entrar com e-mail'**
   String get continueWithEmail;
 
-  /// No description provided for @copyPixCode.
-  ///
-  /// In pt, this message translates to:
-  /// **'Copiar código Pix'**
-  String get copyPixCode;
-
   /// No description provided for @coupon.
   ///
   /// In pt, this message translates to:
@@ -394,29 +352,11 @@ abstract class AppLocalizations {
   /// **'Código do cupom'**
   String get couponHint;
 
-  /// No description provided for @couponInvalid.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cupom inválido ou expirado'**
-  String get couponInvalid;
-
   /// No description provided for @coverage.
   ///
   /// In pt, this message translates to:
   /// **'Seguro'**
   String get coverage;
-
-  /// No description provided for @coverageBasic.
-  ///
-  /// In pt, this message translates to:
-  /// **'Básico'**
-  String get coverageBasic;
-
-  /// No description provided for @coverageFull.
-  ///
-  /// In pt, this message translates to:
-  /// **'Completo'**
-  String get coverageFull;
 
   /// No description provided for @cpf.
   ///
@@ -466,12 +406,6 @@ abstract class AppLocalizations {
   /// **'Caução'**
   String get deposit;
 
-  /// No description provided for @blockedNow.
-  ///
-  /// In pt, this message translates to:
-  /// **'Bloqueado agora (caução)'**
-  String get blockedNow;
-
   /// No description provided for @pickupWhenLine.
   ///
   /// In pt, this message translates to:
@@ -484,23 +418,11 @@ abstract class AppLocalizations {
   /// **'{weekday} {date} às {time}'**
   String pickupWhenValue(String weekday, String date, String time);
 
-  /// No description provided for @depositAmount.
-  ///
-  /// In pt, this message translates to:
-  /// **'Caução (devolvida)'**
-  String get depositAmount;
-
   /// No description provided for @depositHint.
   ///
   /// In pt, this message translates to:
   /// **'A caução cobre o valor da corrida; o que sobrar volta para você.'**
   String get depositHint;
-
-  /// No description provided for @discount.
-  ///
-  /// In pt, this message translates to:
-  /// **'Desconto'**
-  String get discount;
 
   /// No description provided for @disputeCharge.
   ///
@@ -573,12 +495,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'E-mail'**
   String get email;
-
-  /// No description provided for @endRide.
-  ///
-  /// In pt, this message translates to:
-  /// **'Encerrar corrida'**
-  String get endRide;
 
   /// No description provided for @endRideText.
   ///
@@ -724,12 +640,6 @@ abstract class AppLocalizations {
   /// **'Sua sessão expirou. Entre de novo.'**
   String get errorUnauthorized;
 
-  /// No description provided for @estimatedTotal.
-  ///
-  /// In pt, this message translates to:
-  /// **'Total estimado'**
-  String get estimatedTotal;
-
   /// No description provided for @exportData.
   ///
   /// In pt, this message translates to:
@@ -741,12 +651,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Taxas'**
   String get fees;
-
-  /// No description provided for @filterBattery.
-  ///
-  /// In pt, this message translates to:
-  /// **'Bateria acima de 50%'**
-  String get filterBattery;
 
   /// No description provided for @fullName.
   ///
@@ -862,29 +766,11 @@ abstract class AppLocalizations {
   /// **'Incluído'**
   String get included;
 
-  /// No description provided for @insideReturnText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Você pode encerrar a corrida aqui.'**
-  String get insideReturnText;
-
-  /// No description provided for @insideReturnTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Ponto de devolução'**
-  String get insideReturnTitle;
-
   /// No description provided for @insurance.
   ///
   /// In pt, this message translates to:
   /// **'Seguro'**
   String get insurance;
-
-  /// No description provided for @kycApprovedShort.
-  ///
-  /// In pt, this message translates to:
-  /// **'Aprovada'**
-  String get kycApprovedShort;
 
   /// No description provided for @kycApprovedText.
   ///
@@ -982,18 +868,6 @@ abstract class AppLocalizations {
   /// **'Para andar, precisamos da sua localização durante o aluguel. Ela só é usada com uma corrida ativa.'**
   String get locationConsentText;
 
-  /// No description provided for @locationConsentTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Permitir localização?'**
-  String get locationConsentTitle;
-
-  /// No description provided for @lockedBye.
-  ///
-  /// In pt, this message translates to:
-  /// **'Moto travada. Até a próxima!'**
-  String get lockedBye;
-
   /// No description provided for @loginCognitoPending.
   ///
   /// In pt, this message translates to:
@@ -1024,12 +898,6 @@ abstract class AppLocalizations {
   /// **'Mensagem'**
   String get message;
 
-  /// No description provided for @minutePackages.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pacotes de minutos'**
-  String get minutePackages;
-
   /// No description provided for @myPlan.
   ///
   /// In pt, this message translates to:
@@ -1048,30 +916,6 @@ abstract class AppLocalizations {
   /// **'Nova conversa'**
   String get newConversation;
 
-  /// No description provided for @noCard.
-  ///
-  /// In pt, this message translates to:
-  /// **'Nenhum cartão salvo'**
-  String get noCard;
-
-  /// No description provided for @noKmNotice.
-  ///
-  /// In pt, this message translates to:
-  /// **'Você paga pelo tempo de uso. Não cobramos nem mostramos km rodados.'**
-  String get noKmNotice;
-
-  /// No description provided for @noReservation.
-  ///
-  /// In pt, this message translates to:
-  /// **'Nenhuma reserva ativa'**
-  String get noReservation;
-
-  /// No description provided for @noVehiclesNearby.
-  ///
-  /// In pt, this message translates to:
-  /// **'Nenhuma moto por perto agora'**
-  String get noVehiclesNearby;
-
   /// No description provided for @notNow.
   ///
   /// In pt, this message translates to:
@@ -1083,18 +927,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Abrir sinistro'**
   String get openClaim;
-
-  /// No description provided for @outsideReturnText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Estacione numa área verde para encerrar.'**
-  String get outsideReturnText;
-
-  /// No description provided for @outsideReturnTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Fora do ponto de devolução'**
-  String get outsideReturnTitle;
 
   /// No description provided for @pause.
   ///
@@ -1113,42 +945,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Confirmar e destravar'**
   String get payAndUnlock;
-
-  /// No description provided for @payTest.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pagamento de teste'**
-  String get payTest;
-
-  /// No description provided for @payTestHint.
-  ///
-  /// In pt, this message translates to:
-  /// **'Aprova na hora · só na versão de teste'**
-  String get payTestHint;
-
-  /// No description provided for @pixCopied.
-  ///
-  /// In pt, this message translates to:
-  /// **'Código Pix copiado'**
-  String get pixCopied;
-
-  /// No description provided for @pixFailed.
-  ///
-  /// In pt, this message translates to:
-  /// **'O Pix não foi concluído. Tente de novo.'**
-  String get pixFailed;
-
-  /// No description provided for @pixTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pague com Pix'**
-  String get pixTitle;
-
-  /// No description provided for @pixWaiting.
-  ///
-  /// In pt, this message translates to:
-  /// **'Aguardando o pagamento…'**
-  String get pixWaiting;
 
   /// No description provided for @planMonthly.
   ///
@@ -1210,12 +1006,6 @@ abstract class AppLocalizations {
   /// **'Pneu'**
   String get problemTire;
 
-  /// No description provided for @rateRide.
-  ///
-  /// In pt, this message translates to:
-  /// **'Como foi a corrida?'**
-  String get rateRide;
-
   /// No description provided for @refreshStatus.
   ///
   /// In pt, this message translates to:
@@ -1246,12 +1036,6 @@ abstract class AppLocalizations {
   /// **'Reportar problema'**
   String get reportProblem;
 
-  /// No description provided for @reportSentText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Recebemos o seu relato. Quer trocar de moto sem nova taxa?'**
-  String get reportSentText;
-
   /// No description provided for @reportSentTitle.
   ///
   /// In pt, this message translates to:
@@ -1270,36 +1054,6 @@ abstract class AppLocalizations {
   /// **'Moto reservada'**
   String get reservationActive;
 
-  /// No description provided for @reservationExpiredText.
-  ///
-  /// In pt, this message translates to:
-  /// **'A moto voltou a ficar disponível. Escolha outra no mapa.'**
-  String get reservationExpiredText;
-
-  /// No description provided for @reservationExpiredTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Reserva expirada'**
-  String get reservationExpiredTitle;
-
-  /// No description provided for @reservationTimeLeft.
-  ///
-  /// In pt, this message translates to:
-  /// **'Tempo de reserva restante'**
-  String get reservationTimeLeft;
-
-  /// No description provided for @reserve15.
-  ///
-  /// In pt, this message translates to:
-  /// **'Reservar por 15 min'**
-  String get reserve15;
-
-  /// No description provided for @reservedTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Moto reservada'**
-  String get reservedTitle;
-
   /// No description provided for @resume.
   ///
   /// In pt, this message translates to:
@@ -1311,30 +1065,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Tentar de novo'**
   String get retry;
-
-  /// No description provided for @returnPhoto.
-  ///
-  /// In pt, this message translates to:
-  /// **'Foto da moto estacionada'**
-  String get returnPhoto;
-
-  /// No description provided for @returnPhotoHint.
-  ///
-  /// In pt, this message translates to:
-  /// **'Mostre a moto inteira e o entorno'**
-  String get returnPhotoHint;
-
-  /// No description provided for @returnPhotoText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Tire uma foto da moto estacionada. Ela é obrigatória para encerrar.'**
-  String get returnPhotoText;
-
-  /// No description provided for @returnTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Devolver moto'**
-  String get returnTitle;
 
   /// No description provided for @returnVehicle.
   ///
@@ -1359,42 +1089,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Corrida'**
   String get rideTitle;
-
-  /// No description provided for @ringHorn.
-  ///
-  /// In pt, this message translates to:
-  /// **'Piscar e buzinar'**
-  String get ringHorn;
-
-  /// No description provided for @ringSent.
-  ///
-  /// In pt, this message translates to:
-  /// **'Sinal enviado. Procure a moto piscando.'**
-  String get ringSent;
-
-  /// No description provided for @scanCameraSemantics.
-  ///
-  /// In pt, this message translates to:
-  /// **'Câmera para ler o QR code da moto'**
-  String get scanCameraSemantics;
-
-  /// No description provided for @scanHint.
-  ///
-  /// In pt, this message translates to:
-  /// **'Aponte para o QR no guidão ou digite o número da moto.'**
-  String get scanHint;
-
-  /// No description provided for @scanTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Escanear para andar'**
-  String get scanTitle;
-
-  /// No description provided for @scanToRide.
-  ///
-  /// In pt, this message translates to:
-  /// **'Escanear para andar'**
-  String get scanToRide;
 
   /// No description provided for @selfiePhoto.
   ///
@@ -1474,18 +1168,6 @@ abstract class AppLocalizations {
   /// **'Assunto'**
   String get subject;
 
-  /// No description provided for @subscribe.
-  ///
-  /// In pt, this message translates to:
-  /// **'Assinar'**
-  String get subscribe;
-
-  /// No description provided for @subscriptionEnding.
-  ///
-  /// In pt, this message translates to:
-  /// **'Termina no fim do período'**
-  String get subscriptionEnding;
-
   /// No description provided for @summary.
   ///
   /// In pt, this message translates to:
@@ -1509,36 +1191,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Nenhuma conversa ainda'**
   String get supportEmpty;
-
-  /// No description provided for @swapDone.
-  ///
-  /// In pt, this message translates to:
-  /// **'Moto trocada'**
-  String get swapDone;
-
-  /// No description provided for @swapTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Trocar de moto'**
-  String get swapTitle;
-
-  /// No description provided for @swapVehicle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Trocar de moto'**
-  String get swapVehicle;
-
-  /// No description provided for @swipeToCancel.
-  ///
-  /// In pt, this message translates to:
-  /// **'Deslize para cancelar'**
-  String get swipeToCancel;
-
-  /// No description provided for @tapToCancel.
-  ///
-  /// In pt, this message translates to:
-  /// **'Toque em um plano para cancelar a renovação.'**
-  String get tapToCancel;
 
   /// No description provided for @thanksRating.
   ///
@@ -1569,30 +1221,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Digite sua mensagem'**
   String get typeMessage;
-
-  /// No description provided for @typeNumber.
-  ///
-  /// In pt, this message translates to:
-  /// **'Digitar número da moto'**
-  String get typeNumber;
-
-  /// No description provided for @useCamera.
-  ///
-  /// In pt, this message translates to:
-  /// **'Usar a câmera'**
-  String get useCamera;
-
-  /// No description provided for @useWallet.
-  ///
-  /// In pt, this message translates to:
-  /// **'Usar créditos da carteira'**
-  String get useWallet;
-
-  /// No description provided for @vehicleNumber.
-  ///
-  /// In pt, this message translates to:
-  /// **'Número da moto'**
-  String get vehicleNumber;
 
   /// No description provided for @verificationTitle.
   ///
@@ -1636,12 +1264,6 @@ abstract class AppLocalizations {
   /// **'Escolha a moto no app e retire no galpão. Por dia, semana ou mês.'**
   String get welcomeSubtitle;
 
-  /// No description provided for @wellbeingText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Detectamos uma possível queda. Sem resposta em 60 segundos, acionamos o suporte.'**
-  String get wellbeingText;
-
   /// No description provided for @wellbeingTitle.
   ///
   /// In pt, this message translates to:
@@ -1666,23 +1288,11 @@ abstract class AppLocalizations {
   /// **'CVV com 3 ou 4 dígitos'**
   String get cardCvvInvalid;
 
-  /// No description provided for @planDayDescription.
-  ///
-  /// In pt, this message translates to:
-  /// **'24 horas · devolva até o fim do dia'**
-  String get planDayDescription;
-
   /// No description provided for @zoneNotice.
   ///
   /// In pt, this message translates to:
   /// **'Aviso de zona'**
   String get zoneNotice;
-
-  /// No description provided for @greeting.
-  ///
-  /// In pt, this message translates to:
-  /// **'Olá, {name}'**
-  String greeting(String name);
 
   /// No description provided for @minutesBalance.
   ///
@@ -1714,12 +1324,6 @@ abstract class AppLocalizations {
   /// **'Reserva expira em {time}'**
   String reservationRemaining(String time);
 
-  /// No description provided for @shareLocationMessage.
-  ///
-  /// In pt, this message translates to:
-  /// **'Estou numa corrida Volti e preciso de ajuda. Minha localização: {url}'**
-  String shareLocationMessage(String url);
-
   /// No description provided for @speedSemantics.
   ///
   /// In pt, this message translates to:
@@ -1744,12 +1348,6 @@ abstract class AppLocalizations {
   /// **'Passo {n} de {total}'**
   String stepOf(int n, int total);
 
-  /// No description provided for @subscriptionRenews.
-  ///
-  /// In pt, this message translates to:
-  /// **'Renova em {date}'**
-  String subscriptionRenews(String date);
-
   /// No description provided for @unlockFee.
   ///
   /// In pt, this message translates to:
@@ -1767,24 +1365,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Moto {code}'**
   String vehicleCode(String code);
-
-  /// No description provided for @vehicleSemantics.
-  ///
-  /// In pt, this message translates to:
-  /// **'{model}, bateria {pct} por cento'**
-  String vehicleSemantics(String model, int pct);
-
-  /// No description provided for @walletBalance.
-  ///
-  /// In pt, this message translates to:
-  /// **'Saldo {money} e {minutes} min'**
-  String walletBalance(String money, int minutes);
-
-  /// No description provided for @zoneLimit.
-  ///
-  /// In pt, this message translates to:
-  /// **'Velocidade máxima: {limit} km/h'**
-  String zoneLimit(int limit);
 
   /// No description provided for @lockNotConfirmed.
   ///
@@ -1870,41 +1450,11 @@ abstract class AppLocalizations {
   /// **'Quando precisar, abra uma conversa. A equipe responde por aqui mesmo.'**
   String get supportEmptyText;
 
-  /// No description provided for @noVehiclesNearbyText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Afaste o mapa ou tente de novo em alguns minutos.'**
-  String get noVehiclesNearbyText;
-
-  /// No description provided for @noReservationText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Escolha uma moto no mapa e reserve por 15 minutos sem custo.'**
-  String get noReservationText;
-
   /// No description provided for @sosHint.
   ///
   /// In pt, this message translates to:
   /// **'Ligar para o suporte ou compartilhar sua localização'**
   String get sosHint;
-
-  /// No description provided for @cancelRenewalTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cancelar a renovação?'**
-  String get cancelRenewalTitle;
-
-  /// No description provided for @cancelRenewalConfirm.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cancelar renovação'**
-  String get cancelRenewalConfirm;
-
-  /// No description provided for @keepPlan.
-  ///
-  /// In pt, this message translates to:
-  /// **'Manter plano'**
-  String get keepPlan;
 
   /// No description provided for @unitMinute.
   ///
@@ -1936,35 +1486,11 @@ abstract class AppLocalizations {
   /// **'mês'**
   String get unitMonth;
 
-  /// No description provided for @pixPaid.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pix confirmado'**
-  String get pixPaid;
-
   /// No description provided for @realtimeOfflineText.
   ///
   /// In pt, this message translates to:
   /// **'O tempo e o custo seguem contando. Estamos reconectando.'**
   String get realtimeOfflineText;
-
-  /// No description provided for @lockConfirmed.
-  ///
-  /// In pt, this message translates to:
-  /// **'Moto travada'**
-  String get lockConfirmed;
-
-  /// No description provided for @dragToClose.
-  ///
-  /// In pt, this message translates to:
-  /// **'Arraste para baixo para fechar'**
-  String get dragToClose;
-
-  /// No description provided for @packagesEmpty.
-  ///
-  /// In pt, this message translates to:
-  /// **'Nenhum pacote disponível agora.'**
-  String get packagesEmpty;
 
   /// No description provided for @subscriptionsEmpty.
   ///
@@ -1972,29 +1498,11 @@ abstract class AppLocalizations {
   /// **'Você ainda não tem plano semanal ou mensal.'**
   String get subscriptionsEmpty;
 
-  /// No description provided for @cancelRenewalText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Seu plano continua valendo até {date}. Depois disso, não renova.'**
-  String cancelRenewalText(String date);
-
   /// No description provided for @pickTitle.
   ///
   /// In pt, this message translates to:
   /// **'Escolha sua moto'**
   String get pickTitle;
-
-  /// No description provided for @pickAvailable.
-  ///
-  /// In pt, this message translates to:
-  /// **'{count, plural, =0{Nenhuma disponível perto de você} =1{1 disponível perto de você} other{{count} disponíveis perto de você}}'**
-  String pickAvailable(int count);
-
-  /// No description provided for @pickSeeMap.
-  ///
-  /// In pt, this message translates to:
-  /// **'Ver no mapa'**
-  String get pickSeeMap;
 
   /// No description provided for @pickAllModels.
   ///
@@ -2008,53 +1516,11 @@ abstract class AppLocalizations {
   /// **'Filtrar por modelo'**
   String get pickModelFilters;
 
-  /// No description provided for @categoryUrban.
-  ///
-  /// In pt, this message translates to:
-  /// **'Urbana'**
-  String get categoryUrban;
-
-  /// No description provided for @categoryDoubleSeat.
-  ///
-  /// In pt, this message translates to:
-  /// **'Assento duplo'**
-  String get categoryDoubleSeat;
-
-  /// No description provided for @categoryCargo.
-  ///
-  /// In pt, this message translates to:
-  /// **'Com baú · entregas'**
-  String get categoryCargo;
-
-  /// No description provided for @firstRideFreeBadge.
-  ///
-  /// In pt, this message translates to:
-  /// **'1ª grátis'**
-  String get firstRideFreeBadge;
-
-  /// No description provided for @pickHoldNote.
-  ///
-  /// In pt, this message translates to:
-  /// **'A moto fica reservada por {minutes} min, sem custo.'**
-  String pickHoldNote(int minutes);
-
-  /// No description provided for @reserveModelCode.
-  ///
-  /// In pt, this message translates to:
-  /// **'Reservar {model} · {code}'**
-  String reserveModelCode(String model, String code);
-
   /// No description provided for @selectABike.
   ///
   /// In pt, this message translates to:
   /// **'Selecione uma moto'**
   String get selectABike;
-
-  /// No description provided for @walkSemantics.
-  ///
-  /// In pt, this message translates to:
-  /// **'{distance} a pé, {minutes} minutos'**
-  String walkSemantics(String distance, int minutes);
 
   /// No description provided for @rangeSemantics.
   ///
@@ -2067,12 +1533,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'{price} por minuto'**
   String priceSemantics(String price);
-
-  /// No description provided for @selectedSemantics.
-  ///
-  /// In pt, this message translates to:
-  /// **'selecionada'**
-  String get selectedSemantics;
 
   /// No description provided for @blockKycPending.
   ///
@@ -2122,24 +1582,6 @@ abstract class AppLocalizations {
   /// **'Escolher moto'**
   String get chooseBike;
 
-  /// No description provided for @filterAll.
-  ///
-  /// In pt, this message translates to:
-  /// **'Todas'**
-  String get filterAll;
-
-  /// No description provided for @filterRange10.
-  ///
-  /// In pt, this message translates to:
-  /// **'Autonomia 10+ km'**
-  String get filterRange10;
-
-  /// No description provided for @filterPickupPoints.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pontos de retirada'**
-  String get filterPickupPoints;
-
   /// No description provided for @promoPassTitle.
   ///
   /// In pt, this message translates to:
@@ -2164,12 +1606,6 @@ abstract class AppLocalizations {
   /// **'Até 15 minutos'**
   String get promoFirstRideText;
 
-  /// No description provided for @yourLocationAt.
-  ///
-  /// In pt, this message translates to:
-  /// **'Sua localização · {place}'**
-  String yourLocationAt(String place);
-
   /// No description provided for @nearYou.
   ///
   /// In pt, this message translates to:
@@ -2181,18 +1617,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'bateria {pct} por cento'**
   String batterySemantics(int pct);
-
-  /// No description provided for @pickVehicleTaken.
-  ///
-  /// In pt, this message translates to:
-  /// **'Essa moto acabou de ser reservada. Escolha outra.'**
-  String get pickVehicleTaken;
-
-  /// No description provided for @pickupZonesError.
-  ///
-  /// In pt, this message translates to:
-  /// **'Não conseguimos carregar os pontos de retirada.'**
-  String get pickupZonesError;
 
   /// No description provided for @fareLabel.
   ///
@@ -2271,12 +1695,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Só reportar'**
   String get reportOnly;
-
-  /// No description provided for @swapNoFee.
-  ///
-  /// In pt, this message translates to:
-  /// **'Trocar de moto sem nova taxa'**
-  String get swapNoFee;
 
   /// No description provided for @returnPointTitle.
   ///
@@ -2548,18 +1966,6 @@ abstract class AppLocalizations {
   /// **'Anexo {n}: enviando'**
   String attachmentUploadingLabel(int n);
 
-  /// No description provided for @buyPackageText.
-  ///
-  /// In pt, this message translates to:
-  /// **'{minutes} minutos por {price}, pagos com Pix. Os minutos entram assim que o pagamento for confirmado.'**
-  String buyPackageText(int minutes, String price);
-
-  /// No description provided for @buyPackageTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Comprar {name}?'**
-  String buyPackageTitle(String name);
-
   /// No description provided for @chatAttach.
   ///
   /// In pt, this message translates to:
@@ -2691,12 +2097,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Consentimentos e privacidade'**
   String get consentsRow;
-
-  /// No description provided for @credits.
-  ///
-  /// In pt, this message translates to:
-  /// **'Créditos'**
-  String get credits;
 
   /// No description provided for @disputeDetailsLabel.
   ///
@@ -2914,77 +2314,11 @@ abstract class AppLocalizations {
   /// **'Verificada'**
   String get kycVerified;
 
-  /// No description provided for @minutePackage.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pacote de minutos'**
-  String get minutePackage;
-
   /// No description provided for @minutesDelta.
   ///
   /// In pt, this message translates to:
   /// **'{minutes} min'**
   String minutesDelta(int minutes);
-
-  /// No description provided for @noActivePlan.
-  ///
-  /// In pt, this message translates to:
-  /// **'Sem plano ativo · semanal ou mensal'**
-  String get noActivePlan;
-
-  /// No description provided for @payWithPix.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pagar com Pix'**
-  String get payWithPix;
-
-  /// No description provided for @perMonth.
-  ///
-  /// In pt, this message translates to:
-  /// **'/mês'**
-  String get perMonth;
-
-  /// No description provided for @perWeek.
-  ///
-  /// In pt, this message translates to:
-  /// **'/semana'**
-  String get perWeek;
-
-  /// No description provided for @pixExpired.
-  ///
-  /// In pt, this message translates to:
-  /// **'O Pix expirou. Gere um novo código.'**
-  String get pixExpired;
-
-  /// No description provided for @pixExpiresAt.
-  ///
-  /// In pt, this message translates to:
-  /// **'Válido até {date}'**
-  String pixExpiresAt(String date);
-
-  /// No description provided for @pixPayLater.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pagar depois'**
-  String get pixPayLater;
-
-  /// No description provided for @pixQrLabel.
-  ///
-  /// In pt, this message translates to:
-  /// **'QR code do Pix'**
-  String get pixQrLabel;
-
-  /// No description provided for @planMonthlyDescription.
-  ///
-  /// In pt, this message translates to:
-  /// **'Renova automaticamente, cancele quando quiser'**
-  String get planMonthlyDescription;
-
-  /// No description provided for @planWeeklyDescription.
-  ///
-  /// In pt, this message translates to:
-  /// **'Renova automaticamente, cancele quando quiser'**
-  String get planWeeklyDescription;
 
   /// No description provided for @remove.
   ///
@@ -3082,54 +2416,6 @@ abstract class AppLocalizations {
   /// **'Em análise'**
   String get statusUnderReview;
 
-  /// No description provided for @subscribeCardHint.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cobrança recorrente neste cartão'**
-  String get subscribeCardHint;
-
-  /// No description provided for @subscribeConfirm.
-  ///
-  /// In pt, this message translates to:
-  /// **'Assinar agora'**
-  String get subscribeConfirm;
-
-  /// No description provided for @subscribeConfirmTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Assinar o {plan}'**
-  String subscribeConfirmTitle(String plan);
-
-  /// No description provided for @subscribeContinue.
-  ///
-  /// In pt, this message translates to:
-  /// **'Continuar'**
-  String get subscribeContinue;
-
-  /// No description provided for @subscribePriceMonthly.
-  ///
-  /// In pt, this message translates to:
-  /// **'{price} por mês'**
-  String subscribePriceMonthly(String price);
-
-  /// No description provided for @subscribePriceWeekly.
-  ///
-  /// In pt, this message translates to:
-  /// **'{price} por semana'**
-  String subscribePriceWeekly(String price);
-
-  /// No description provided for @subscribeRecurringMonthly.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cobramos hoje e renovamos todo mês no cartão. Corridas no plano mensal não cobram tempo, só seguro e taxas. Cancele quando quiser.'**
-  String get subscribeRecurringMonthly;
-
-  /// No description provided for @subscribeRecurringWeekly.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cobramos hoje e renovamos toda semana no cartão. Corridas no plano semanal não cobram tempo, só seguro e taxas. Cancele quando quiser.'**
-  String get subscribeRecurringWeekly;
-
   /// No description provided for @subscriptionActive.
   ///
   /// In pt, this message translates to:
@@ -3141,24 +2427,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Corridas no plano não cobram tempo, só seguro e taxas'**
   String get subscriptionBenefit;
-
-  /// No description provided for @subscriptionCanceled.
-  ///
-  /// In pt, this message translates to:
-  /// **'Renovação cancelada'**
-  String get subscriptionCanceled;
-
-  /// No description provided for @subscriptionCard.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cartão {card}'**
-  String subscriptionCard(String card);
-
-  /// No description provided for @subscriptionCreated.
-  ///
-  /// In pt, this message translates to:
-  /// **'Plano assinado'**
-  String get subscriptionCreated;
 
   /// No description provided for @subscriptionEndedOn.
   ///
@@ -3184,11 +2452,11 @@ abstract class AppLocalizations {
   /// **'Termina em {date}'**
   String subscriptionEndsOn(String date);
 
-  /// No description provided for @subscriptionNextCharge.
+  /// No description provided for @subscriptionValidUntil.
   ///
   /// In pt, this message translates to:
-  /// **'Próxima cobrança {date} · {price}'**
-  String subscriptionNextCharge(String date, String price);
+  /// **'Válido até {date}'**
+  String subscriptionValidUntil(String date);
 
   /// No description provided for @subscriptionPastDue.
   ///
@@ -3208,72 +2476,6 @@ abstract class AppLocalizations {
   /// **'Chat com o suporte'**
   String get supportChat;
 
-  /// No description provided for @topUpAmountError.
-  ///
-  /// In pt, this message translates to:
-  /// **'Escolha um valor entre R\$ 10,00 e R\$ 1.000,00'**
-  String get topUpAmountError;
-
-  /// No description provided for @topUpAmountHint.
-  ///
-  /// In pt, this message translates to:
-  /// **'O crédito entra na carteira assim que o Pix for confirmado.'**
-  String get topUpAmountHint;
-
-  /// No description provided for @topUpAmountLabel.
-  ///
-  /// In pt, this message translates to:
-  /// **'Valor'**
-  String get topUpAmountLabel;
-
-  /// No description provided for @topUpDone.
-  ///
-  /// In pt, this message translates to:
-  /// **'Carteira recarregada'**
-  String get topUpDone;
-
-  /// No description provided for @topUpGeneratePix.
-  ///
-  /// In pt, this message translates to:
-  /// **'Gerar Pix de {amount}'**
-  String topUpGeneratePix(String amount);
-
-  /// No description provided for @topUpGeneratePixDisabled.
-  ///
-  /// In pt, this message translates to:
-  /// **'Gerar Pix'**
-  String get topUpGeneratePixDisabled;
-
-  /// No description provided for @topUpPaid.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pix confirmado'**
-  String get topUpPaid;
-
-  /// No description provided for @topUpPaidAmount.
-  ///
-  /// In pt, this message translates to:
-  /// **'{amount} já estão na sua carteira.'**
-  String topUpPaidAmount(String amount);
-
-  /// No description provided for @topUpPaidMinutes.
-  ///
-  /// In pt, this message translates to:
-  /// **'{minutes} minutos já estão na sua carteira.'**
-  String topUpPaidMinutes(int minutes);
-
-  /// No description provided for @topUpPixText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pague {amount} com o QR ou o código copia e cola no app do seu banco.'**
-  String topUpPixText(String amount);
-
-  /// No description provided for @topUpWallet.
-  ///
-  /// In pt, this message translates to:
-  /// **'Recarregar carteira'**
-  String get topUpWallet;
-
   /// No description provided for @trafficRules.
   ///
   /// In pt, this message translates to:
@@ -3285,12 +2487,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Regras de trânsito'**
   String get trafficRulesTitle;
-
-  /// No description provided for @walletAndPackages.
-  ///
-  /// In pt, this message translates to:
-  /// **'Carteira e pacotes de minutos'**
-  String get walletAndPackages;
 
   /// No description provided for @walletLedgerEmpty.
   ///
@@ -3315,24 +2511,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Só compartilhamos sua localização com este contato quando você aciona o SOS. Confirme que a pessoa concorda em receber esses avisos.'**
   String get emergencyConsentText;
-
-  /// No description provided for @pendingTopUpTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pix de {amount} aguardando pagamento'**
-  String pendingTopUpTitle(String amount);
-
-  /// No description provided for @pendingTopUpText.
-  ///
-  /// In pt, this message translates to:
-  /// **'O saldo atualiza sozinho quando o pagamento for confirmado. Puxe a tela para baixo para conferir agora.'**
-  String get pendingTopUpText;
-
-  /// No description provided for @subscriptionPriceUnavailable.
-  ///
-  /// In pt, this message translates to:
-  /// **'Preço do plano indisponível agora. Tente de novo em instantes.'**
-  String get subscriptionPriceUnavailable;
 
   /// No description provided for @welcomePhone.
   ///
@@ -3604,71 +2782,11 @@ abstract class AppLocalizations {
   /// **'Cadastro enviado. Verificação em até 2 min.'**
   String get onboardingSentToast;
 
-  /// No description provided for @vehicleCategoryDefault.
-  ///
-  /// In pt, this message translates to:
-  /// **'Moto elétrica'**
-  String get vehicleCategoryDefault;
-
-  /// No description provided for @pricePerMinutePlusFee.
-  ///
-  /// In pt, this message translates to:
-  /// **'{price}/min + taxa'**
-  String pricePerMinutePlusFee(String price);
-
-  /// No description provided for @promoFirstRideBadge.
-  ///
-  /// In pt, this message translates to:
-  /// **'Grátis na 1ª corrida'**
-  String get promoFirstRideBadge;
-
-  /// No description provided for @hornAndFlash.
-  ///
-  /// In pt, this message translates to:
-  /// **'Buzinar e piscar'**
-  String get hornAndFlash;
-
-  /// No description provided for @hornNeedsReservation.
-  ///
-  /// In pt, this message translates to:
-  /// **'Reserve a moto para buzinar e piscar.'**
-  String get hornNeedsReservation;
-
-  /// No description provided for @navigate.
-  ///
-  /// In pt, this message translates to:
-  /// **'Navegar'**
-  String get navigate;
-
   /// No description provided for @navigateFailed.
   ///
   /// In pt, this message translates to:
   /// **'Não foi possível abrir o app de mapas.'**
   String get navigateFailed;
-
-  /// No description provided for @promoCoupon.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cupom promocional'**
-  String get promoCoupon;
-
-  /// No description provided for @couponSaved.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cupom guardado. Ele entra na cotação do plano.'**
-  String get couponSaved;
-
-  /// No description provided for @couponRemove.
-  ///
-  /// In pt, this message translates to:
-  /// **'Remover cupom'**
-  String get couponRemove;
-
-  /// No description provided for @couponSave.
-  ///
-  /// In pt, this message translates to:
-  /// **'Guardar cupom'**
-  String get couponSave;
 
   /// No description provided for @scanQr.
   ///
@@ -3681,12 +2799,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Reservar'**
   String get reserve;
-
-  /// No description provided for @reportVehicleSentText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Recebemos o seu relato. Obrigado por avisar.'**
-  String get reportVehicleSentText;
 
   /// No description provided for @reservationCanceled.
   ///
@@ -3705,48 +2817,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Tentando reconectar. Algumas ações podem falhar.'**
   String get offlineText;
-
-  /// No description provided for @backOnline.
-  ///
-  /// In pt, this message translates to:
-  /// **'Conexão restabelecida'**
-  String get backOnline;
-
-  /// No description provided for @torch.
-  ///
-  /// In pt, this message translates to:
-  /// **'Lanterna'**
-  String get torch;
-
-  /// No description provided for @scanAimTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Aponte para o QR no guidão'**
-  String get scanAimTitle;
-
-  /// No description provided for @scanAimText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Ou digite o número da moto.'**
-  String get scanAimText;
-
-  /// No description provided for @vehicleFound.
-  ///
-  /// In pt, this message translates to:
-  /// **'Moto {code} encontrada'**
-  String vehicleFound(String code);
-
-  /// No description provided for @lookingFor.
-  ///
-  /// In pt, this message translates to:
-  /// **'Procurando {code}'**
-  String lookingFor(String code);
-
-  /// No description provided for @planSubtitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'{code} · {model} · {pct}%'**
-  String planSubtitle(String code, String model, int pct);
 
   /// No description provided for @perUnitShort.
   ///
@@ -3783,30 +2853,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'mês'**
   String get unitMonthShort;
-
-  /// No description provided for @perRental.
-  ///
-  /// In pt, this message translates to:
-  /// **'/aluguel'**
-  String get perRental;
-
-  /// No description provided for @couponOrCredit.
-  ///
-  /// In pt, this message translates to:
-  /// **'Cupom ou crédito'**
-  String get couponOrCredit;
-
-  /// No description provided for @walletCredits.
-  ///
-  /// In pt, this message translates to:
-  /// **'Créditos da carteira'**
-  String get walletCredits;
-
-  /// No description provided for @walkRouteSemantics.
-  ///
-  /// In pt, this message translates to:
-  /// **'Rota a pé até a moto: {minutes} min, {distance}'**
-  String walkRouteSemantics(int minutes, String distance);
 
   /// No description provided for @thanksForRiding.
   ///
@@ -3892,12 +2938,6 @@ abstract class AppLocalizations {
   /// **'Escolha o galpão'**
   String get depotPicker;
 
-  /// No description provided for @depotOptionSemantics.
-  ///
-  /// In pt, this message translates to:
-  /// **'{name}, {distance}'**
-  String depotOptionSemantics(String name, String distance);
-
   /// No description provided for @depotPinSemantics.
   ///
   /// In pt, this message translates to:
@@ -3940,24 +2980,6 @@ abstract class AppLocalizations {
   /// **'Volte mais tarde ou escolha outro galpão.'**
   String get pickDepotEmptyText;
 
-  /// No description provided for @planOtherOptions.
-  ///
-  /// In pt, this message translates to:
-  /// **'Outras opções'**
-  String get planOtherOptions;
-
-  /// No description provided for @planRenews.
-  ///
-  /// In pt, this message translates to:
-  /// **'Renova automaticamente, cancele quando quiser'**
-  String get planRenews;
-
-  /// No description provided for @planChargedAtPickup.
-  ///
-  /// In pt, this message translates to:
-  /// **'O plano é acertado no fim do aluguel; a caução fica como garantia.'**
-  String get planChargedAtPickup;
-
   /// No description provided for @vehicleModelCode.
   ///
   /// In pt, this message translates to:
@@ -3969,12 +2991,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Seguro'**
   String get insuranceTitle;
-
-  /// No description provided for @insuranceSubtitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'O básico já vem incluído. O completo é opcional.'**
-  String get insuranceSubtitle;
 
   /// No description provided for @pickupTitle.
   ///
@@ -4036,18 +3052,6 @@ abstract class AppLocalizations {
   /// **'Escolha um horário'**
   String get pickupChooseTime;
 
-  /// No description provided for @pickupPlan.
-  ///
-  /// In pt, this message translates to:
-  /// **'Plano'**
-  String get pickupPlan;
-
-  /// No description provided for @pickupDepositNote.
-  ///
-  /// In pt, this message translates to:
-  /// **'Confirmar bloqueia só a caução. O plano é acertado no fim do aluguel; a caução fica como garantia.'**
-  String get pickupDepositNote;
-
   /// No description provided for @pickupPreReserveTitle.
   ///
   /// In pt, this message translates to:
@@ -4090,6 +3094,12 @@ abstract class AppLocalizations {
   /// **'Seguro {name}'**
   String pickupInsuranceLine(String name);
 
+  /// No description provided for @pickupConsentRequired.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem o consentimento de localização não dá para pré-reservar.'**
+  String get pickupConsentRequired;
+
   /// No description provided for @pickupLocationConsentTitle.
   ///
   /// In pt, this message translates to:
@@ -4114,12 +3124,6 @@ abstract class AppLocalizations {
   /// **'Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.'**
   String get pickupDebtAtCounter;
 
-  /// No description provided for @confirmReservation.
-  ///
-  /// In pt, this message translates to:
-  /// **'Confirmar reserva'**
-  String get confirmReservation;
-
   /// No description provided for @vehicleJustTaken.
   ///
   /// In pt, this message translates to:
@@ -4141,7 +3145,7 @@ abstract class AppLocalizations {
   /// No description provided for @reservationQrLabel.
   ///
   /// In pt, this message translates to:
-  /// **'QR da reserva'**
+  /// **'QR da pré-reserva'**
   String get reservationQrLabel;
 
   /// No description provided for @reservationPickupUntil.
@@ -4210,18 +3214,6 @@ abstract class AppLocalizations {
   /// **'Sua moto está sendo preparada no galpão.'**
   String get reservationInHandover;
 
-  /// No description provided for @reservationPixPending.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pague a caução por Pix para garantir a moto.'**
-  String get reservationPixPending;
-
-  /// No description provided for @payPixDeposit.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pagar caução Pix'**
-  String get payPixDeposit;
-
   /// No description provided for @reservationNotFound.
   ///
   /// In pt, this message translates to:
@@ -4239,12 +3231,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Ir para o início'**
   String get goHome;
-
-  /// No description provided for @planNeedsCard.
-  ///
-  /// In pt, this message translates to:
-  /// **'Adicione um cartão ou escolha Pix para a caução.'**
-  String get planNeedsCard;
 
   /// No description provided for @returnLockTitle.
   ///
@@ -4384,77 +3370,11 @@ abstract class AppLocalizations {
   /// **'Carenagem'**
   String get handoverItemCarenagem;
 
-  /// No description provided for @handoverStartsNow.
-  ///
-  /// In pt, this message translates to:
-  /// **'Ao aceitar, o aluguel começa agora e a moto destrava. O plano é acertado no fim do aluguel, com a caução como garantia.'**
-  String get handoverStartsNow;
-
-  /// No description provided for @handoverAccept.
-  ///
-  /// In pt, this message translates to:
-  /// **'Aceitar e destravar'**
-  String get handoverAccept;
-
-  /// No description provided for @handoverReport.
-  ///
-  /// In pt, this message translates to:
-  /// **'Apontar problema'**
-  String get handoverReport;
-
-  /// No description provided for @handoverPaymentDeclined.
-  ///
-  /// In pt, this message translates to:
-  /// **'O pagamento não foi aprovado. Tente de novo ou fale com o operador.'**
-  String get handoverPaymentDeclined;
-
-  /// No description provided for @handoverDepositNotHeld.
-  ///
-  /// In pt, this message translates to:
-  /// **'A caução da reserva não está retida. Fale com o suporte.'**
-  String get handoverDepositNotHeld;
-
-  /// No description provided for @handoverAcceptFailed.
-  ///
-  /// In pt, this message translates to:
-  /// **'Não foi possível aceitar agora. Tente de novo ou fale com o operador.'**
-  String get handoverAcceptFailed;
-
   /// No description provided for @handoverNotFound.
   ///
   /// In pt, this message translates to:
   /// **'Essa entrega não foi encontrada.'**
   String get handoverNotFound;
-
-  /// No description provided for @handoverDisputeTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Apontar problema'**
-  String get handoverDisputeTitle;
-
-  /// No description provided for @handoverDisputeText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Conte o que está errado. O suporte recebe junto com as fotos da saída.'**
-  String get handoverDisputeText;
-
-  /// No description provided for @handoverDisputeLabel.
-  ///
-  /// In pt, this message translates to:
-  /// **'O que está errado com a moto?'**
-  String get handoverDisputeLabel;
-
-  /// No description provided for @handoverDisputeHint.
-  ///
-  /// In pt, this message translates to:
-  /// **'Ex.: retrovisor quebrado'**
-  String get handoverDisputeHint;
-
-  /// No description provided for @handoverDisputeSend.
-  ///
-  /// In pt, this message translates to:
-  /// **'Enviar ao suporte'**
-  String get handoverDisputeSend;
 
   /// No description provided for @handoverDisputedTitle.
   ///
@@ -4879,13 +3799,13 @@ abstract class AppLocalizations {
   /// No description provided for @homeReservationA11yNow.
   ///
   /// In pt, this message translates to:
-  /// **'Reserva da {vehicle}, retire até {time}'**
+  /// **'Pré-reserva da {vehicle}, retire até {time}'**
   String homeReservationA11yNow(String vehicle, String time);
 
   /// No description provided for @homeReservationA11yScheduled.
   ///
   /// In pt, this message translates to:
-  /// **'Reserva da {vehicle}, retirada agendada {day} às {time}'**
+  /// **'Pré-reserva da {vehicle}, retirada agendada {day} às {time}'**
   String homeReservationA11yScheduled(String vehicle, String day, String time);
 
   /// No description provided for @homeReservationA11yHandover.
@@ -4897,7 +3817,7 @@ abstract class AppLocalizations {
   /// No description provided for @homeReservationA11yExpired.
   ///
   /// In pt, this message translates to:
-  /// **'Reserva da {vehicle}, o prazo de retirada acabou'**
+  /// **'Pré-reserva da {vehicle}, o prazo de retirada acabou'**
   String homeReservationA11yExpired(String vehicle);
 
   /// No description provided for @swapNearbyTitle.
@@ -5332,24 +4252,6 @@ abstract class AppLocalizations {
   /// **'Política de privacidade'**
   String get privacyPolicy;
 
-  /// No description provided for @couponUpTo.
-  ///
-  /// In pt, this message translates to:
-  /// **'até {amount}'**
-  String couponUpTo(String amount);
-
-  /// No description provided for @couponPercentOfTime.
-  ///
-  /// In pt, this message translates to:
-  /// **'-{percent}% do tempo'**
-  String couponPercentOfTime(int percent);
-
-  /// No description provided for @couponClosingNote.
-  ///
-  /// In pt, this message translates to:
-  /// **'O desconto é aplicado no fechamento do aluguel, limitado ao valor do tempo de uso.'**
-  String get couponClosingNote;
-
   /// No description provided for @fixCpf.
   ///
   /// In pt, this message translates to:
@@ -5380,24 +4282,6 @@ abstract class AppLocalizations {
   /// **'Conta, mensagens novas do suporte'**
   String get accountUnread;
 
-  /// No description provided for @payNow.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pagar agora'**
-  String get payNow;
-
-  /// No description provided for @paymentPendingTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pagamento pendente'**
-  String get paymentPendingTitle;
-
-  /// No description provided for @paymentPendingHomeText.
-  ///
-  /// In pt, this message translates to:
-  /// **'{amount} em aberto. Pague para alugar de novo.'**
-  String paymentPendingHomeText(String amount);
-
   /// No description provided for @paymentProcessingHomeTitle.
   ///
   /// In pt, this message translates to:
@@ -5409,12 +4293,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Estamos processando a cobrança da sua última corrida. Assim que concluir, você poderá reservar de novo.'**
   String get paymentProcessingHomeText;
-
-  /// No description provided for @paymentPendingBlock.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pague o valor pendente para alugar de novo.'**
-  String get paymentPendingBlock;
 
   /// No description provided for @receiptPaymentLabel.
   ///
@@ -5452,18 +4330,6 @@ abstract class AppLocalizations {
   /// **'Caução devolvida'**
   String get receiptDepositReleased;
 
-  /// No description provided for @receiptAmountDue.
-  ///
-  /// In pt, this message translates to:
-  /// **'A acertar no galpão'**
-  String get receiptAmountDue;
-
-  /// No description provided for @receiptPendingText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Não conseguimos cobrar {amount}. Pague com Pix para liberar o recibo e novos aluguéis.'**
-  String receiptPendingText(String amount);
-
   /// No description provided for @receiptProcessingText.
   ///
   /// In pt, this message translates to:
@@ -5499,30 +4365,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Moto travada. Pagamento em processamento.'**
   String get rideFinishedProcessing;
-
-  /// No description provided for @debtPixTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pague a pendência com Pix'**
-  String get debtPixTitle;
-
-  /// No description provided for @debtPixText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pague {amount} com o QR ou o código copia e cola no app do seu banco.'**
-  String debtPixText(String amount);
-
-  /// No description provided for @debtPaid.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pendência paga'**
-  String get debtPaid;
-
-  /// No description provided for @debtPaidText.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pronto! Você já pode alugar de novo.'**
-  String get debtPaidText;
 
   /// No description provided for @sheetExpand.
   ///
@@ -5589,18 +4431,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Cartões'**
   String get cardsTitle;
-
-  /// No description provided for @cardsRowSubtitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Padrão: {card}'**
-  String cardsRowSubtitle(String card);
-
-  /// No description provided for @cardsRowEmpty.
-  ///
-  /// In pt, this message translates to:
-  /// **'Nenhum cartão salvo'**
-  String get cardsRowEmpty;
 
   /// No description provided for @cardsDefaultHint.
   ///
@@ -5859,18 +4689,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Tentar encerrar de novo'**
   String get retryEnd;
-
-  /// No description provided for @handoverUnlocking.
-  ///
-  /// In pt, this message translates to:
-  /// **'Destravando a moto… pode levar até 30 s'**
-  String get handoverUnlocking;
-
-  /// No description provided for @handoverUnlockSlow.
-  ///
-  /// In pt, this message translates to:
-  /// **'A moto ainda está destravando. Aguarde um pouco e confira de novo.'**
-  String get handoverUnlockSlow;
 
   /// No description provided for @errorTimeout.
   ///
