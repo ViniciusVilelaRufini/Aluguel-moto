@@ -72,7 +72,12 @@ export async function hasCounterDebt(db: DebtDb, customerId: string): Promise<bo
 
 /** Há ao menos uma dívida em aberto: `failed` de aluguel/assinatura ou excedente do balcão com saldo, ainda não quitada. */
 export async function hasOpenDebt(db: DebtDb, customerId: string): Promise<boolean> {
-  if ((await db.payment.count({ where: failedDebtWhere(customerId) })) > 0) return true;
+  // Caminho comum (cliente em dia): uma contagem só. Com candidatos, o que sobra além do balcão é dívida `failed`; só o
+  // balcão precisa do saldo (saldo zero não conta).
+  const open = await db.payment.count({ where: openDebtWhere(customerId) });
+  if (!(open > 0)) return false;
+  const counter = await db.payment.count({ where: counterDebtWhere(customerId) });
+  if (open - counter > 0) return true;
   return hasCounterDebt(db, customerId);
 }
 
