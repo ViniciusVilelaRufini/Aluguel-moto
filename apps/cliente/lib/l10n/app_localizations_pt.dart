@@ -2755,6 +2755,26 @@ class AppLocalizationsPt extends AppLocalizations {
       'A moto não travou porque está sem sinal de GPS. Leve-a para um lugar aberto, com céu visível, e encerre de novo. Se não der, fale com o suporte.';
 
   @override
+  String get waitingLockGpsSleep =>
+      'O GPS da moto está desligado porque a ignição está desligada. Ligue a ignição e deixe a moto parada para a trava confirmar.';
+
+  @override
+  String get returnGpsSleep =>
+      'O GPS da moto está desligado porque a ignição está desligada. Ligue a ignição e deixe a moto parada para a trava confirmar.';
+
+  @override
+  String get endRevertedGpsSleep =>
+      'A moto não travou porque o GPS dela está desligado com a ignição desligada. Ligue a ignição, deixe a moto parada e encerre de novo. Se não der, fale com o suporte.';
+
+  @override
+  String get pausingGpsSleep =>
+      'O GPS da moto está desligado porque a ignição está desligada. Ligue a ignição e deixe a moto parada para a trava confirmar.';
+
+  @override
+  String get pauseRevertedGpsSleep =>
+      'A moto não travou porque o GPS dela está desligado com a ignição desligada. Ligue a ignição, deixe a moto parada e peça a pausa de novo.';
+
+  @override
   String get retryEnd => 'Tentar encerrar de novo';
 
   @override

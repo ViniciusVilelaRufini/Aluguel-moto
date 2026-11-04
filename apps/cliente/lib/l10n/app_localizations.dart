@@ -4684,6 +4684,36 @@ abstract class AppLocalizations {
   /// **'A moto não travou porque está sem sinal de GPS. Leve-a para um lugar aberto, com céu visível, e encerre de novo. Se não der, fale com o suporte.'**
   String get endRevertedNoGps;
 
+  /// No description provided for @waitingLockGpsSleep.
+  ///
+  /// In pt, this message translates to:
+  /// **'O GPS da moto está desligado porque a ignição está desligada. Ligue a ignição e deixe a moto parada para a trava confirmar.'**
+  String get waitingLockGpsSleep;
+
+  /// No description provided for @returnGpsSleep.
+  ///
+  /// In pt, this message translates to:
+  /// **'O GPS da moto está desligado porque a ignição está desligada. Ligue a ignição e deixe a moto parada para a trava confirmar.'**
+  String get returnGpsSleep;
+
+  /// No description provided for @endRevertedGpsSleep.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto não travou porque o GPS dela está desligado com a ignição desligada. Ligue a ignição, deixe a moto parada e encerre de novo. Se não der, fale com o suporte.'**
+  String get endRevertedGpsSleep;
+
+  /// No description provided for @pausingGpsSleep.
+  ///
+  /// In pt, this message translates to:
+  /// **'O GPS da moto está desligado porque a ignição está desligada. Ligue a ignição e deixe a moto parada para a trava confirmar.'**
+  String get pausingGpsSleep;
+
+  /// No description provided for @pauseRevertedGpsSleep.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto não travou porque o GPS dela está desligado com a ignição desligada. Ligue a ignição, deixe a moto parada e peça a pausa de novo.'**
+  String get pauseRevertedGpsSleep;
+
   /// No description provided for @retryEnd.
   ///
   /// In pt, this message translates to:

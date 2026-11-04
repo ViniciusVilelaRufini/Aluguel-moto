@@ -121,6 +121,9 @@ const kSafeLockSpeedKmh = 3.0;
 /// estado da trava; e o sinal mais limpo que o app tem).
 const kPausePendingWindow = Duration(seconds: 30);
 
+/// Releitura da ficha da moto (`gpsSleep`) enquanto a pausa espera a trava.
+const kGpsSleepPollInterval = Duration(seconds: 10);
+
 /// Antecedencia do aviso do fim do periodo pre-pago do balcao (mesma janela do
 /// push `rental.prepaid_ending`).
 const kPrepaidEndingWarning = Duration(hours: 1);
