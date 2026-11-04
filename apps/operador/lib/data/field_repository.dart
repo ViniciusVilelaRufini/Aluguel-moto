@@ -255,7 +255,9 @@ class ApiFieldRepository implements FieldRepository {
   @override
   Future<String> uploadHandoverPhoto(String path) => _guard(() async {
         final presigned = (await _api.getHandoversApi().createHandoverPhotoUpload(
-          uploadRequest: UploadRequest((b) => b..contentType = _contentType(path)),
+          handoverUploadRequest: HandoverUploadRequest((b) => b
+            ..contentType = _contentType(path)
+            ..purpose = HandoverUploadPurpose.photo),
         ))
             .data!;
         return _putFile(presigned, path);

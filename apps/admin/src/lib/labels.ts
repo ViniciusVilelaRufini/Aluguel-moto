@@ -39,7 +39,14 @@ export const PAYMENT_STATUS: Record<S<'PaymentStatus'>, [string, Tone]> = {
 export const PAYMENT_KIND: Record<S<'PaymentKind'>, string> = { rental: 'Aluguel', deposit: 'Caução', top_up: 'Recarga', subscription: 'Assinatura', fee: 'Taxa', debt_settlement: 'Quitação de dívida' };
 /** Como a dívida de um pagamento recusado foi quitada (Task 14). */
 export const DEBT_SETTLEMENT: Record<S<'DebtSettlementKind'>, string> = { payment: 'Paga pelo cliente', manual: 'Quitação registrada pelo financeiro' };
-export const PAYMENT_METHOD: Record<S<'PaymentMethod'>, string> = { card: 'Cartão', pix: 'Pix', wallet: 'Carteira' };
+export const PAYMENT_METHOD: Record<S<'PaymentMethod'>, string> = {
+  card: 'Cartão',
+  pix: 'Pix',
+  wallet: 'Carteira',
+  counter_card: 'Maquininha (cartão)',
+  counter_pix: 'Pix no balcão',
+  cash: 'Dinheiro',
+};
 
 export const RENTAL_EVENT: Record<S<'RentalEventType'>, string> = {
   started: 'Aluguel iniciado', paused: 'Pausado', resumed: 'Retomado', vehicle_swapped: 'Moto trocada', zone_entered: 'Entrou em zona',
@@ -135,4 +142,10 @@ export const DEPOSIT_STATUS: Record<S<'DepositStatus'>, [string, Tone]> = {
   released: ['Liberada', 'neutral'],
 };
 
-export const DEPOSIT_METHOD: Record<S<'DepositMethod'>, string> = { card: 'Cartão', pix: 'Pix' };
+export const DEPOSIT_METHOD: Record<S<'DepositMethod'>, string> = {
+  card: 'Cartão',
+  pix: 'Pix',
+  counter_card: 'Maquininha (cartão)',
+  counter_pix: 'Pix no balcão',
+  cash: 'Dinheiro',
+};
