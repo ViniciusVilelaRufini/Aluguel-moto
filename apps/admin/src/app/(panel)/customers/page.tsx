@@ -10,7 +10,7 @@ import { displayCpf, isValidCpf } from '@/lib/cpf';
 import { CLAIM_STATUS, CONVERSATION_STATUS, CUSTOMER_STATUS, DISPUTE_STATUS, KYC_STATUS, PAYMENT_KIND, PAYMENT_STATUS, PLAN_LABEL, RENTAL_STATUS } from '@/lib/labels';
 import { formatBRL, formatDate, formatDateTime, formatDuration, formatPhone } from '@/lib/format';
 import type { S } from '@/lib/types';
-import { DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast, type Column } from '@/components/ui';
+import { CustomerName, DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast, type Column } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
 import { SupportPanel } from '@/components/SupportPanel';
 import { SubscriptionVehicleDialog } from '@/components/SubscriptionVehicleDialog';
@@ -20,6 +20,7 @@ import { delinquencySummary } from '@/lib/admin-forms';
 import { canSeeFullPixKey, displayPixKey } from '@/lib/pix';
 import { useRealtime } from '@/lib/realtime';
 import { SUBSCRIPTION_STATUS } from '@/lib/labels';
+import { customerLabel, realEmail } from '@/lib/customer-label';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { Input } from '@/ds/Input';
@@ -113,7 +114,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
           emptyHint={debounced ? 'Confira a grafia ou busque por CPF, e-mail ou telefone.' : undefined}
           emptyAction={debounced || filter !== 'all' ? <Button size="sm" variant="ghost" icon="X" onClick={() => { setQ(''); setFilter('all'); }}>Limpar busca e filtros</Button> : undefined}
           columns={([
-            { key: 'name', label: 'Cliente', render: (r) => <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Initials name={r.name ?? r.email} /><span style={{ fontWeight: 600 }}>{r.name ?? r.email}</span></div> },
+            { key: 'name', label: 'Cliente', render: (r) => <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Initials name={customerLabel(r)} /><span><CustomerName id={r.id} name={r.name} email={r.email} /></span></div> },
             { key: 'cpf', label: 'CPF', mono: true, render: (r) => displayCpf(r.cpf, full) },
             { key: 'kycStatus', label: 'Verificação', render: (r) => { const [l, t, i] = KYC_STATUS[r.kycStatus]; return <Badge size="sm" tone={t} icon={i}>{l}</Badge>; } },
             { key: 'plan', label: 'Plano', render: (r) => (r.activePlanCode ? <Pill tone="info" icon="Repeat">{PLAN_LABEL[r.activePlanCode]}</Pill> : <span style={{ color: 'var(--text-secondary)' }}>Avulso</span>) },
@@ -155,9 +156,9 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
     <SidePanel width={400} onClose={onClose} testId="customer-sheet" title={
       c && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Initials name={c.name ?? c.email} size={48} />
+          <Initials name={customerLabel(c)} size={48} />
           <div>
-            <div style={{ font: '700 18px/1.25 var(--font-sans)' }}>{c.name ?? c.email}</div>
+            <div style={{ font: '700 18px/1.25 var(--font-sans)' }}><CustomerName id={c.id} name={c.name} email={c.email} bold={false} /></div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Cliente desde {formatDate(c.createdAt)}</div>
           </div>
         </div>
@@ -179,7 +180,7 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
               <div>
                 <KV k="Verificação" v={KYC_STATUS[c.kycStatus][0]} />
                 <KV k="CPF" v={displayCpf(c.cpf, full)} mono />
-                <KV k="E-mail" v={c.email} />
+                <KV k="E-mail" v={realEmail(c.email) ?? '—'} />
                 <KV k="Telefone" v={formatPhone(c.phone)} />
                 <KV k="Nascimento" v={formatDate(c.birthDate)} />
                 <KV k="Localização autorizada" v={c.locationConsent ? 'Sim' : 'Não'} />

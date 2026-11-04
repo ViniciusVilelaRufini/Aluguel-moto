@@ -9,6 +9,7 @@ import { Button } from '@/ds/Button';
 import { Icon } from '@/ds/Icon';
 import { IconButton } from '@/ds/IconButton';
 import { Toast } from '@/ds/Toast';
+import { customerIdentity, type CustomerIdentityInput } from '@/lib/customer-label';
 
 /* ---------- Layout ---------- */
 
@@ -149,6 +150,17 @@ export function ErrorNote({ error, onRetry }: { error: unknown; onRetry?: () => 
       <span style={{ flex: 1, minWidth: 0 }}>{error instanceof Error ? error.message : 'Algo deu errado. Tente de novo.'}</span>
       {retry && <Button size="sm" variant="ghost" icon="RefreshCw" testId="retry" onClick={retry}>Tentar de novo</Button>}
     </div>
+  );
+}
+
+/** Nome do cliente com o fallback combinado: nome, e-mail real ou "Conta sem nome" + id curto discreto. */
+export function CustomerName({ id, name, email, bold = true }: CustomerIdentityInput & { bold?: boolean }) {
+  const { label, shortId } = customerIdentity({ id, name, email });
+  return (
+    <>
+      <span style={{ fontWeight: bold ? 600 : undefined }}>{label}</span>
+      {shortId && <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>{shortId}</span>}
+    </>
   );
 }
 
