@@ -141,6 +141,46 @@ abstract class FieldRepository {
     String? stationId,
     String? depotId,
   });
+
+  // ── Balcao: contrato e pagamento (exigem rede, sem fila offline) ──
+
+  /// Cotacao do plano pre-pago (`GET /handovers/{id}/counter-quote`).
+  Future<CounterQuote> getCounterQuote(
+    String handoverId, {
+    required CounterPlanCode plan,
+    required InsuranceCoverage coverage,
+    required int quantity,
+  });
+
+  /// Foto do contrato assinado (`POST /handovers/uploads`, `purpose: contract`); devolve a
+  /// `objectKey` (`contracts/...`).
+  Future<String> uploadContractPhoto(String path);
+
+  /// Contrato e pagamento no balcao (`POST /handovers/{id}/counter-checkout`): inicia o aluguel.
+  Future<Rental> counterCheckout(
+    String handoverId,
+    CounterCheckoutRequest request, {
+    required String idempotencyKey,
+  });
+
+  // ── Balcao: acerto na chegada (exigem rede) ──
+
+  /// Debitos e caucao do aluguel (`GET /rentals/{id}/counter-balance`).
+  Future<CounterBalance> getCounterBalance(String rentalId);
+
+  /// Recebe ou abate da caucao parte ou todo um debito (`POST /payments/{id}/counter-settle`).
+  Future<Payment> counterSettle(
+    String paymentId,
+    CounterSettleRequest request, {
+    required String idempotencyKey,
+  });
+
+  /// Devolve a caucao disponivel (`POST /payments/deposits/{id}/counter-refund`).
+  Future<Deposit> counterRefund(
+    String depositId,
+    CounterRefundRequest request, {
+    required String idempotencyKey,
+  });
 }
 
 /// Corpo do `POST /handovers` de saida.
@@ -262,6 +302,75 @@ class ApiFieldRepository implements FieldRepository {
             .data!;
         return _putFile(presigned, path);
       });
+
+  @override
+  Future<String> uploadContractPhoto(String path) => _guard(() async {
+        final presigned = (await _api.getHandoversApi().createHandoverPhotoUpload(
+          handoverUploadRequest: HandoverUploadRequest((b) => b
+            ..contentType = _contentType(path)
+            ..purpose = HandoverUploadPurpose.contract),
+        ))
+            .data!;
+        return _putFile(presigned, path);
+      });
+
+  @override
+  Future<CounterQuote> getCounterQuote(
+    String handoverId, {
+    required CounterPlanCode plan,
+    required InsuranceCoverage coverage,
+    required int quantity,
+  }) =>
+      _guard(() async => (await _api.getHandoversApi().getHandoverCounterQuote(
+            id: handoverId,
+            planCode: plan,
+            coverage: coverage,
+            quantity: quantity,
+          ))
+              .data!);
+
+  @override
+  Future<Rental> counterCheckout(
+    String handoverId,
+    CounterCheckoutRequest request, {
+    required String idempotencyKey,
+  }) =>
+      _guard(() async => (await _api.getHandoversApi().counterCheckoutHandover(
+            id: handoverId,
+            idempotencyKey: idempotencyKey,
+            counterCheckoutRequest: request,
+          ))
+              .data!);
+
+  @override
+  Future<CounterBalance> getCounterBalance(String rentalId) => _guard(() async =>
+      (await _api.getRentalsApi().getRentalCounterBalance(id: rentalId)).data!);
+
+  @override
+  Future<Payment> counterSettle(
+    String paymentId,
+    CounterSettleRequest request, {
+    required String idempotencyKey,
+  }) =>
+      _guard(() async => (await _api.getPaymentsApi().counterSettlePayment(
+            id: paymentId,
+            idempotencyKey: idempotencyKey,
+            counterSettleRequest: request,
+          ))
+              .data!);
+
+  @override
+  Future<Deposit> counterRefund(
+    String depositId,
+    CounterRefundRequest request, {
+    required String idempotencyKey,
+  }) =>
+      _guard(() async => (await _api.getPaymentsApi().counterRefundDeposit(
+            id: depositId,
+            idempotencyKey: idempotencyKey,
+            counterRefundRequest: request,
+          ))
+              .data!);
 
   @override
   Future<List<Depot>> listDepots() => _guard(() async {

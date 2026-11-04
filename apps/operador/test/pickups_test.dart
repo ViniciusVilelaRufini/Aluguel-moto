@@ -15,6 +15,7 @@ import 'package:volti_operador/data/service_unlock.dart';
 import 'package:volti_operador/data/sync.dart';
 import 'package:volti_operador/features/arrivals/arrival_checklist_page.dart';
 import 'package:volti_operador/features/home/home_shell.dart';
+import 'package:volti_operador/features/pickups/counter_checkout_page.dart';
 import 'package:volti_operador/features/pickups/handover_status_page.dart';
 import 'package:volti_operador/features/pickups/pickup_checklist_page.dart';
 import 'package:volti_operador/features/pickups/pickup_scan_page.dart';
@@ -238,8 +239,9 @@ void main() {
       await _photos(tester, 4);
       await _tap(tester, 'submit-pickup');
       await _settle(tester);
-      expect(find.byType(HandoverStatusPage), findsOneWidget);
-      expect(find.text('Aguardando o cliente'), findsOneWidget);
+      // Estado da entrega por baixo e "Contrato e pagamento" por cima.
+      expect(find.byType(HandoverStatusPage, skipOffstage: false), findsOneWidget);
+      expect(find.byType(CounterCheckoutPage), findsOneWidget);
     });
 
     testWidgets('assinatura recusada pela API (404) mostra "Código inválido"', (tester) async {
@@ -259,7 +261,7 @@ void main() {
   });
 
   group('checklist de saida', () {
-    testWidgets('exige os itens, a bateria e 4 fotos; envia e mostra "Aguardando o cliente"',
+    testWidgets('exige os itens, a bateria e 4 fotos; envia e abre "Contrato e pagamento"',
         (tester) async {
       final h = Harness();
       final code = fakePickupCode();
@@ -297,8 +299,8 @@ void main() {
       expect(fairing.ok, isFalse);
       expect(fairing.note, 'Risco no lado direito');
 
-      expect(find.byType(HandoverStatusPage), findsOneWidget);
-      expect(find.text('Aguardando o cliente'), findsWidgets);
+      expect(find.byType(HandoverStatusPage, skipOffstage: false), findsOneWidget);
+      expect(find.byType(CounterCheckoutPage), findsOneWidget);
     });
 
     testWidgets('sem rede guarda o rascunho e envia quando a rede volta', (tester) async {
@@ -345,7 +347,7 @@ void main() {
       h.repo.handovers['ho-1'] = base;
       await h.pump(tester, const HandoverStatusPage(handoverId: 'ho-1'));
       await _settle(tester);
-      expect(find.text('Aguardando o cliente'), findsOneWidget);
+      expect(find.byKey(const Key('handover-counter-checkout')), findsOneWidget);
 
       // Outra entrega: ignora.
       final gets = h.repo.handoverGets;
@@ -370,7 +372,7 @@ void main() {
       h.repo.handovers['ho-1'] = base.rebuild((b) => b.status = HandoverStatus.accepted);
       h.events.emit('ho-1', HandoverStatus.accepted);
       await _settle(tester);
-      expect(find.text('Aceito — moto liberada'), findsOneWidget);
+      expect(find.text('Aluguel iniciado — moto liberada'), findsOneWidget);
     });
 
     testWidgets('sem o GET, usa o status do evento', (tester) async {
@@ -389,7 +391,7 @@ void main() {
       h.repo.online = false;
       h.events.emit('ho-1', HandoverStatus.accepted);
       await _settle(tester);
-      expect(find.text('Aceito — moto liberada'), findsOneWidget);
+      expect(find.text('Aluguel iniciado — moto liberada'), findsOneWidget);
     });
   });
 

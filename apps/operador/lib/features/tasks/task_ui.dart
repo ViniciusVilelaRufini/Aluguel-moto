@@ -129,6 +129,35 @@ String formatCentsPerMinute(int cents) {
   return 'R\$ $reais,$c/min';
 }
 
+/// "R$ 1.075,50" (dinheiro em centavos inteiros).
+String formatBrl(int cents) {
+  final reais = _group(cents.abs() ~/ 100);
+  final c = (cents.abs() % 100).toString().padLeft(2, '0');
+  return '${cents < 0 ? '-' : ''}R\$ $reais,$c';
+}
+
+/// Ate 9 digitos inteiros (sem estouro): "1.075,50", "60", "60,5".
+final _reaisGrouped = RegExp(r'^(\d{1,3}(\.\d{3}){1,2}|\d{1,9})(,\d{1,2})?$');
+
+/// Ponto como separador decimal quando seguido de 1–2 digitos: "60.5", "75.50".
+final _reaisDotDecimal = RegExp(r'^\d{1,9}\.\d{1,2}$');
+
+/// Valor digitado em reais ("60", "60,5", "60.5", "1.075,50") -> centavos inteiros; `null` se invalido.
+int? parseReaisToCents(String text) {
+  final s = text.trim().replaceAll('R\$', '').trim();
+  final List<String> parts;
+  if (_reaisDotDecimal.hasMatch(s)) {
+    parts = s.split('.');
+  } else if (_reaisGrouped.hasMatch(s)) {
+    parts = s.replaceAll('.', '').split(',');
+  } else {
+    return null;
+  }
+  final whole = int.parse(parts[0]);
+  final frac = parts.length > 1 ? int.parse(parts[1].padRight(2, '0')) : 0;
+  return whole * 100 + frac;
+}
+
 /// Fuso de exibicao do projeto (America/Sao_Paulo): UTC-3 fixo, sem horario de
 /// verao desde 2019 (mesma regra da API para as janelas de manutencao).
 const Duration saoPauloOffset = Duration(hours: -3);

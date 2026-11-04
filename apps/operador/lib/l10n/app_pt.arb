@@ -534,7 +534,7 @@
     }
   },
   "pickupStatusActive": "Aguardando retirada",
-  "pickupStatusHandover": "Aguardando o cliente",
+  "pickupStatusHandover": "Contrato e pagamento",
   "pickupStatusConverted": "Retirada",
   "pickupStatusCanceled": "Cancelada",
   "pickupStatusExpired": "Expirada",
@@ -612,7 +612,7 @@
   "handoverTitle": "Entrega da moto",
   "handoverWaiting": "Aguardando o cliente",
   "handoverWaitingBody": "O cliente confere a moto no app e aceita.",
-  "handoverAccepted": "Aceito — moto liberada",
+  "handoverAccepted": "Aluguel iniciado — moto liberada",
   "handoverAcceptedBody": "O aluguel começou. Pode entregar a moto ao cliente.",
   "handoverPaymentDeclined": "Pagamento não aprovado",
   "handoverPaymentDeclinedBody": "O cliente pode tentar outro pagamento no app. A moto continua travada.",
@@ -920,6 +920,184 @@
   "@unloadedStation": {
     "placeholders": {
       "name": {
+        "type": "String"
+      }
+    }
+  },
+  "counterTitle": "Contrato e pagamento",
+  "counterBody": "Registre o contrato assinado e o pagamento recebido no balcão para iniciar o aluguel.",
+  "counterPlan": "Plano",
+  "counterPlanDay": "Diária",
+  "counterPlanWeekly": "Semanal",
+  "counterPlanMonthly": "Mensal",
+  "counterQuantity": "Quantidade",
+  "counterQuantityDays": "{n, plural, =1{1 dia} other{{n} dias}}",
+  "@counterQuantityDays": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "counterQuantityWeeks": "{n, plural, =1{1 semana} other{{n} semanas}}",
+  "@counterQuantityWeeks": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "counterQuantityMonths": "{n, plural, =1{1 mês} other{{n} meses}}",
+  "@counterQuantityMonths": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "counterQuantityLess": "Diminuir a quantidade",
+  "counterQuantityMore": "Aumentar a quantidade",
+  "counterCoverage": "Seguro",
+  "counterCoverageBasic": "Básico",
+  "counterCoverageBasicNote": "Obrigatório",
+  "counterCoverageFull": "Completo",
+  "counterCoverageFullNote": "Opcional",
+  "counterTotal": "Total a receber",
+  "counterQuoteBreakdown": "Plano {plan} + seguro {insurance}",
+  "@counterQuoteBreakdown": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      },
+      "insurance": {
+        "type": "String"
+      }
+    }
+  },
+  "counterQuoteLoading": "Calculando o valor…",
+  "counterQuoteError": "Não foi possível calcular o valor.",
+  "counterQuoteRetry": "Calcular de novo",
+  "counterContractPhotos": "Fotos do contrato",
+  "counterContractPhotosHint": "Fotografe o contrato assinado (1 a 4 fotos).",
+  "counterContractPhotoAdd": "Fotografar o contrato",
+  "counterMethod": "Pagamento recebido",
+  "counterMethodCard": "Maquininha (cartão)",
+  "counterMethodPix": "Pix no balcão",
+  "counterMethodCash": "Dinheiro",
+  "counterReference": "Referência (NSU ou ID do Pix)",
+  "counterReferenceHelp": "Opcional. Nunca digite os dados do cartão.",
+  "counterDeposit": "Caução (opcional)",
+  "counterDepositAmount": "Valor da caução (R$)",
+  "counterDepositReference": "Referência da caução",
+  "counterAmountInvalid": "Digite um valor válido, como 150,00.",
+  "counterStart": "Iniciar aluguel",
+  "counterMissing": "Para iniciar: {parts}.",
+  "@counterMissing": {
+    "placeholders": {
+      "parts": {
+        "type": "String"
+      }
+    }
+  },
+  "counterMissingPhoto": "fotografe o contrato",
+  "counterMissingMethod": "escolha o pagamento",
+  "counterMissingDepositMethod": "escolha o método da caução",
+  "counterMissingQuote": "aguarde o valor",
+  "counterAmountChanged": "O valor mudou. Confira e toque de novo.",
+  "counterConsentRequired": "Peça ao cliente para permitir a localização no app",
+  "counterOffline": "Sem conexão. Contrato e pagamento precisam de rede.",
+  "handoverCounterCheckout": "Contrato e pagamento",
+  "arrivalCounterSettle": "Acerto no balcão",
+  "settleTitle": "Acerto no balcão",
+  "settleCustomer": "Cliente: {name}",
+  "@settleCustomer": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settleLoadError": "Não foi possível carregar o saldo.",
+  "settleRefresh": "Atualizar",
+  "settleWaitingRental": "Aguardando o encerramento do aluguel",
+  "settleWaitingRentalBody": "O acerto fica disponível quando o aluguel terminar.",
+  "settleDebts": "Valores a receber",
+  "settleDebtTotal": "Total a receber: {amount}",
+  "@settleDebtTotal": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "settleDebtRow": "Débito de {date}",
+  "@settleDebtRow": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "settleReceive": "Receber",
+  "settleFromDeposit": "Abater da caução",
+  "settleDeposits": "Caução",
+  "settleDepositRow": "Caução · {method}",
+  "@settleDepositRow": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "settleDepositAvailable": "Disponível: {amount}",
+  "@settleDepositAvailable": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "settleRefund": "Devolver",
+  "settleNothing": "Nada a acertar no balcão.",
+  "settleAmount": "Valor (R$)",
+  "settleAmountMax": "Até {amount}",
+  "@settleAmountMax": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "settleAmountOverBalance": "O valor passa do saldo ({amount}).",
+  "@settleAmountOverBalance": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "settleAmountOverAvailable": "O valor passa do disponível ({amount}).",
+  "@settleAmountOverAvailable": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "settleReference": "Referência (opcional)",
+  "settleConfirmReceive": "Registrar recebimento",
+  "settleConfirmFromDeposit": "Abater da caução",
+  "settleConfirmRefund": "Registrar devolução",
+  "settleDoneReceive": "Recebimento registrado.",
+  "settleDoneFromDeposit": "Valor abatido da caução.",
+  "settleDoneRefund": "Devolução registrada.",
+  "settleDepositPick": "Caução usada",
+  "settleDepositCard": "Cartão",
+  "settleDepositPix": "Pix",
+  "settleAmountChanged": "O saldo mudou e {amount} não confere mais. Confira o saldo atualizado e tente de novo.",
+  "@settleAmountChanged": {
+    "placeholders": {
+      "amount": {
         "type": "String"
       }
     }

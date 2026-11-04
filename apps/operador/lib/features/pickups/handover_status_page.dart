@@ -7,17 +7,27 @@ import 'package:volti_api/volti_api.dart' hide VehicleStatus;
 import 'package:volti_flutter/volti_flutter.dart';
 import 'package:volti_operador/data/field_repository.dart';
 import 'package:volti_operador/data/handover_events.dart';
+import 'package:volti_operador/features/pickups/counter_checkout_page.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
 import 'package:volti_operador/ui/widgets.dart';
 
-/// Estado ao vivo da entrega de saida: "Aguardando o cliente", "Aceito — moto
-/// liberada", "Pagamento nao aprovado" (`lastError`) ou "Problema apontado".
+/// Estado ao vivo da entrega de saida: "Contrato e pagamento" (pendente, abre o
+/// balcao), "Aluguel iniciado — moto liberada", "Pagamento nao aprovado" (aceite
+/// antigo pelo app) ou "Problema apontado".
 /// Atualiza com `handover.updated` + `GET /handovers/{id}`.
 class HandoverStatusPage extends ConsumerStatefulWidget {
-  const HandoverStatusPage({super.key, required this.handoverId, this.initial});
+  const HandoverStatusPage({
+    super.key,
+    required this.handoverId,
+    this.initial,
+    this.openCounterCheckout = false,
+  });
 
   final String handoverId;
   final Handover? initial;
+
+  /// Logo depois da vistoria: abre "Contrato e pagamento" uma vez, se a saida estiver pendente.
+  final bool openCounterCheckout;
 
   @override
   ConsumerState<HandoverStatusPage> createState() => _HandoverStatusPageState();
@@ -32,11 +42,15 @@ class _HandoverStatusPageState extends ConsumerState<HandoverStatusPage> {
   bool _canceling = false;
   StreamSubscription<HandoverUpdate>? _updates;
   StreamSubscription<bool>? _conn;
+  late bool _autoOpen = widget.openCounterCheckout;
 
   @override
   void initState() {
     super.initState();
     _apply(widget.initial);
+    if (widget.initial != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoOpen());
+    }
     final events = ref.read(handoverEventsProvider);
     _updates = events.updates.where((u) => u.handoverId == widget.handoverId).listen((u) {
       // Mostra ja o status do evento; o GET completa (motivo, disputa).
@@ -78,6 +92,7 @@ class _HandoverStatusPageState extends ConsumerState<HandoverStatusPage> {
         _apply(h);
         _loadFailed = false;
       });
+      if (initial) _maybeAutoOpen();
     } on RepositoryException {
       if (mounted) setState(() => _loadFailed = true);
     } finally {
@@ -118,6 +133,30 @@ class _HandoverStatusPageState extends ConsumerState<HandoverStatusPage> {
     }
   }
 
+  void _maybeAutoOpen() {
+    final h = _handover;
+    if (!_autoOpen || !mounted || h == null) return;
+    _autoOpen = false;
+    if (_status == HandoverStatus.pendingCustomer && h.type == HandoverType.pickup) {
+      _openCounterCheckout(h);
+    }
+  }
+
+  /// Contrato e pagamento no balcao. Aluguel iniciado: mostra aqui; voltou sem
+  /// iniciar: le o estado de novo.
+  Future<void> _openCounterCheckout(Handover h) async {
+    final rental = await Navigator.of(context).push(MaterialPageRoute<Rental>(
+        builder: (_) => CounterCheckoutPage(handover: h, popOnSuccess: true)));
+    if (!mounted) return;
+    if (rental != null) {
+      setState(() => _apply(h.rebuild((b) => b
+        ..status = HandoverStatus.accepted
+        ..rentalId = rental.id
+        ..lastError = null)));
+    }
+    _refresh();
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context);
@@ -140,12 +179,16 @@ class _HandoverStatusPageState extends ConsumerState<HandoverStatusPage> {
           t.handoverCanceled,
           t.handoverCanceledBody,
         ),
-      HandoverStatus.pendingCustomer when _lastError != null => (
+      // Aceite antigo pelo app (gateway): cobranca recusada.
+      HandoverStatus.pendingCustomer when _lastError == 'payment-declined' => (
           NoticeTone.warning,
           LucideIcons.creditCard,
           t.handoverPaymentDeclined,
           t.handoverPaymentDeclinedBody,
         ),
+      // Balcao: o atendente registra contrato e pagamento e inicia o aluguel.
+      HandoverStatus.pendingCustomer =>
+        (NoticeTone.info, LucideIcons.fileSignature, t.counterTitle, t.counterBody),
       _ => (NoticeTone.info, LucideIcons.hourglass, t.handoverWaiting, t.handoverWaitingBody),
     };
     return Scaffold(
@@ -188,6 +231,16 @@ class _HandoverStatusPageState extends ConsumerState<HandoverStatusPage> {
                   ),
                 ],
                 const SizedBox(height: VoltiSpacing.s20),
+                if (status == HandoverStatus.pendingCustomer && h != null && h.type == HandoverType.pickup) ...[
+                  VoltiButton(
+                    key: const Key('handover-counter-checkout'),
+                    label: t.handoverCounterCheckout,
+                    icon: LucideIcons.fileSignature,
+                    fullWidth: true,
+                    onPressed: () => _openCounterCheckout(h),
+                  ),
+                  const SizedBox(height: VoltiSpacing.s10),
+                ],
                 VoltiButton(
                   key: const Key('handover-refresh'),
                   label: t.handoverRefresh,

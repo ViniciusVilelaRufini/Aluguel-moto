@@ -9,6 +9,7 @@ import 'package:volti_operador/data/field_repository.dart';
 import 'package:volti_operador/data/handover_models.dart';
 import 'package:volti_operador/data/models.dart';
 import 'package:volti_operador/data/sync.dart';
+import 'package:volti_operador/features/arrivals/counter_settle_page.dart';
 import 'package:volti_operador/features/battery/battery_swap_page.dart' show SerialScannerPage;
 import 'package:volti_operador/features/pickups/handover_ui.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
@@ -156,6 +157,9 @@ class _ArrivalChecklistPageState extends ConsumerState<ArrivalChecklistPage> {
     );
   }
 
+  /// Aluguel da chegada registrada (devolucao, nao recolhimento): abre o acerto no balcao.
+  String? get _settleRentalId => _collect ? null : _found?.currentRentalId;
+
   Widget _result(AppLocalizations t, SubmitOutcome o) {
     return ListView(
       padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
@@ -176,7 +180,20 @@ class _ArrivalChecklistPageState extends ConsumerState<ArrivalChecklistPage> {
             body: t.arrivalQueued,
           ),
         const SizedBox(height: VoltiSpacing.s20),
+        if (_settleRentalId != null) ...[
+          VoltiButton(
+            key: const Key('arrival-counter-settle'),
+            label: t.arrivalCounterSettle,
+            icon: LucideIcons.banknote,
+            fullWidth: true,
+            size: VoltiButtonSize.lg,
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                builder: (_) => CounterSettlePage(rentalId: _settleRentalId!))),
+          ),
+          const SizedBox(height: VoltiSpacing.s10),
+        ],
         VoltiButton(
+          variant: _settleRentalId != null ? VoltiButtonVariant.secondary : VoltiButtonVariant.primary,
           label: t.close,
           fullWidth: true,
           size: VoltiButtonSize.lg,

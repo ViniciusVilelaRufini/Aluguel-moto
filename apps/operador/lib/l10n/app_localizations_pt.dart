@@ -810,7 +810,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get pickupStatusActive => 'Aguardando retirada';
 
   @override
-  String get pickupStatusHandover => 'Aguardando o cliente';
+  String get pickupStatusHandover => 'Contrato e pagamento';
 
   @override
   String get pickupStatusConverted => 'Retirada';
@@ -989,7 +989,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get handoverWaitingBody => 'O cliente confere a moto no app e aceita.';
 
   @override
-  String get handoverAccepted => 'Aceito — moto liberada';
+  String get handoverAccepted => 'Aluguel iniciado — moto liberada';
 
   @override
   String get handoverAcceptedBody =>
@@ -1394,5 +1394,288 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String unloadedStation(String name) {
     return 'Bateria descarregada na estação $name.';
+  }
+
+  @override
+  String get counterTitle => 'Contrato e pagamento';
+
+  @override
+  String get counterBody =>
+      'Registre o contrato assinado e o pagamento recebido no balcão para iniciar o aluguel.';
+
+  @override
+  String get counterPlan => 'Plano';
+
+  @override
+  String get counterPlanDay => 'Diária';
+
+  @override
+  String get counterPlanWeekly => 'Semanal';
+
+  @override
+  String get counterPlanMonthly => 'Mensal';
+
+  @override
+  String get counterQuantity => 'Quantidade';
+
+  @override
+  String counterQuantityDays(int n) {
+    String _temp0 = intl.Intl.pluralLogic(
+      n,
+      locale: localeName,
+      other: '$n dias',
+      one: '1 dia',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String counterQuantityWeeks(int n) {
+    String _temp0 = intl.Intl.pluralLogic(
+      n,
+      locale: localeName,
+      other: '$n semanas',
+      one: '1 semana',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String counterQuantityMonths(int n) {
+    String _temp0 = intl.Intl.pluralLogic(
+      n,
+      locale: localeName,
+      other: '$n meses',
+      one: '1 mês',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get counterQuantityLess => 'Diminuir a quantidade';
+
+  @override
+  String get counterQuantityMore => 'Aumentar a quantidade';
+
+  @override
+  String get counterCoverage => 'Seguro';
+
+  @override
+  String get counterCoverageBasic => 'Básico';
+
+  @override
+  String get counterCoverageBasicNote => 'Obrigatório';
+
+  @override
+  String get counterCoverageFull => 'Completo';
+
+  @override
+  String get counterCoverageFullNote => 'Opcional';
+
+  @override
+  String get counterTotal => 'Total a receber';
+
+  @override
+  String counterQuoteBreakdown(String plan, String insurance) {
+    return 'Plano $plan + seguro $insurance';
+  }
+
+  @override
+  String get counterQuoteLoading => 'Calculando o valor…';
+
+  @override
+  String get counterQuoteError => 'Não foi possível calcular o valor.';
+
+  @override
+  String get counterQuoteRetry => 'Calcular de novo';
+
+  @override
+  String get counterContractPhotos => 'Fotos do contrato';
+
+  @override
+  String get counterContractPhotosHint =>
+      'Fotografe o contrato assinado (1 a 4 fotos).';
+
+  @override
+  String get counterContractPhotoAdd => 'Fotografar o contrato';
+
+  @override
+  String get counterMethod => 'Pagamento recebido';
+
+  @override
+  String get counterMethodCard => 'Maquininha (cartão)';
+
+  @override
+  String get counterMethodPix => 'Pix no balcão';
+
+  @override
+  String get counterMethodCash => 'Dinheiro';
+
+  @override
+  String get counterReference => 'Referência (NSU ou ID do Pix)';
+
+  @override
+  String get counterReferenceHelp =>
+      'Opcional. Nunca digite os dados do cartão.';
+
+  @override
+  String get counterDeposit => 'Caução (opcional)';
+
+  @override
+  String get counterDepositAmount => 'Valor da caução (R\$)';
+
+  @override
+  String get counterDepositReference => 'Referência da caução';
+
+  @override
+  String get counterAmountInvalid => 'Digite um valor válido, como 150,00.';
+
+  @override
+  String get counterStart => 'Iniciar aluguel';
+
+  @override
+  String counterMissing(String parts) {
+    return 'Para iniciar: $parts.';
+  }
+
+  @override
+  String get counterMissingPhoto => 'fotografe o contrato';
+
+  @override
+  String get counterMissingMethod => 'escolha o pagamento';
+
+  @override
+  String get counterMissingDepositMethod => 'escolha o método da caução';
+
+  @override
+  String get counterMissingQuote => 'aguarde o valor';
+
+  @override
+  String get counterAmountChanged => 'O valor mudou. Confira e toque de novo.';
+
+  @override
+  String get counterConsentRequired =>
+      'Peça ao cliente para permitir a localização no app';
+
+  @override
+  String get counterOffline =>
+      'Sem conexão. Contrato e pagamento precisam de rede.';
+
+  @override
+  String get handoverCounterCheckout => 'Contrato e pagamento';
+
+  @override
+  String get arrivalCounterSettle => 'Acerto no balcão';
+
+  @override
+  String get settleTitle => 'Acerto no balcão';
+
+  @override
+  String settleCustomer(String name) {
+    return 'Cliente: $name';
+  }
+
+  @override
+  String get settleLoadError => 'Não foi possível carregar o saldo.';
+
+  @override
+  String get settleRefresh => 'Atualizar';
+
+  @override
+  String get settleWaitingRental => 'Aguardando o encerramento do aluguel';
+
+  @override
+  String get settleWaitingRentalBody =>
+      'O acerto fica disponível quando o aluguel terminar.';
+
+  @override
+  String get settleDebts => 'Valores a receber';
+
+  @override
+  String settleDebtTotal(String amount) {
+    return 'Total a receber: $amount';
+  }
+
+  @override
+  String settleDebtRow(String date) {
+    return 'Débito de $date';
+  }
+
+  @override
+  String get settleReceive => 'Receber';
+
+  @override
+  String get settleFromDeposit => 'Abater da caução';
+
+  @override
+  String get settleDeposits => 'Caução';
+
+  @override
+  String settleDepositRow(String method) {
+    return 'Caução · $method';
+  }
+
+  @override
+  String settleDepositAvailable(String amount) {
+    return 'Disponível: $amount';
+  }
+
+  @override
+  String get settleRefund => 'Devolver';
+
+  @override
+  String get settleNothing => 'Nada a acertar no balcão.';
+
+  @override
+  String get settleAmount => 'Valor (R\$)';
+
+  @override
+  String settleAmountMax(String amount) {
+    return 'Até $amount';
+  }
+
+  @override
+  String settleAmountOverBalance(String amount) {
+    return 'O valor passa do saldo ($amount).';
+  }
+
+  @override
+  String settleAmountOverAvailable(String amount) {
+    return 'O valor passa do disponível ($amount).';
+  }
+
+  @override
+  String get settleReference => 'Referência (opcional)';
+
+  @override
+  String get settleConfirmReceive => 'Registrar recebimento';
+
+  @override
+  String get settleConfirmFromDeposit => 'Abater da caução';
+
+  @override
+  String get settleConfirmRefund => 'Registrar devolução';
+
+  @override
+  String get settleDoneReceive => 'Recebimento registrado.';
+
+  @override
+  String get settleDoneFromDeposit => 'Valor abatido da caução.';
+
+  @override
+  String get settleDoneRefund => 'Devolução registrada.';
+
+  @override
+  String get settleDepositPick => 'Caução usada';
+
+  @override
+  String get settleDepositCard => 'Cartão';
+
+  @override
+  String get settleDepositPix => 'Pix';
+
+  @override
+  String settleAmountChanged(String amount) {
+    return 'O saldo mudou e $amount não confere mais. Confira o saldo atualizado e tente de novo.';
   }
 }
