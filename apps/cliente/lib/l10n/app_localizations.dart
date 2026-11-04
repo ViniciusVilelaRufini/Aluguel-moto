@@ -1246,6 +1246,18 @@ abstract class AppLocalizations {
   /// **'Corrida em andamento'**
   String get rentalInProgress;
 
+  /// No description provided for @rentalOngoingBadge.
+  ///
+  /// In pt, this message translates to:
+  /// **'Em andamento'**
+  String get rentalOngoingBadge;
+
+  /// No description provided for @receiptAfterRideEnds.
+  ///
+  /// In pt, this message translates to:
+  /// **'O recibo fica disponível quando a corrida terminar.'**
+  String get receiptAfterRideEnds;
+
   /// No description provided for @reportProblem.
   ///
   /// In pt, this message translates to:
@@ -1689,12 +1701,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Olá, {name}'**
   String greeting(String name);
-
-  /// No description provided for @historyItem.
-  ///
-  /// In pt, this message translates to:
-  /// **'Moto {code} · {date}'**
-  String historyItem(String code, String date);
 
   /// No description provided for @minutesBalance.
   ///

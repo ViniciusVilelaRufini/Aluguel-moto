@@ -95,8 +95,8 @@ describe('pendingAlertCount (QA-02)', () => {
     expect(pendingAlertCount(636, 0)).toBe(636);
     expect(pendingAlertCount(636, 2)).toBe(638);
   });
-  it('sem dado ainda é 0 e nunca fica negativo', () => {
-    expect(pendingAlertCount(undefined, 0)).toBe(0);
+  it('sem dado ainda é null ("—", painel de bancada P2-3) e nunca fica negativo', () => {
+    expect(pendingAlertCount(undefined, 0)).toBeNull();
     expect(pendingAlertCount(1, -3)).toBe(0);
   });
 });

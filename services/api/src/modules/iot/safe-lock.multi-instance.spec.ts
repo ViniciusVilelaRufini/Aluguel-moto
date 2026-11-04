@@ -226,7 +226,7 @@ describe('Bloqueio seguro com estado compartilhado (várias instâncias)', () =>
     await b.svc.cancel(T);
     await clock.advance(200_000);
     expect(bike.limits()).toEqual([15]);
-    expect(b.outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed' }]);
+    expect(b.outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'superseded' }]);
     expect(a.outcomes).toEqual([]);
   });
 

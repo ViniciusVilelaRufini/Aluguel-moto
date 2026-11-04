@@ -12,6 +12,7 @@ import { Empty, ErrorNote, Field, Modal, Page, PageHeader, Select, Skeleton, Tab
 import { MaintenancePanel, NewMaintenanceModal } from '@/components/MaintenancePanel';
 import { BatteriesPanel } from '@/components/BatteriesPanel';
 import { shortAddress } from '@/lib/fleet-search';
+import { taskBatteryText } from '@/lib/batteries';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { Card } from '@/ds/Card';
@@ -53,21 +54,46 @@ function useFieldStaff() {
   return useQuery({ queryKey: ['staff', 'campo'], queryFn: () => unwrap(api.GET('/staff', { params: { query: { group: 'campo', active: true, limit: 100 } } })) });
 }
 
+/** Todas as páginas de uma consulta de tarefas (até 10 × 100). */
+async function allTasks(query: { active?: boolean; status?: S<'FieldTaskStatus'>; completedSince?: string }): Promise<{ items: Task[]; truncated: boolean }> {
+  const items: Task[] = [];
+  let cursor: string | undefined;
+  for (let i = 0; i < 10; i++) {
+    const page = await unwrap(api.GET('/field-tasks', { params: { query: { ...query, limit: 100, cursor } } }));
+    items.push(...page.items);
+    cursor = page.nextCursor;
+    if (!cursor) return { items, truncated: false };
+  }
+  return { items, truncated: true };
+}
+
+const DONE_WINDOW_MS = 7 * 86_400_000;
+
 function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void }) {
-  const q = useQuery({ queryKey: ['field-tasks'], queryFn: () => unwrap(api.GET('/field-tasks', { params: { query: { limit: 100 } } })), refetchInterval: 20_000 });
+  // P2-10: em aberto e concluídas em consultas separadas (antes, 100 tarefas no total: as concluídas empurravam as abertas para
+  // fora). "Concluída" mostra só os últimos 7 dias.
+  const open = useQuery({ queryKey: ['field-tasks', 'open'], queryFn: () => allTasks({ active: true }), refetchInterval: 20_000 });
+  const done = useQuery({
+    queryKey: ['field-tasks', 'done'],
+    queryFn: () => allTasks({ status: 'done', completedSince: new Date(Date.now() - DONE_WINDOW_MS).toISOString() }),
+    refetchInterval: 60_000,
+  });
   const [assign, setAssign] = useState<Task | null>(null);
-  const items = q.data?.items ?? [];
+  const items = [...(open.data?.items ?? []), ...(done.data?.items ?? [])];
+  const queryOf = (key: string) => (key === 'done' ? done : open);
   return (
     <>
-      <ErrorNote error={q.error} />
+      {/* P1-5: erro da API com "Tentar de novo", nunca "Nenhuma tarefa". */}
+      <ErrorNote error={open.error ?? done.error} onRetry={() => { void open.refetch(); void done.refetch(); }} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14, alignItems: 'start' }}>
         {COLUMNS.map((c) => {
+          const q = queryOf(c.key);
           const col = items.filter((t) => c.statuses.includes(t.status));
           return (
             <div key={c.key} style={{ background: 'var(--surface-sunken)', borderRadius: 'var(--radius-lg)', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px' }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{c.label}</span>
-                <span style={{ font: '700 12px/1 var(--font-mono)', color: 'var(--text-secondary)' }}>{col.length}</span>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>{c.label}{c.key === 'done' && <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}> · 7 dias</span>}</span>
+                <span style={{ font: '700 12px/1 var(--font-mono)', color: 'var(--text-secondary)' }}>{q.isLoading || q.error ? '—' : `${col.length}${q.data?.truncated ? '+' : ''}`}</span>
               </div>
               {col.map((t) => (
                 <Card key={t.id} padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 10, animation: 'vt-fade-up 320ms var(--ease-out) backwards' }}>
@@ -85,9 +111,7 @@ function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void 
                     </div>
                   )}
                   {t.type === 'battery_swap' && t.vehicleBatterySerial && (
-                    <div style={{ font: '500 12px/1.3 var(--font-mono)', color: 'var(--text-secondary)' }}>
-                      Retirada: {t.vehicleBatterySerial}{t.vehicleBatteryPct !== undefined ? ` · ${t.vehicleBatteryPct}%` : ''}{t.vehicleBatteryCycleCount !== undefined ? ` · ${t.vehicleBatteryCycleCount} ciclos` : ''}
-                    </div>
+                    <div data-testid="task-battery" style={{ font: '500 12px/1.3 var(--font-mono)', color: 'var(--text-secondary)' }}>{taskBatteryText(t)}</div>
                   )}
                   {t.notes && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t.notes}</div>}
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -100,10 +124,10 @@ function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void 
                 </Card>
               ))}
               {q.isLoading && [0, 1].map((i) => <Skeleton key={i} h={96} r={20} />)}
-              {!q.isLoading && col.length === 0 && (
+              {!q.isLoading && !q.error && col.length === 0 && (
                 <Empty compact icon={c.key === 'done' ? 'CircleCheck' : 'ClipboardList'}
                   action={c.key === 'pending' && canEdit ? <Button size="sm" variant="ghost" icon="Plus" onClick={onCreate}>Nova tarefa</Button> : undefined}>
-                  {c.key === 'pending' ? 'Nenhuma tarefa pendente' : c.key === 'doing' ? 'Nada em andamento' : 'Nenhuma tarefa concluída'}
+                  {c.key === 'pending' ? 'Nenhuma tarefa pendente' : c.key === 'doing' ? 'Nada em andamento' : 'Nenhuma tarefa concluída nos últimos 7 dias'}
                 </Empty>
               )}
             </div>

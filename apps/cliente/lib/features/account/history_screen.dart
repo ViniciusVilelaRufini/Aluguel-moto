@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import '../../core/clock.dart';
 import '../../core/geo.dart';
 import '../../core/widgets.dart';
 import '../home/pending_payment_banner.dart';
@@ -20,6 +21,7 @@ class HistoryScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l = context.l;
+    final now = ref.watch(clockProvider)();
     return VoltiScaffold(
       title: pick ? l.historyPickTitle : l.historyTitle,
       body: AsyncView<List<Rental>>(
@@ -56,9 +58,9 @@ class HistoryScreen extends ConsumerWidget {
                   ),
                 // Cascata so nos primeiros itens (lista pode ser longa).
                 ...VoltiStagger.wrap([
-                  for (final r in rentals.take(8)) _row(context, r),
+                  for (final r in rentals.take(8)) _row(context, r, now),
                 ]),
-                for (final r in rentals.skip(8)) _row(context, r),
+                for (final r in rentals.skip(8)) _row(context, r, now),
               ],
             ),
           );
@@ -67,20 +69,29 @@ class HistoryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _row(BuildContext context, Rental r) {
+  /// Placa no titulo e "03/11 21:59 · 1 h 28 min" embaixo (o titulo longo
+  /// quebrava no meio do separador). Em andamento: selo no lugar do valor parcial.
+  Widget _row(BuildContext context, Rental r, DateTime now) {
     final l = context.l;
+    final ongoing = isRentalOngoing(r);
     return ListRow(
-      title: l.historyItem(r.vehicleCode, formatDateTimeSp(r.startedAt)),
+      title: r.vehicleCode,
       icon: LucideIcons.motorbike,
-      subtitle: durationLabel(r.elapsedSeconds),
-      value: money(r.costCents),
+      subtitle: '${formatShortDateTimeSp(r.startedAt, now)} · ${durationLabel(r.elapsedSeconds)}',
+      badge: ongoing ? VoltiBadge(l.rentalOngoingBadge, tone: VoltiBadgeTone.info, size: VoltiBadgeSize.sm) : null,
+      value: ongoing ? null : money(r.costCents),
       trailing: ListRowTrailing.chevron,
       onTap: () => RentalActionsSheet.show(context, r, pick: pick),
     );
   }
 }
 
+/// Aluguel ainda nao encerrado (ativo, pausado ou encerrando): sem recibo nem contestacao.
+bool isRentalOngoing(Rental r) =>
+    r.status == RentalStatus.active || r.status == RentalStatus.paused || r.status == RentalStatus.ending;
+
 /// Acoes de uma corrida: recibo (com trajeto, nota fiscal e avaliacao), contestar e sinistro.
+/// Corrida em andamento: so "Voltar a corrida".
 class RentalActionsSheet extends StatelessWidget {
   const RentalActionsSheet({super.key, required this.rental, required this.onAction, this.pick = false});
   final Rental rental;
@@ -94,6 +105,8 @@ class RentalActionsSheet extends StatelessWidget {
     );
     if (!context.mounted) return;
     switch (action) {
+      case 'ride':
+        context.go('/ride');
       case 'receipt':
         context.push('/summary/${r.id}');
       case 'claim':
@@ -108,10 +121,13 @@ class RentalActionsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = context.l;
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Semantics(header: true, child: Text(l.historyItem(rental.vehicleCode, formatDateTimeSp(rental.startedAt)), style: VoltiTypography.heading)),
+      Semantics(header: true, child: Text(rental.vehicleCode, style: VoltiTypography.heading)),
       const SizedBox(height: VoltiSpacing.s4),
-      Text('${durationLabel(rental.elapsedSeconds)} · ${money(rental.costCents)}', style: VoltiTypography.caption),
+      Text('${formatDateTimeSp(rental.startedAt)} · ${durationLabel(rental.elapsedSeconds)} · ${money(rental.costCents)}', style: VoltiTypography.caption),
       const SizedBox(height: VoltiSpacing.s16),
+      if (isRentalOngoing(rental))
+        VoltiButton(label: l.backToRide, icon: LucideIcons.motorbike, fullWidth: true, onPressed: () => onAction('ride'))
+      else ...[
       if (!pick) ...[
         VoltiButton(label: l.viewReceipt, icon: LucideIcons.receipt, fullWidth: true, onPressed: () => onAction('receipt')),
         const SizedBox(height: 8),
@@ -129,6 +145,7 @@ class RentalActionsSheet extends StatelessWidget {
           variant: VoltiButtonVariant.secondary,
           fullWidth: true,
           onPressed: () => onAction('claim')),
+      ],
     ]);
   }
 }

@@ -440,6 +440,8 @@ class FieldTasksApi {
   /// * [type]
   /// * [assigneeId] - UUID do operador ou `me`.
   /// * [vehicleId]
+  /// * [active] - `true` = só as tarefas em aberto (`open`, `assigned`, `in_progress`). Ignorado com `status`.
+  /// * [completedSince] - Só tarefas concluídas (`completedAt`) a partir deste instante (ex.: a coluna \"Concluída\" dos últimos 7 dias). Use com `status=done`.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -456,6 +458,8 @@ class FieldTasksApi {
     FieldTaskType? type,
     String? assigneeId,
     String? vehicleId,
+    bool? active,
+    DateTime? completedSince,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
     Map<String, dynamic>? extra,
@@ -501,6 +505,12 @@ class FieldTasksApi {
       if (vehicleId != null)
         r'vehicleId': encodeQueryParameter(
             _serializers, vehicleId, const FullType(String)),
+      if (active != null)
+        r'active':
+            encodeQueryParameter(_serializers, active, const FullType(bool)),
+      if (completedSince != null)
+        r'completedSince': encodeQueryParameter(
+            _serializers, completedSince, const FullType(DateTime)),
     };
 
     final _response = await _dio.request<Object>(

@@ -116,7 +116,7 @@ describe('BaseIotGateway', () => {
     expect(await gw.setSpeedLimit({ commandId: 'c1', thingName: T }, 20)).toEqual({ commandId: 'c1', status: 'confirmed' });
   });
 
-  it('novo limite substitui o anterior ainda pendente (o anterior termina failed)', async () => {
+  it('novo limite substitui o anterior ainda pendente (o anterior termina failed/superseded)', async () => {
     const { gw, clock, updates } = await setup();
     const p1 = gw.setSpeedLimit({ commandId: 'c1', thingName: T }, 6);
     await clock.advance(3_000);
@@ -125,7 +125,7 @@ describe('BaseIotGateway', () => {
     await gw.onReported(T, { limite_kmh: 20 });
     expect(await p2).toEqual({ commandId: 'c2', status: 'confirmed' });
     await clock.advance(1_000);
-    expect(updates).toEqual([{ commandId: 'c1', status: 'failed' }]);
+    expect(updates).toEqual([{ commandId: 'c1', status: 'failed', reason: 'superseded' }]);
   });
 
   it('lock com moto andando delega à rampa: publica limite 15, não trava', async () => {
@@ -167,7 +167,7 @@ describe('BaseIotGateway', () => {
     expect(await u).toEqual({ commandId: 'c2', status: 'confirmed' });
     expect(transport.desired[transport.desired.length - 1].desired).toEqual({ travada: false, limite_kmh: 20 });
     await clock.advance(1_000);
-    expect(updates).toEqual([{ commandId: 'c1', status: 'failed' }]);
+    expect(updates).toEqual([{ commandId: 'c1', status: 'failed', reason: 'superseded' }]);
   });
 
   it('horn online publica em motos/{t}/comandos e confirma; offline → failed/offline sem publicar', async () => {

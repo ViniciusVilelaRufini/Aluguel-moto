@@ -6,6 +6,7 @@ import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { localDay } from '@/lib/format';
+import { useNow } from '@/lib/use-now';
 import { RESERVATION_STATUS, RESERVATION_STATUSES, toPickupRows, type PickupModeFilter, type ReservationStatus } from '@/lib/pickups';
 import { summarizeHours } from '@/lib/depot-hours';
 import { PickupTable } from '@/components/depots/PickupTable';
@@ -28,7 +29,12 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
 export default function PickupsPage() {
   const { groups } = useAuth();
   const [depotId, setDepotId] = useState('');
-  const [date, setDate] = useState(() => localDay());
+  // P3: sem data escolhida, a agenda acompanha "hoje" (vira à meia-noite de São Paulo com a tela aberta).
+  const now = useNow(60_000);
+  const today = localDay(new Date(now));
+  const [picked, setPicked] = useState<string | null>(null);
+  const date = picked ?? today;
+  const setDate = (d: string) => setPicked(d === today ? null : d);
   const [mode, setMode] = useState<PickupModeFilter>('all');
   const [status, setStatus] = useState<StatusFilter>('all');
 

@@ -23,7 +23,7 @@ const DOT: Record<StepState, { bg: string; fg: string; ring?: string; icon?: str
 export function CommandTimeline({ status, reason }: { status: CommandStatus; reason?: CommandStatusReason }) {
   const steps = commandSteps(status, reason);
   const fill = stepProgress(steps);
-  const failed = status === 'failed';
+  const failed = status === 'failed' && reason !== 'superseded';
   return (
     <ol data-testid="command-timeline" aria-label="Andamento do comando" style={{ listStyle: 'none', margin: 0, padding: '4px 0 0', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', position: 'relative' }}>
       <span aria-hidden style={{ position: 'absolute', top: 15, left: '16.66%', right: '16.66%', height: 2, borderRadius: 1, background: 'var(--ink-200)' }} />

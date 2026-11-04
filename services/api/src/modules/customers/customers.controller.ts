@@ -62,6 +62,38 @@ export class CustomersController {
     };
   }
 
+  /**
+   * Painel de bancada (L2): as mesmas estatísticas de `stats`, em lote para a página da lista (3 consultas agrupadas). Aluguel em
+   * andamento conta (a contagem é de todos os aluguéis do cliente, como na ficha).
+   */
+  private async statsMany(ids: string[]): Promise<Map<string, Awaited<ReturnType<CustomersController['stats']>>>> {
+    if (!ids.length) return new Map();
+    const where = { customerId: { in: ids } };
+    const [rentals, spent, disputes] = await Promise.all([
+      this.prisma.rental.groupBy({ by: ['customerId'], where, _count: { _all: true }, _max: { startedAt: true } }),
+      this.prisma.payment.groupBy({ by: ['customerId'], where: { ...where, status: { in: ['paid', 'captured', 'partially_refunded'] } }, _sum: { amountCents: true, refundedCents: true } }),
+      this.prisma.dispute.groupBy({ by: ['customerId'], where: { ...where, status: { in: ['open', 'under_review'] } }, _count: { _all: true } }),
+    ]);
+    const r = new Map((rentals ?? []).map((x) => [x.customerId, x]));
+    const p = new Map((spent ?? []).map((x) => [x.customerId, x]));
+    const d = new Map((disputes ?? []).map((x) => [x.customerId, x]));
+    return new Map(
+      ids.map((id) => {
+        const last = r.get(id)?._max?.startedAt;
+        const sum = p.get(id)?._sum;
+        return [
+          id,
+          {
+            rentalsCount: (r.get(id)?._count as { _all?: number } | undefined)?._all ?? 0,
+            totalSpentCents: Math.max(0, (sum?.amountCents ?? 0) - (sum?.refundedCents ?? 0)),
+            openDisputes: (d.get(id)?._count as { _all?: number } | undefined)?._all ?? 0,
+            ...(last ? { lastRentalAt: last.toISOString() } : {}),
+          },
+        ];
+      }),
+    );
+  }
+
   private async full(c: Customer, user: Principal) {
     const restricted = (await this.restrictedSet([c.cpf])).size > 0;
     const activeSubscription = await this.prisma.subscription.findFirst({ where: { customerId: c.id, ...currentSubscriptionWhere() }, select: { id: true, planCode: true } });
@@ -93,8 +125,9 @@ export class CustomersController {
     const restricted = await this.restrictedSet(rows.map((r) => r.cpf));
     const subs = await this.prisma.subscription.findMany({ where: { customerId: { in: rows.map((r) => r.id) }, ...currentSubscriptionWhere() }, select: { id: true, planCode: true, customerId: true } });
     const subBy = new Map(subs.map((x) => [x.customerId, x]));
+    const stats = await this.statsMany(rows.slice(0, q.limit ?? 20).map((r) => r.id));
     return toPage(rows, q, (c) =>
-      toCustomer(c, { fullCpf: isAdmin(u), fullPixKey: hasGroup(u, 'admin', 'financeiro'), restricted: !!c.cpf && restricted.has(c.cpf), activeSubscription: subBy.get(c.id) }),
+      toCustomer(c, { fullCpf: isAdmin(u), fullPixKey: hasGroup(u, 'admin', 'financeiro'), restricted: !!c.cpf && restricted.has(c.cpf), activeSubscription: subBy.get(c.id), stats: stats.get(c.id) }),
     );
   }
 

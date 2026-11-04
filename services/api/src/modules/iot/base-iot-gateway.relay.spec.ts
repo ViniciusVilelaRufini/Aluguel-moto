@@ -211,7 +211,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
     await s.gw.onReported(T, { travada: false });
     expect(await p).toEqual({ commandId: 'u1', status: 'confirmed' });
     await s.clock.advance(1_000); // EMIT_GRACE_MS do desfecho do lock cancelado
-    expect(s.updates).toContainEqual({ commandId: 'c1', status: 'failed' });
+    expect(s.updates).toContainEqual({ commandId: 'c1', status: 'failed', reason: 'superseded' });
   });
 
   it('unlock de cliente depois de lock da equipe → locked_by_staff, nada publicado (autoridade inalterada)', async () => {
@@ -314,7 +314,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       expect(await p).toEqual({ commandId: 'u1', status: 'confirmed' });
       for (let i = 0; i < 60; i++) await s.clock.advance(5_000);
       expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: false }]);
-      expect(s.updates.filter((u) => u.commandId === 'c1')).toEqual([{ commandId: 'c1', status: 'failed' }]);
+      expect(s.updates.filter((u) => u.commandId === 'c1')).toEqual([{ commandId: 'c1', status: 'failed', reason: 'superseded' }]);
     });
 
     it('L5: Redis fora no lock só relé → a chamada falha (o CommandsService grava failed/timeout) e nada é publicado', async () => {
@@ -470,7 +470,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: false }, { travada: null }]);
       expect(s.transport.shadow.desired).toEqual({});
       await s.clock.advance(1_000);
-      expect(s.updates).toContainEqual({ commandId: 'u1', status: 'failed' });
+      expect(s.updates).toContainEqual({ commandId: 'u1', status: 'failed', reason: 'superseded' });
       // Volta travada (nunca recebeu o engineResume): confirma pela telemetria depois da graça, sem gravar nada.
       await s.svc.presence(T, true);
       for (let i = 0; i < 8; i++) {

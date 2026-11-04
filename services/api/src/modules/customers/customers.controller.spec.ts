@@ -118,3 +118,35 @@ describe('auditoria run-4: lista de restrição x bloqueio da conta', () => {
     expect(res.body.detail).toBe('CPF já está na lista de restrição.');
   });
 });
+
+describe('GET /customers — estatísticas na lista (painel de bancada, L2)', () => {
+  let h: Harness;
+  const A = '44444444-4444-4444-8444-444444444444';
+  const B = '55555555-5555-4555-8555-555555555555';
+  const row = (id: string) => ({ id, cpf: null, status: 'active', name: 'Cliente', email: `${id.slice(0, 4)}@x.com`, kycStatus: 'approved', delinquent: false, createdAt: new Date('2026-11-01T00:00:00Z') });
+  beforeAll(async () => {
+    h = await createHarness({
+      controllers: [CustomersController],
+      providers: [
+        { provide: AuditService, useValue: { record: jest.fn() } },
+        { provide: DelinquencyService, useValue: {} },
+      ],
+    });
+  });
+  afterAll(() => h.app.close());
+
+  it('cada cliente vem com stats (aluguéis, inclusive o em andamento; gasto líquido; contestações abertas); sem dados → zeros', async () => {
+    h.prisma.customer.findMany.mockReset().mockResolvedValue([row(A), row(B)] as any);
+    h.prisma.restrictionEntry.findMany.mockResolvedValue([]);
+    h.prisma.subscription.findMany.mockResolvedValue([]);
+    (h.prisma.rental.groupBy as any).mockResolvedValue([{ customerId: A, _count: { _all: 2 }, _max: { startedAt: new Date('2026-11-03T12:00:00Z') } }]);
+    (h.prisma.payment.groupBy as any).mockResolvedValue([{ customerId: A, _sum: { amountCents: 5000, refundedCents: 1000 } }]);
+    (h.prisma.dispute.groupBy as any).mockResolvedValue([{ customerId: A, _count: { _all: 1 } }]);
+    const res = await request(h.app.getHttpServer()).get('/customers').set('Authorization', `Bearer ${await staffToken(['admin'])}`);
+    expect(res.status).toBe(200);
+    const byId = Object.fromEntries(res.body.items.map((c: any) => [c.id, c.stats]));
+    expect(byId[A]).toEqual({ rentalsCount: 2, totalSpentCents: 4000, openDisputes: 1, lastRentalAt: '2026-11-03T12:00:00.000Z' });
+    expect(byId[B]).toEqual({ rentalsCount: 0, totalSpentCents: 0, openDisputes: 0 });
+    expect(((h.prisma.rental.groupBy as any).mock.calls[0][0] as any).where).toEqual({ customerId: { in: [A, B] } });
+  });
+});

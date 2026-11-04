@@ -430,7 +430,7 @@ class CustomersApi {
   }
 
   /// Buscar clientes
-  /// &#x60;q&#x60; busca por nome, e-mail, telefone ou CPF. CPF mascarado para quem não é &#x60;admin&#x60;.
+  /// &#x60;q&#x60; busca por nome, e-mail, telefone ou CPF. CPF mascarado para quem não é &#x60;admin&#x60;. Cada item traz &#x60;stats&#x60; (aluguéis, gasto, contestações).
   ///
   /// Parameters:
   /// * [cursor] - Cursor opaco devolvido em `nextCursor` da página anterior.

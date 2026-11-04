@@ -155,6 +155,14 @@ String formatDateTimeSp(DateTime d) {
   return '${two(x.day)}/${two(x.month)}/${x.year} ${two(x.hour)}:${two(x.minute)}';
 }
 
+/// "03/11 21:59" (Sao Paulo); com o ano so quando nao e o ano de [now].
+String formatShortDateTimeSp(DateTime d, DateTime now) {
+  final x = toSaoPaulo(d);
+  if (x.year != toSaoPaulo(now).year) return formatDateTimeSp(d);
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(x.day)}/${two(x.month)} ${two(x.hour)}:${two(x.minute)}';
+}
+
 /// Polyline que se desenha sozinha (1,1 s, apos 300 ms), para camadas do
 /// flutter_map. Com reduced motion ja aparece completa. Com [animate] falso
 /// (ex.: mapa recriado durante a corrida) aparece completa direto.

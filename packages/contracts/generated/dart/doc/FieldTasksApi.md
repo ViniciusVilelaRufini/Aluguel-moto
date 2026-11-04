@@ -194,7 +194,7 @@ Name | Type | Description  | Notes
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **listFieldTasks**
-> FieldTaskPage listFieldTasks(cursor, limit, status, type, assigneeId, vehicleId)
+> FieldTaskPage listFieldTasks(cursor, limit, status, type, assigneeId, vehicleId, active, completedSince)
 
 Listar tarefas de campo
 
@@ -211,9 +211,11 @@ final FieldTaskStatus status = ; // FieldTaskStatus |
 final FieldTaskType type = ; // FieldTaskType | 
 final String assigneeId = assigneeId_example; // String | UUID do operador ou `me`.
 final String vehicleId = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final bool active = true; // bool | `true` = só as tarefas em aberto (`open`, `assigned`, `in_progress`). Ignorado com `status`.
+final DateTime completedSince = 2013-10-20T19:20:30+01:00; // DateTime | Só tarefas concluídas (`completedAt`) a partir deste instante (ex.: a coluna \"Concluída\" dos últimos 7 dias). Use com `status=done`.
 
 try {
-    final response = api.listFieldTasks(cursor, limit, status, type, assigneeId, vehicleId);
+    final response = api.listFieldTasks(cursor, limit, status, type, assigneeId, vehicleId, active, completedSince);
     print(response);
 } on DioException catch (e) {
     print('Exception when calling FieldTasksApi->listFieldTasks: $e\n');
@@ -230,6 +232,8 @@ Name | Type | Description  | Notes
  **type** | [**FieldTaskType**](.md)|  | [optional] 
  **assigneeId** | **String**| UUID do operador ou `me`. | [optional] 
  **vehicleId** | **String**|  | [optional] 
+ **active** | **bool**| `true` = só as tarefas em aberto (`open`, `assigned`, `in_progress`). Ignorado com `status`. | [optional] 
+ **completedSince** | **DateTime**| Só tarefas concluídas (`completedAt`) a partir deste instante (ex.: a coluna \"Concluída\" dos últimos 7 dias). Use com `status=done`. | [optional] 
 
 ### Return type
 

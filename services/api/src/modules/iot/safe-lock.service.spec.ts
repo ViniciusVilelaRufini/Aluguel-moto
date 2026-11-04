@@ -201,7 +201,7 @@ describe('SafeLockService (bloqueio seguro)', () => {
     svc.cancel(T);
     await clock.advance(10_000);
     expect(transport.limits()).toEqual([15]);
-    expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed' }]);
+    expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'superseded' }]);
     expect(svc.isActive(T)).toBe(false);
   });
 

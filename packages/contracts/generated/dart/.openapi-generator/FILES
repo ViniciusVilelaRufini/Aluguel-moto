@@ -157,6 +157,8 @@ doc/InsurancePolicy.md
 doc/InsurancePolicyPage.md
 doc/KycApi.md
 doc/KycDecision.md
+doc/KycFileLink.md
+doc/KycFiles.md
 doc/KycReviewRequest.md
 doc/KycStatus.md
 doc/KycStatusResponse.md
@@ -518,6 +520,8 @@ lib/src/model/insurance_coverage_update.dart
 lib/src/model/insurance_policy.dart
 lib/src/model/insurance_policy_page.dart
 lib/src/model/kyc_decision.dart
+lib/src/model/kyc_file_link.dart
+lib/src/model/kyc_files.dart
 lib/src/model/kyc_review_request.dart
 lib/src/model/kyc_status.dart
 lib/src/model/kyc_status_response.dart

@@ -378,3 +378,17 @@ describe('BatteriesService — consulta', () => {
     expect(await problem(service.movements(BAT, {}))).toEqual({ status: 404, slug: 'not-found' });
   });
 });
+
+describe('BatteriesService — carga sem leitura (painel de bancada, P2-7)', () => {
+  const V = 'f0000000-0000-4000-8000-0000000000f1';
+  it('bateria na moto sem leitura de bateria → chargeKnown false (a carga gravada não é leitura); com leitura ou fora da moto, ausente', async () => {
+    const { service, prisma } = setup();
+    prisma.battery.findMany.mockResolvedValue([row({ status: 'in_vehicle', vehicleId: V, depotId: null }), row({ id: 'b2', serial: 'BT-2', status: 'charged' })]);
+    prisma.vehicle.findMany.mockResolvedValue([{ id: V, code: 'VLT-0059', batteryKnown: false }] as any);
+    const page = await service.list(admin, {});
+    expect(page.items[0]).toMatchObject({ vehicleCode: 'VLT-0059', chargeKnown: false });
+    expect(page.items[1]).not.toHaveProperty('chargeKnown');
+    prisma.vehicle.findMany.mockResolvedValue([{ id: V, code: 'VLT-0059', batteryKnown: true }] as any);
+    expect((await service.list(admin, {})).items[0]).not.toHaveProperty('chargeKnown');
+  });
+});

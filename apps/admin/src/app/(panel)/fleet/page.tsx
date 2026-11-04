@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GeoJSONSource, Map as MlMap, Marker, Popup } from 'maplibre-gl';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { useRealtime, type FleetVehicle } from '@/lib/realtime';
+import { DASHBOARD_QUERY, useRealtime, type FleetVehicle } from '@/lib/realtime';
 import { STATUS_COLOR, STATUS_LABEL, VEHICLE_STATUSES } from '@/lib/status';
 import { formatBRL } from '@/lib/format';
 import { UNKNOWN_BATTERY_HEX, anyMoved, batteryHex, interpolatePositions, positionsOf, type LngLat } from '@/lib/map-anim';
@@ -209,6 +209,7 @@ export default function FleetPage() {
     if (!mapReady || !map || fitted.current || vehicles.length === 0 || selectedRef.current) return;
     fitted.current = true;
     const pts = fitPoints(vehicles);
+    if (pts.length === 0) return;
     const lngs = pts.map((v) => v.lng);
     const lats = pts.map((v) => v.lat);
     map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 80, maxZoom: 15, duration: 0 });
@@ -257,7 +258,8 @@ export default function FleetPage() {
     setDepots(map, depotsQ.data?.items ?? []);
   }, [depotsQ.data, mapReady]);
 
-  const dash = useQuery({ queryKey: ['dashboard'], queryFn: () => unwrap(api.GET('/reports/dashboard')), refetchInterval: 30_000 });
+  // Mesma consulta do contador de alertas (DASHBOARD_QUERY): um fetch só.
+  const dash = useQuery({ ...DASHBOARD_QUERY, refetchInterval: 30_000 });
 
   return (
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
@@ -272,8 +274,8 @@ export default function FleetPage() {
               <StatTile icon="Gauge" label="Ocupação" numeric={Math.round(dash.data.occupancyPct)} format={pct} />
               <StatTile icon="Bike" label="Aluguéis ativos" numeric={dash.data.activeRentals} />
               {/* A API zera a receita para quem não é admin/financeiro: melhor ocultar do que mostrar R$ 0,00. */}
-              {groups.some((g) => REVENUE_GROUPS.includes(g)) && <StatTile icon="Wallet" label="Receita do dia" numeric={dash.data.revenueTodayCents} format={formatBRL} />}
-              {/* Alertas vêm do tempo real (alert.created), não só do refresh de 30 s do dashboard. */}
+              {groups.some((g) => REVENUE_GROUPS.includes(g)) && <StatTile icon="Wallet" label="Receita do dia" numeric={dash.data.revenueTodayCents} format={formatBRL} caption="Aluguéis encerrados e assinaturas desde 00:00" />}
+              {/* Alertas vêm do tempo real (alert.created), não só do refresh de 30 s do dashboard; sem o total, "—". */}
               <StatTile icon="Siren" label="Alertas pendentes" numeric={openAlerts} goodWhen="down" />
             </div>
           ) : dash.isLoading ? (
@@ -307,12 +309,13 @@ export default function FleetPage() {
             <span aria-hidden style={{ width: 18, height: 18, borderRadius: 5, background: 'var(--ink-900)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="Warehouse" size={12} /></span>
             Galpão
           </span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {/* P3: o item só aparece com moto esperando recolhimento (com 0 era ruído). */}
+          {(counts.awaiting_pickup ?? 0) > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span aria-hidden style={{ width: 18, height: 18, borderRadius: '50%', background: 'color-mix(in srgb, var(--status-awaiting-pickup) 22%, transparent)', border: '2px solid var(--status-awaiting-pickup)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--status-awaiting-pickup)' }} />
             </span>
-            Aguardando recolhimento ({counts.awaiting_pickup ?? 0})
-          </span>
+            Aguardando recolhimento ({counts.awaiting_pickup})
+          </span>}
         </div>}
         {selected && replay && view === 'map' && <ReplayBar vehicleId={selected} mapRef={mapRef} mapReady={mapReady} />}
       </div>

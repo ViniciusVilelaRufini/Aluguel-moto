@@ -10,7 +10,7 @@ import { useAuth } from './auth';
 import { alertVisibleTo } from './permissions';
 import { getToken } from './token-store';
 import type { RealtimeEvents, S } from './types';
-import { applyVehiclePosition, applyVehicleState, isStaleStateEvent, laterIso, positionPatch, statePatch } from './vehicle-live';
+import { applyVehiclePosition, applyVehicleState, isOlderThanLoaded, isStaleStateEvent, laterIso, positionPatch, statePatch } from './vehicle-live';
 
 type Handler<K extends keyof RealtimeEvents> = (payload: RealtimeEvents[K]) => void;
 export type FleetVehicle = S<'Vehicle'>;
@@ -21,11 +21,18 @@ interface RealtimeState {
   /** Frota carregada (todas as páginas) com as atualizações ao vivo aplicadas. */
   vehicles: FleetVehicle[];
   vehiclesReady: boolean;
-  openAlerts: number;
+  /** Alertas pendentes; `null` enquanto o total do servidor não chegou (P2-3: "—", nunca 0). */
+  openAlerts: number | null;
   on: <K extends keyof RealtimeEvents>(event: K, handler: Handler<K>) => () => void;
 }
 
 const Ctx = createContext<RealtimeState | null>(null);
+
+/**
+ * P2-3: uma consulta só de `/reports/dashboard` (frota e contador de alertas usam a mesma chave; o React Query junta as duas).
+ * A chave fica sob `['alerts']`: atribuir/resolver alerta e o `alert.created` (que invalidam `['alerts']`) recarregam o total.
+ */
+export const DASHBOARD_QUERY = { queryKey: ['alerts', 'dashboard'] as const, queryFn: () => unwrap(api.GET('/reports/dashboard')) };
 const FLEET_GROUPS = ['admin', 'operacao', 'suporte'];
 const LIST_GROUPS = ['admin', 'operacao', 'suporte', 'campo'];
 
@@ -67,18 +74,16 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   fleetAt.current = vq.dataUpdatedAt;
   /** Campos ao vivo anteriores só valem se chegaram depois da última carga da frota; senão trariam posição velha por cima da nova. */
   const liveBase = (prev?: LiveOverride) => (prev && prev.at >= fleetAt.current ? prev.patch : undefined);
+  // Pendentes = abertos + atribuídos. Total real do servidor (não o tamanho da primeira página de /alerts).
   const aq = useQuery({
-    queryKey: ['alerts', 'open-count'],
-    queryFn: async () => {
-      // Pendentes = abertos + atribuídos. Total real do servidor (não o tamanho da primeira página de /alerts).
-      const r = await unwrap(api.GET('/reports/dashboard'));
-      return r.openAlerts;
-    },
+    ...DASHBOARD_QUERY,
+    select: (d) => d.openAlerts,
     enabled: !!token && (canFleet || canFinanceAlerts),
     refetchInterval: !canFleet && canFinanceAlerts ? 60_000 : false,
   });
 
-  useEffect(() => { setAlertDelta(0); }, [aq.data]);
+  // Cada resposta do servidor já inclui os alertas contados até ali (mesmo com o total igual ao anterior).
+  useEffect(() => { setAlertDelta(0); }, [aq.dataUpdatedAt]);
 
   // Atualizações ao vivo agrupadas a cada 500 ms para não renderizar a cada telemetria.
   useEffect(() => {
@@ -106,7 +111,11 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     });
     socket.on('disconnect', () => setConnected(false));
     socket.on('vehicle.position', (p: RealtimeEvents['vehicle.position']) => {
-      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...liveBase(pending.current[p.vehicleId]), ...positionPatch(p) } };
+      const prev = liveBase(pending.current[p.vehicleId]);
+      // Ordem pela hora da posição (P3); o último sinal (avançado pelo heartbeat) nunca volta no tempo.
+      if (!isOlderThanLoaded(prev?.positionAt, p.ts)) {
+        pending.current[p.vehicleId] = { at: Date.now(), patch: { ...prev, ...positionPatch(p), lastSeenAt: laterIso(prev?.lastSeenAt, p.ts) } };
+      }
       // Ficha aberta: a posição nova também entra no GET /vehicles/{id} carregado (descartada se for mais velha que ele).
       qc.setQueryData<FleetVehicle>(['vehicle', p.vehicleId], (old) => (old ? applyVehiclePosition(old, p) : old));
       emit('vehicle.position', p);
@@ -123,8 +132,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     });
     socket.on('vehicle.status', (p: RealtimeEvents['vehicle.status']) => {
       pending.current[p.vehicleId] = { at: Date.now(), patch: { ...liveBase(pending.current[p.vehicleId]), status: p.status } };
+      // P1-6: a ficha aberta (GET /vehicles/{id}) recebe o status na hora; recarregar devolvia o status velho do banco.
+      qc.setQueryData<FleetVehicle>(['vehicle', p.vehicleId], (old) => (old ? { ...old, status: p.status } : old));
       emit('vehicle.status', p);
-      qc.invalidateQueries({ queryKey: ['vehicle', p.vehicleId] });
     });
     socket.on('command.updated', (p: RealtimeEvents['command.updated']) => {
       emit('command.updated', p);

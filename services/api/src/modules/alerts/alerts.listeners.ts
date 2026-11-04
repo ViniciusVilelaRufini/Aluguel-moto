@@ -155,9 +155,27 @@ export class AlertsListeners implements OnModuleInit {
     }
   }
 
+  /** Comando que falhou → `command_failed`. Substituído por um mais novo (`superseded`, ex.: pausar e retomar) não é falha. */
   @OnEvent(EV.COMMAND_CHANGED, { async: true, promisify: true })
   async onCommandChanged(ev: CommandChangedEvent): Promise<void> {
-    if (ev.status !== 'failed') return;
-    await this.alerts.create({ type: 'command_failed', priority: ev.type === 'lock' ? 'high' : 'medium', message: `Comando ${ev.type} falhou (${ev.reason ?? 'sem motivo'}).`, vehicleId: ev.vehicleId });
+    if (ev.status !== 'failed' || ev.reason === 'superseded') return;
+    await this.alerts.create({ type: 'command_failed', priority: ev.type === 'lock' ? 'high' : 'medium', message: commandFailedMessage(ev.type, ev.reason), vehicleId: ev.vehicleId });
   }
+}
+
+const COMMAND_LABEL: Record<string, string> = { lock: 'Bloqueio', unlock: 'Desbloqueio', horn: 'Buzina', speed_limit: 'Limite de velocidade', stolen_mode: 'Modo roubada' };
+const FAILURE_REASON: Record<string, string> = {
+  offline: 'moto sem conexão',
+  timeout: 'sem resposta da moto',
+  did_not_stop: 'a moto não parou',
+  invalid_limit: 'limite inválido',
+  locked_by_staff: 'travada pela equipe',
+  unsupported_by_tracker: 'o rastreador não executa este comando',
+};
+
+/** Texto do alerta `command_failed` em pt-BR ("Bloqueio falhou: a moto não parou."); sem motivo conhecido, só "falhou". */
+export function commandFailedMessage(type: string, reason?: string): string {
+  const what = COMMAND_LABEL[type] ?? 'Comando';
+  const why = reason ? FAILURE_REASON[reason] : undefined;
+  return why ? `${what} falhou: ${why}.` : `${what} falhou.`;
 }

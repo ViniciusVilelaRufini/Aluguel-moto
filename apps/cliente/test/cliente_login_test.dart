@@ -1084,7 +1084,9 @@ void main() {
       ]));
       await settle(t);
       expect(find.text('Sua localização'), findsOneWidget);
-      expect(find.text('Perto do Galpão Volti · Pinheiros'), findsOneWidget);
+      // 412 px: nao cabe numa linha, entao nome e bairro vem em linhas separadas.
+      expect(find.text('Perto do Galpão Volti'), findsOneWidget);
+      expect(find.text('Pinheiros'), findsOneWidget);
       expect(find.textContaining('Fradique'), findsNothing);
     });
 
@@ -1119,7 +1121,9 @@ void main() {
         clockProvider.overrideWithValue(() => thu10),
       ]));
       await settle(t);
-      expect(find.text('Perto do Galpão Volti · Pinheiros'), findsOneWidget);
+      // 412 px: nao cabe numa linha, entao nome e bairro vem em linhas separadas.
+      expect(find.text('Perto do Galpão Volti'), findsOneWidget);
+      expect(find.text('Pinheiros'), findsOneWidget);
       final mooca = find.byKey(const Key('depot-option-far'));
       await t.ensureVisible(mooca);
       await t.pump();

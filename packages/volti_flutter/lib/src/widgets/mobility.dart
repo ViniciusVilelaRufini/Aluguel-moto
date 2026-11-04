@@ -793,6 +793,7 @@ class ListRow extends StatelessWidget {
     this.iconTone = ListRowTone.neutral,
     this.subtitle,
     this.value,
+    this.badge,
     this.trailing = ListRowTrailing.arrow,
     this.onTap,
   });
@@ -802,6 +803,9 @@ class ListRow extends StatelessWidget {
   final ListRowTone iconTone;
   final String? subtitle;
   final String? value;
+
+  /// Selo de estado antes do valor (ex.: `VoltiBadge` "Em andamento").
+  final Widget? badge;
   final ListRowTrailing trailing;
   final VoidCallback? onTap;
 
@@ -864,6 +868,10 @@ class ListRow extends StatelessWidget {
               ],
             ),
           ),
+          if (badge != null) ...[
+            const SizedBox(width: 8),
+            badge!,
+          ],
           if (value != null) ...[
             const SizedBox(width: 8),
             Text(

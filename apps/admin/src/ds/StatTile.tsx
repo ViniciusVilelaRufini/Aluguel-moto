@@ -11,11 +11,11 @@ export function AnimatedNumber({ value, format = (n) => String(n), integer = tru
   const reduced = useReducedMotion();
   const reducedRef = useRef(reduced);
   reducedRef.current = reduced;
-  // Começa do zero: na primeira carga o número sobe até o valor (ticker); depois anima entre valores,
-  // sempre a partir do número que está na tela (ver createTicker).
-  const [shown, setShown] = useState(0);
+  // Começa no primeiro valor (P2-4: subir do zero mostrava "0 alertas"/"R$ 0,00" falsos por quase 1 s); depois anima entre
+  // valores, sempre a partir do número que está na tela (ver createTicker).
+  const [shown, setShown] = useState(value);
   const ticker = useRef<ReturnType<typeof createTicker> | null>(null);
-  if (!ticker.current) ticker.current = createTicker({ initial: 0, duration, integer, onShow: setShown, reduced: () => reducedRef.current || prefersReducedMotion() });
+  if (!ticker.current) ticker.current = createTicker({ initial: value, duration, integer, onShow: setShown, reduced: () => reducedRef.current || prefersReducedMotion() });
   useEffect(() => {
     const t = ticker.current!;
     t.to(value);
@@ -29,8 +29,8 @@ export function AnimatedNumber({ value, format = (n) => String(n), integer = tru
  * Com `numeric`, o valor anima (ticker) e cada mudança ao vivo mostra uma variação curta ("+1")
  * que some em 2,4 s, com tom conforme `goodWhen`. `delta`/`trend` estáticos continuam valendo.
  */
-export function StatTile({ label, value, numeric, format, goodWhen = 'up', delta, trend = 'up', caption, icon, testId, style }: {
-  label: string; value?: ReactNode; numeric?: number | null; format?: (n: number) => string; goodWhen?: 'up' | 'down';
+export function StatTile({ label, value, numeric, format, integer = true, goodWhen = 'up', delta, trend = 'up', caption, icon, testId, style }: {
+  label: string; value?: ReactNode; numeric?: number | null; format?: (n: number) => string; integer?: boolean; goodWhen?: 'up' | 'down';
   delta?: string; trend?: 'up' | 'down' | 'flat'; caption?: string; icon?: string; testId?: string; style?: CSSProperties;
 }) {
   const prev = useRef<number | null | undefined>(numeric);
@@ -60,7 +60,7 @@ export function StatTile({ label, value, numeric, format, goodWhen = 'up', delta
         )}
       </div>
       <div aria-live="off" className="stat-value" style={{ font: 'var(--fw-bold) 26px/1.1 var(--font-sans)', letterSpacing: 'var(--ls-tight)', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {numeric != null ? <AnimatedNumber value={numeric} format={format} /> : value ?? '—'}
+        {numeric != null ? <AnimatedNumber value={numeric} format={format} integer={integer} /> : value ?? '—'}
       </div>
       {caption && <div style={{ font: 'var(--type-caption)', color: 'var(--text-secondary)' }}>{caption}</div>}
       {delta && (

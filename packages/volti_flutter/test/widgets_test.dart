@@ -148,6 +148,16 @@ void main() {
     expect(find.text('Tirar foto'), findsOneWidget);
   });
 
+  testWidgets('ListRow mostra o selo entre o texto e o valor', (t) async {
+    await t.pumpWidget(_wrap(const SizedBox(
+      width: 360,
+      child: ListRow(title: 'VLT-0059', subtitle: '03/11 21:59', badge: VoltiBadge('Em andamento', tone: VoltiBadgeTone.info), value: 'R\$ 89,00'),
+    )));
+    final badge = t.getRect(find.text('Em andamento'));
+    expect(badge.left, greaterThan(t.getRect(find.text('VLT-0059')).right));
+    expect(badge.right, lessThan(t.getRect(find.text('R\$ 89,00')).left));
+  });
+
   testWidgets('Dialog e BottomSheet abrem', (t) async {
     await t.pumpWidget(MaterialApp(
       theme: VoltiTheme.light(),

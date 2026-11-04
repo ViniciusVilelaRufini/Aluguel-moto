@@ -10,7 +10,7 @@ import { displayCpf, isValidCpf } from '@/lib/cpf';
 import { CLAIM_STATUS, CONVERSATION_STATUS, CUSTOMER_STATUS, DISPUTE_STATUS, KYC_STATUS, PAYMENT_KIND, PAYMENT_STATUS, PLAN_LABEL, RENTAL_STATUS } from '@/lib/labels';
 import { formatBRL, formatDate, formatDateTime, formatDuration, formatPhone } from '@/lib/format';
 import type { S } from '@/lib/types';
-import { DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast, type Column } from '@/components/ui';
+import { CustomerName, DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast, type Column } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
 import { SupportPanel } from '@/components/SupportPanel';
 import { SubscriptionVehicleDialog } from '@/components/SubscriptionVehicleDialog';
@@ -18,8 +18,10 @@ import { WalletAdjustDialog } from '@/components/WalletAdjustDialog';
 import { DelinquencyClearDialog } from '@/components/DelinquencyClearDialog';
 import { delinquencySummary } from '@/lib/admin-forms';
 import { canSeeFullPixKey, displayPixKey } from '@/lib/pix';
+import { useNarrow } from '@/lib/use-narrow';
 import { useRealtime } from '@/lib/realtime';
 import { SUBSCRIPTION_STATUS } from '@/lib/labels';
+import { initialsSource, realEmail } from '@/lib/customer-label';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { Input } from '@/ds/Input';
@@ -79,6 +81,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
     mq.addEventListener('change', sync);
     return () => mq.removeEventListener('change', sync);
   }, []);
+  const compact = useNarrow(1300);
   const full = canSeeFullCpf(groups);
   useEffect(() => { const t = setTimeout(() => setDebounced(q), 300); return () => clearTimeout(t); }, [q]);
   useEffect(() => { const v = params.get('q'); if (v) setQ(v); }, [params]);
@@ -113,7 +116,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
           emptyHint={debounced ? 'Confira a grafia ou busque por CPF, e-mail ou telefone.' : undefined}
           emptyAction={debounced || filter !== 'all' ? <Button size="sm" variant="ghost" icon="X" onClick={() => { setQ(''); setFilter('all'); }}>Limpar busca e filtros</Button> : undefined}
           columns={([
-            { key: 'name', label: 'Cliente', render: (r) => <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Initials name={r.name ?? r.email} /><span style={{ fontWeight: 600 }}>{r.name ?? r.email}</span></div> },
+            { key: 'name', label: 'Cliente', render: (r) => <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Initials name={initialsSource(r)} /><span><CustomerName id={r.id} name={r.name} email={r.email} /></span></div> },
             { key: 'cpf', label: 'CPF', mono: true, render: (r) => displayCpf(r.cpf, full) },
             { key: 'kycStatus', label: 'Verificação', render: (r) => { const [l, t, i] = KYC_STATUS[r.kycStatus]; return <Badge size="sm" tone={t} icon={i}>{l}</Badge>; } },
             { key: 'plan', label: 'Plano', render: (r) => (r.activePlanCode ? <Pill tone="info" icon="Repeat">{PLAN_LABEL[r.activePlanCode]}</Pill> : <span style={{ color: 'var(--text-secondary)' }}>Avulso</span>) },
@@ -126,7 +129,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
                 {r.restricted && <Pill tone="danger">Restrição</Pill>}
               </div>
             ) },
-          ] as Column<S<'Customer'>>[]).filter((c) => !(selected && ['cpf', 'plan', 'rentals'].includes(c.key)))}
+          ] as Column<S<'Customer'>>[]).filter((c) => !(selected && ['cpf', 'plan', 'rentals'].includes(c.key)) && !(compact && ['cpf', 'plan'].includes(c.key)))}
         />
         </div>
       </Page>
@@ -155,9 +158,9 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
     <SidePanel width={400} onClose={onClose} testId="customer-sheet" title={
       c && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Initials name={c.name ?? c.email} size={48} />
+          <Initials name={initialsSource(c)} size={48} />
           <div>
-            <div style={{ font: '700 18px/1.25 var(--font-sans)' }}>{c.name ?? c.email}</div>
+            <div style={{ font: '700 18px/1.25 var(--font-sans)' }}><CustomerName id={c.id} name={c.name} email={c.email} bold={false} /></div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Cliente desde {formatDate(c.createdAt)}</div>
           </div>
         </div>
@@ -170,14 +173,16 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
           <SegmentedControl options={[{ value: 'kyc', label: 'Verificação' }, { value: 'support', label: 'Atendimento' }, { value: 'history', label: 'Histórico' }]} value={tab} onChange={setTab} />
           {tab === 'kyc' && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <PhotoCapture height={110} label="Documento" icon="IdCard" done={c.kycStatus === 'approved'} />
-                <PhotoCapture height={110} label="Selfie" icon="ScanFace" done={c.kycStatus === 'approved'} />
-              </div>
+              {can(groups, 'kyc.review') && c.kycStatus !== 'not_started' ? <KycFilesView customerId={id} /> : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <PhotoCapture height={110} label={c.kycStatus === 'not_started' ? 'Documento não enviado' : 'Documento'} icon="IdCard" done={c.kycStatus === 'approved'} />
+                  <PhotoCapture height={110} label={c.kycStatus === 'not_started' ? 'Selfie não enviada' : 'Selfie'} icon="ScanFace" done={c.kycStatus === 'approved'} />
+                </div>
+              )}
               <div>
                 <KV k="Verificação" v={KYC_STATUS[c.kycStatus][0]} />
                 <KV k="CPF" v={displayCpf(c.cpf, full)} mono />
-                <KV k="E-mail" v={c.email} />
+                <KV k="E-mail" v={realEmail(c.email) ?? '—'} />
                 <KV k="Telefone" v={formatPhone(c.phone)} />
                 <KV k="Nascimento" v={formatDate(c.birthDate)} />
                 <KV k="Localização autorizada" v={c.locationConsent ? 'Sim' : 'Não'} />
@@ -385,5 +390,51 @@ function SubscriptionBox({ subscriptionId, planCode }: { subscriptionId: string;
       {canAssign && <Button size="sm" variant="secondary" icon="Bike" testId="assign-fixed" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)', background: '#fff' }} onClick={() => setAssign(true)}>{fixed ? 'Trocar moto fixa' : 'Definir moto fixa'}</Button>}
       {assign && <SubscriptionVehicleDialog subscriptionId={subscriptionId} currentCode={fixed} onClose={() => setAssign(false)} onDone={setSub} />}
     </div>
+  );
+}
+
+const KYC_FILE_LABEL: Record<'documentFront' | 'documentBack' | 'selfie', string> = { documentFront: 'Documento (frente)', documentBack: 'Documento (verso)', selfie: 'Selfie' };
+
+/**
+ * P2-6: arquivos da verificação para a revisão (GET /customers/{id}/kyc-files). Links pré-assinados de 5 minutos; cada consulta
+ * grava auditoria, então a consulta não se repete sozinha (só ao reabrir depois de 4 min ou ao clicar em "Recarregar").
+ */
+function KycFilesView({ customerId }: { customerId: string }) {
+  const q = useQuery({
+    queryKey: ['kyc-files', customerId],
+    queryFn: () => unwrap(api.GET('/customers/{id}/kyc-files', { params: { path: { id: customerId } } })),
+    staleTime: 240_000,
+    refetchOnWindowFocus: false,
+  });
+  if (q.isLoading) return <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}><Skeleton h={110} r={20} /><Skeleton h={110} r={20} /></div>;
+  if (q.error) return <ErrorNote error={q.error} onRetry={() => q.refetch()} />;
+  const files = (['documentFront', 'documentBack', 'selfie'] as const).filter((k) => q.data?.[k]);
+  if (files.length === 0) return <Empty compact icon="IdCard">Nenhum arquivo de verificação enviado</Empty>;
+  return (
+    <div data-testid="kyc-files" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        {files.map((k) => <KycFileTile key={k} label={KYC_FILE_LABEL[k]} url={q.data![k]!.url} />)}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+        <span style={{ flex: 1 }}>Links válidos por 5 minutos · acesso registrado na auditoria</span>
+        <Button size="sm" variant="ghost" icon="RefreshCw" style={{ height: 26, padding: '0 6px' }} onClick={() => q.refetch()}>Recarregar</Button>
+      </div>
+    </div>
+  );
+}
+
+function KycFileTile({ label, url }: { label: string; url: string }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" data-testid="kyc-file" aria-label={`${label}: abrir em nova aba`}
+      style={{ display: 'flex', flexDirection: 'column', gap: 4, textDecoration: 'none', color: 'var(--text-primary)' }}>
+      {broken ? (
+        <span style={{ height: 110, borderRadius: 'var(--radius-lg)', background: 'var(--surface-sunken)', border: '1.5px dashed var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, color: 'var(--text-link)' }}>Abrir arquivo</span>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element -- link pré-assinado externo (S3/MinIO), sem otimização do Next.
+        <img src={url} alt={label} onError={() => setBroken(true)} style={{ width: '100%', height: 110, objectFit: 'cover', borderRadius: 'var(--radius-lg)', background: 'var(--surface-sunken)' }} />
+      )}
+      <span style={{ font: 'var(--type-caption)', color: 'var(--text-secondary)' }}>{label}</span>
+    </a>
   );
 }

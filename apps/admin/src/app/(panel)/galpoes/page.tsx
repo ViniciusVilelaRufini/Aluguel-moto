@@ -13,6 +13,7 @@ import {
 } from '@/lib/depot-hours';
 import { VEHICLE_STATUSES } from '@/lib/status';
 import { prefersReducedMotion } from '@/lib/motion';
+import { plural } from '@/lib/fleet-copy';
 import type { S } from '@/lib/types';
 import { MapView } from '@/components/MapView';
 import { OpeningHoursEditor } from '@/components/depots/OpeningHoursEditor';
@@ -253,7 +254,7 @@ export default function DepotsPage() {
             </div>
             <KV k="Endereço" v={selected.address} />
             <KV k="Retirar agora" v={`${selected.pickupNowWindowMinutes} min`} />
-            <KV k="Agendar até" v={`${selected.maxScheduleDays} dias`} />
+            <KV k="Agendar até" v={plural(selected.maxScheduleDays, 'dia', 'dias')} />
             <KV k="Tolerância" v={`${selected.scheduledGraceMinutes} min`} />
             <KV k="Mínimo de baterias carregadas" v={selected.minChargedBatteries ? String(selected.minChargedBatteries) : 'Sem alerta'} />
             <SectionTitle>Horário de funcionamento</SectionTitle>
@@ -264,7 +265,9 @@ export default function DepotsPage() {
         {selectedId && (
           <div data-testid="depot-vehicles">
             <SectionTitle>Motos do galpão por status</SectionTitle>
-            {vehiclesQ.isLoading ? <Skeleton h={30} /> : (vehiclesQ.data?.items.length ?? 0) === 0 ? (
+            {vehiclesQ.isLoading ? <Skeleton h={30} /> : vehiclesQ.error ? (
+              <ErrorNote error={vehiclesQ.error} onRetry={() => vehiclesQ.refetch()} />
+            ) : (vehiclesQ.data?.items.length ?? 0) === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Nenhuma moto neste galpão.</div>
             ) : (
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -288,7 +291,7 @@ export default function DepotsPage() {
                 <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
                   <div style={{ fontSize: 14, fontWeight: 600 }}>{d.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{summarizeHours(d.openingHours)}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{d.availableVehicleCount ?? 0} motos disponíveis</div>
+                  {d.availableVehicleCount !== undefined && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{plural(d.availableVehicleCount, 'moto disponível', 'motos disponíveis')}</div>}
                 </div>
                 {!d.active && <Badge size="sm" tone="neutral">Inativo</Badge>}
                 <Icon name="ChevronRight" size={16} color="var(--text-tertiary)" />

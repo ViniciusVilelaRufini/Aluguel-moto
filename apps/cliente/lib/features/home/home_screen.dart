@@ -1087,14 +1087,47 @@ class _MapBadge extends StatelessWidget {
 }
 
 /// Corrida em andamento: ocupa o lugar do cartao do galpao (sem "Escolher moto").
-class _ActiveRideCard extends StatelessWidget {
+/// Cartao "Corrida em andamento" na home: placa, tempo correndo e valor parcial.
+/// O tempo segue a mesma conta da tela da corrida (agora - inicio - pausas);
+/// pausado, vale o que o servidor contou.
+class _ActiveRideCard extends ConsumerStatefulWidget {
   const _ActiveRideCard({super.key, required this.rental, required this.onTap});
   final Rental rental;
   final VoidCallback onTap;
 
   @override
+  ConsumerState<_ActiveRideCard> createState() => _ActiveRideCardState();
+}
+
+class _ActiveRideCardState extends ConsumerState<_ActiveRideCard> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && widget.rental.status == RentalStatus.active) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  int _elapsed() {
+    final r = widget.rental;
+    if (r.status != RentalStatus.active) return r.elapsedSeconds;
+    final now = ref.read(clockProvider)();
+    return math.max(0, now.difference(r.startedAt.toUtc()).inSeconds - r.pausedSeconds);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final l = context.l;
+    final r = widget.rental;
+    final figure = VoltiTypography.bodyStrong.copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(VoltiSpacing.s16),
@@ -1109,14 +1142,24 @@ class _ActiveRideCard extends StatelessWidget {
         children: [
           Semantics(header: true, child: Text(l.rentalInProgress, style: VoltiTypography.title)),
           const SizedBox(height: VoltiSpacing.s4),
-          Text(rental.vehicleCode, style: VoltiTypography.caption),
+          // Fonte grande: placa, tempo e valor quebram em vez de estourar.
+          // Leitor de tela: um nó só com contexto ("custo acumulado"), sem liveRegion no tempo.
+          Semantics(
+            label: '${r.vehicleCode}, ${clock(_elapsed())}, ${l.accumulatedCost} ${money(r.costCents)}',
+            excludeSemantics: true,
+            child: Wrap(spacing: VoltiSpacing.s12, runSpacing: VoltiSpacing.s4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              Text(r.vehicleCode, style: VoltiTypography.caption),
+              Text(clock(_elapsed()), key: const Key('home-ride-elapsed'), style: figure),
+              Text(money(r.costCents), key: const Key('home-ride-cost'), style: figure),
+            ]),
+          ),
           const SizedBox(height: VoltiSpacing.s12),
           VoltiButton(
             key: const Key('home-back-to-ride'),
             label: l.backToRide,
             icon: LucideIcons.motorbike,
             fullWidth: true,
-            onPressed: onTap,
+            onPressed: widget.onTap,
           ),
         ],
       ),

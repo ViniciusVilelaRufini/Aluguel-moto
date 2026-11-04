@@ -44,7 +44,10 @@ case "$action" in
       -e NEXT_PUBLIC_COGNITO_CLIENT_ID="$(envval COGNITO_STAFF_CLIENT_ID)" \
       -e NEXT_PUBLIC_COGNITO_REDIRECT_URI="$origin/auth/callback/" \
       node:24-alpine sh -c 'corepack enable && corepack prepare pnpm@9.15.9 --activate && pnpm install --frozen-lockfile --filter admin... && pnpm --filter admin build'
-    aws s3 sync "$work/apps/admin/out" "s3://$(envval ADMIN_BUCKET)" --delete
+    # Em duas fases: os arquivos de _next/static (nome com hash) sobem primeiro e os antigos ficam, para quem está com a
+    # versão anterior aberta não cair em ChunkLoadError (tela branca); depois o HTML e o resto, com --delete fora do static.
+    aws s3 sync "$work/apps/admin/out/_next/static" "s3://$(envval ADMIN_BUCKET)/_next/static"
+    aws s3 sync "$work/apps/admin/out" "s3://$(envval ADMIN_BUCKET)" --delete --exclude '_next/static/*'
     aws cloudfront create-invalidation --distribution-id "$(envval ADMIN_DISTRIBUTION_ID)" --paths '/*' >/dev/null
     echo "painel publicado em $origin (API https://$host)"
     ;;

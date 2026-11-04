@@ -94,6 +94,8 @@ export async function installMockApi(page_: Page, opts: MockOptions = {}): Promi
     const method = req.method();
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
     if (url.pathname.startsWith('/socket.io')) return route.fulfill({ status: 404, headers: CORS });
+    // Links pré-assinados dos arquivos do KYC (GET /customers/{id}/kyc-files): imagem 1x1.
+    if (method === 'GET' && url.pathname.startsWith('/files/')) return route.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: PNG_1PX });
     let body: unknown;
     try { body = req.postDataJSON(); } catch { body = undefined; }
     mock.calls.push({ method, path: url.pathname, query: url.searchParams, body, headers: req.headers() });
@@ -188,6 +190,11 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
     return ok(page(db.customers.filter((c) => (!qq || (c.name ?? '').toLowerCase().includes(qq) || c.email.includes(qq)) && (!ks || c.kycStatus === ks) && (!st || c.status === st)), q));
   }
   if (method === 'GET' && match(/^\/customers\/[^/]+$/)) { const c = find(db.customers); return c ? ok(c) : notFound(); }
+  if (method === 'GET' && match(/^\/customers\/[^/]+\/kyc-files$/)) {
+    const c = find(db.customers); if (!c) return notFound();
+    const exp = new Date(Date.parse(now) + 300_000).toISOString();
+    return ok(c.kycStatus === 'not_started' ? { customerId: c.id } : { customerId: c.id, documentType: 'cnh', documentFront: { url: `http://api.mock.local/files/kyc/${c.id}/document-front`, expiresAt: exp }, selfie: { url: `http://api.mock.local/files/kyc/${c.id}/selfie`, expiresAt: exp } });
+  }
   if (method === 'POST' && match(/^\/customers\/[^/]+\/(block|unblock|kyc-review)$/)) {
     const c = find(db.customers); if (!c) return notFound();
     if (seg[2] === 'block') Object.assign(c, { status: 'blocked', blockedReason: b.reason });
@@ -256,7 +263,12 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
   if (method === 'GET' && p === '/reports/demand-heatmap') return ok({ from: now, to: now, points: db.vehicles.map((v) => ({ lat: v.lat, lng: v.lng, weight: 1 + (v.batteryPct % 5) })) });
 
   // Operação
-  if (method === 'GET' && p === '/field-tasks') return ok(page(db.fieldTasks, q));
+  if (method === 'GET' && p === '/field-tasks') {
+    // `completedSince` não filtra aqui: as datas das fixtures são fixas (2026-10-26) e o painel pede "últimos 7 dias" do relógio real.
+    const st = q.get('status'); const active = q.get('active') === 'true';
+    const open = ['open', 'assigned', 'in_progress'];
+    return ok(page(db.fieldTasks.filter((t) => (st ? t.status === st : !active || open.includes(t.status))), q));
+  }
   if (method === 'POST' && p === '/field-tasks') { const t = { ...db.fieldTasks[0]!, ...b, id: `ft-${db.fieldTasks.length + 1}`, status: 'open', createdAt: now, updatedAt: now }; db.fieldTasks.push(t as never); return ok(t, 201); }
   if (method === 'PATCH' && match(/^\/field-tasks\/[^/]+$/)) { const t = find(db.fieldTasks); if (!t) return notFound(); Object.assign(t, b); return ok(t); }
   if (method === 'GET' && p === '/maintenance/tasks') return ok(page(db.maintenance, q));

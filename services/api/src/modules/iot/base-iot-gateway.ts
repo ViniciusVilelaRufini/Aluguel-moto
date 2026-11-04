@@ -574,10 +574,10 @@ export abstract class BaseIotGateway implements IotGateway {
     return t.relayOnly && t.expect.travada === false ? (this.opts.relayUnlockTimeoutMs ?? RELAY_UNLOCK_TIMEOUT_MS) : this.opts.commandTimeoutMs;
   }
 
-  /** Comando novo sobre o mesmo campo substitui o anterior ainda pendente (que termina `failed`). */
+  /** Comando novo sobre o mesmo campo substitui o anterior ainda pendente (que termina `failed`/`superseded`, sem alerta). */
   private supersede(thingName: string, keys: Array<keyof ReportedState>): void {
     for (const t of [...this.tracked.values()]) {
-      if (t.thingName === thingName && keys.some((k) => k in t.expect)) this.finishTracked(t, { status: 'failed' });
+      if (t.thingName === thingName && keys.some((k) => k in t.expect)) this.finishTracked(t, { status: 'failed', reason: 'superseded' });
     }
   }
 

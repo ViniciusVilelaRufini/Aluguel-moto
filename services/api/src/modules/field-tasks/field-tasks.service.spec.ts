@@ -614,3 +614,27 @@ describe('Iniciar tarefa (auditoria run-4: corrida no responsável)', () => {
     await expect(service.start(campo, TASK_ID)).rejects.toMatchObject({ status: 409, slug: 'conflict' });
   });
 });
+
+describe('Painel de bancada (2026-11-03): bateria desconhecida e filtros do kanban', () => {
+  const task = { id: TASK_ID, type: 'battery_swap', status: 'open', priority: 'medium', vehicleId: VEHICLE_ID, assigneeId: null, createdAt: new Date(), updatedAt: new Date() };
+
+  it('moto sem leitura de bateria (batteryKnown false) → vehicleBatteryPct ausente (nunca "0%")', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findMany.mockResolvedValue([task] as any);
+    prisma.vehicle.findMany.mockResolvedValue([{ id: VEHICLE_ID, code: 'VLT-0059', lat: 1, lng: 2, batteryPct: 0, batteryKnown: false, status: 'rented' }] as any);
+    const page = await service.list(operacao, {} as any);
+    expect(page.items[0]).not.toHaveProperty('vehicleBatteryPct');
+    expect((prisma.vehicle.findMany.mock.calls[0][0] as any).select).toMatchObject({ batteryKnown: true });
+    prisma.vehicle.findMany.mockResolvedValue([{ id: VEHICLE_ID, code: 'VLT-0001', lat: 1, lng: 2, batteryPct: 41, batteryKnown: true, status: 'free' }] as any);
+    expect((await service.list(operacao, {} as any)).items[0]).toMatchObject({ vehicleBatteryPct: 41 });
+  });
+
+  it('active=true → só as abertas (open, assigned, in_progress); completedSince → concluídas desde a data', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findMany.mockResolvedValue([]);
+    await service.list(operacao, { active: true } as any);
+    expect((prisma.fieldTask.findMany.mock.calls[0][0] as any).where).toEqual({ status: { in: ['open', 'assigned', 'in_progress'] } });
+    await service.list(operacao, { status: 'done', completedSince: '2026-10-27T03:00:00.000Z' } as any);
+    expect((prisma.fieldTask.findMany.mock.calls[1][0] as any).where).toEqual({ status: 'done', completedAt: { gte: new Date('2026-10-27T03:00:00.000Z') } });
+  });
+});

@@ -39,19 +39,21 @@ class LocationHeader extends ConsumerWidget {
     final place = locationPlaceLabel(l, ref.watch(currentDepotProvider).value, located: located, nearest: nearest);
     // Sem central de notificacoes no contrato, nao ha sino: o suporte tem entrada
     // na Conta, e o ponto de mensagem nova fica no avatar que leva a ela.
-    return Row(children: [
-      _Avatar(
-        initials: initialsOf(session?.customer?.name),
-        label: unread ? l.accountUnread : l.account,
-        unread: unread,
-        onTap: () => context.push('/account'),
-      ),
-      const SizedBox(width: VoltiSpacing.s12),
-      // heightFactor 1: sem ele o Center ocupa a altura toda numa Stack e a barra desce ao meio da tela.
-      // O espaco do antigo sino mantem a pilula centrada.
-      Expanded(child: Center(heightFactor: 1, child: _LocationPill(label: located ? l.yourLocation : l.pickupAtLabel, place: place))),
-      const SizedBox(width: VoltiSpacing.s12 + 44),
-    ]);
+    return Row(
+      children: [
+        _Avatar(initials: initialsOf(session?.customer?.name), label: unread ? l.accountUnread : l.account, unread: unread, onTap: () => context.push('/account')),
+        const SizedBox(width: VoltiSpacing.s12),
+        // heightFactor 1: sem ele o Center ocupa a altura toda numa Stack e a barra desce ao meio da tela.
+        // O espaco do antigo sino mantem a pilula centrada.
+        Expanded(
+          child: Center(
+            heightFactor: 1,
+            child: _LocationPill(label: located ? l.yourLocation : l.pickupAtLabel, place: place),
+          ),
+        ),
+        const SizedBox(width: VoltiSpacing.s12 + 44),
+      ],
+    );
   }
 }
 
@@ -69,45 +71,46 @@ class _Avatar extends StatelessWidget {
       onTap: onTap,
       scale: VoltiMotion.iconPressScale,
       semanticLabel: label,
-      child: Stack(clipBehavior: Clip.none, children: [
-        Container(
-        key: const Key('home-avatar'),
-        width: 44,
-        height: 44,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: VoltiColors.sun300,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 2),
-          boxShadow: VoltiShadows.shadow1,
-        ),
-        child: initials == null
-            ? const Icon(LucideIcons.user, size: 20, color: VoltiColors.ink900)
-            : Text(
-                initials!,
-                // Cabe no disco de 44 px em qualquer escala de texto (a semantica diz "Conta").
-                textScaler: TextScaler.noScaling,
-                style: const TextStyle(
-                  fontFamily: VoltiTypography.fontSans,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  height: 1,
-                  color: VoltiColors.ink900,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            key: const Key('home-avatar'),
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: VoltiColors.sun300,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: VoltiShadows.shadow1,
+            ),
+            child: initials == null
+                ? const Icon(LucideIcons.user, size: 20, color: VoltiColors.ink900)
+                : Text(
+                    initials!,
+                    // Cabe no disco de 44 px em qualquer escala de texto (a semantica diz "Conta").
+                    textScaler: TextScaler.noScaling,
+                    style: const TextStyle(fontFamily: VoltiTypography.fontSans, fontWeight: FontWeight.w700, fontSize: 15, height: 1, color: VoltiColors.ink900),
+                  ),
+          ),
+          if (unread)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Container(
+                key: const Key('home-avatar-dot'),
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: VoltiColors.danger,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
                 ),
               ),
-        ),
-        if (unread)
-          Positioned(
-            top: 0,
-            right: 0,
-            child: Container(
-              key: const Key('home-avatar-dot'),
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(color: VoltiColors.danger, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
             ),
-          ),
-      ]),
+        ],
+      ),
     );
   }
 }
@@ -117,41 +120,72 @@ class _LocationPill extends StatelessWidget {
   const _LocationPill({required this.label, required this.place});
   final String label, place;
 
+  static const _padX = 16.0;
+
+  /// "Perto do Galpão Volti · Pinheiros" numa linha quando cabe; senao nome e
+  /// bairro em linhas separadas, sem o "·" pendurado no fim da primeira.
+  static List<String> placeLines(String place, TextStyle style, TextScaler scaler, double maxWidth) {
+    final cut = place.lastIndexOf(' · ');
+    if (cut < 0) return [place];
+    final painter = TextPainter(
+      text: TextSpan(text: place, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout(maxWidth: maxWidth);
+    final fits = !painter.didExceedMaxLines;
+    painter.dispose();
+    return fits ? [place] : [place.substring(0, cut), place.substring(cut + 3)];
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      container: true,
-      label: '$label · $place',
-      child: ExcludeSemantics(
-        child: Container(
-          key: const Key('home-location'),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: BoxDecoration(color: context.palette.glassBg, borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow1),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(LucideIcons.navigation, size: 12, color: VoltiColors.brand),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
-                ),
+    final placeStyle = VoltiTypography.bodyStrong.copyWith(color: context.palette.textPrimary);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final lines = placeLines(place, placeStyle, MediaQuery.textScalerOf(context), constraints.maxWidth - 2 * _padX);
+        return Semantics(
+          container: true,
+          label: '$label · $place',
+          child: ExcludeSemantics(
+            child: Container(
+              key: const Key('home-location'),
+              padding: const EdgeInsets.symmetric(horizontal: _padX, vertical: 6),
+              decoration: BoxDecoration(color: context.palette.glassBg, borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow1),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(LucideIcons.navigation, size: 12, color: VoltiColors.brand),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                  for (final line in lines)
+                    Text(
+                      line,
+                      // Fonte grande: cada parte quebra em ate 2 linhas em vez de cortar.
+                      maxLines: 2,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: placeStyle,
+                    ),
+                ],
               ),
-            ]),
-            Text(
-              place,
-              // Fonte grande: o nome do galpao quebra em ate 2 linhas em vez de cortar.
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
-              style: VoltiTypography.bodyStrong.copyWith(color: context.palette.textPrimary),
             ),
-          ]),
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }

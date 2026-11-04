@@ -623,6 +623,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get rentalInProgress => 'Corrida em andamento';
 
   @override
+  String get rentalOngoingBadge => 'Em andamento';
+
+  @override
+  String get receiptAfterRideEnds =>
+      'O recibo fica disponível quando a corrida terminar.';
+
+  @override
   String get reportProblem => 'Reportar problema';
 
   @override
@@ -853,11 +860,6 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String greeting(String name) {
     return 'Olá, $name';
-  }
-
-  @override
-  String historyItem(String code, String date) {
-    return 'Moto $code · $date';
   }
 
   @override

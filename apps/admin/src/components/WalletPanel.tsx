@@ -6,7 +6,8 @@ import { can } from '@/lib/permissions';
 import { useAuth } from '@/lib/auth';
 import type { S } from '@/lib/types';
 import { Button } from '@/ds/Button';
-import { DataTable, ErrorNote, Field, Pill, Select, TextInput, usePagedQuery } from './ui';
+import { CustomerName, DataTable, ErrorNote, Field, Pill, Select, TextInput, usePagedQuery } from './ui';
+import { realEmail } from '@/lib/customer-label';
 import { WalletAdjustDialog } from './WalletAdjustDialog';
 import { DelinquencyClearDialog } from './DelinquencyClearDialog';
 
@@ -50,8 +51,8 @@ export function WalletPanel() {
         empty={onlyDelinquent ? (debounced ? `Nenhum inadimplente para "${debounced}"` : 'Nenhum cliente inadimplente.') : enabled ? `Nenhum cliente para "${debounced}"` : 'Busque um cliente para ajustar a carteira.'}
         emptyIcon={onlyDelinquent ? 'CircleCheck' : enabled ? 'Search' : 'Wallet'}
         columns={[
-          { key: 'name', label: 'Cliente', render: (c) => <span style={{ fontWeight: 600 }}>{c.name ?? c.email}</span> },
-          { key: 'email', label: 'E-mail' },
+          { key: 'name', label: 'Cliente', render: (c) => <CustomerName id={c.id} name={c.name} email={c.email} /> },
+          { key: 'email', label: 'E-mail', render: (c) => realEmail(c.email) ?? '—' },
           { key: 'delinquent', label: 'Situação', render: (c) => (c.delinquent ? <Pill tone="danger">Inadimplente</Pill> : <Pill>Em dia</Pill>) },
           { key: 'adjust', label: '', align: 'right', render: (c) => (
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', whiteSpace: 'nowrap' }}>

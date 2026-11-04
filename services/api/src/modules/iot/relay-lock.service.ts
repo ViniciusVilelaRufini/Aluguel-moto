@@ -242,11 +242,11 @@ export class RelayLockService {
     });
   }
 
-  /** Destravar/comando conflitante: encerra a trava; os locks em curso terminam `failed`. Nada é publicado aqui. */
+  /** Destravar/comando conflitante: encerra a trava; os locks em curso terminam `failed`/`superseded`. Nada é publicado aqui. */
   async cancel(thingName: string): Promise<void> {
     await this.store.withLock(thingName, async () => {
       const lock = await this.store.get(thingName);
-      if (lock) await this.finish(lock, { status: 'failed' });
+      if (lock) await this.finish(lock, { status: 'failed', reason: 'superseded' });
     });
   }
 

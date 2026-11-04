@@ -139,11 +139,13 @@ export function toVehicle(
     // Versão do rastreador vinculado (provisionamento); sem ela, a gravada na moto.
     firmwareVersion: v.tracker?.firmwareVersion ?? v.firmwareVersion ?? undefined,
     lastSeenAt: iso(v.lastSeenAt),
+    // Hora da medição de lat/lng: o heartbeat avança `lastSeenAt` sem posição nova (J16 sem GPS válido).
+    positionAt: iso(v.positionAt),
     currentRentalId: opts.currentRentalId,
     odometerKm: round1(v.odometerKm ?? 0),
     usageHours: round1(v.usageHours ?? 0),
     service: publicServiceInfo(vehicleServiceInfo(v, opts.serviceDefaults)),
-    battery: opts.battery ? toBattery(opts.battery, v.code) : undefined,
+    battery: opts.battery ? toBattery(opts.battery, v.code, batteryKnown) : undefined,
     assignedSubscriptionId: opts.assignedSubscriptionId,
     createdAt: iso(v.createdAt),
     updatedAt: iso(v.updatedAt),
