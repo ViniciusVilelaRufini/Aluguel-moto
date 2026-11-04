@@ -36,6 +36,8 @@ export interface RelaySample {
   /** Hora da medição limitada a agora (ms). */
   measuredAt: number;
   accepted: boolean;
+  /** Posição fraca (`satelites` < `MIN_GPS_SATELLITES`): parada não conta (a sequência recomeça; só dificulta o corte). */
+  weak?: boolean;
 }
 
 /** Só a conectividade: o estado ao vivo da trava (`locked`) pode ser o padrão de uma moto ainda sem dados — nunca confirma. */
@@ -162,8 +164,8 @@ export class RelayLockService {
       }
       if (lock.newestDeviceTs !== undefined && s.deviceTs <= lock.newestDeviceTs) return; // parada mais velha ou repetida: ignorada
       if (trustedTs) lock.newestDeviceTs = s.deviceTs;
-      if (!s.accepted || !trustedTs) {
-        // Parada mas rejeitada (na graça, velha, relógio no futuro) = em movimento para a trava: a sequência recomeça.
+      if (!s.accepted || !trustedTs || s.weak) {
+        // Parada mas rejeitada (na graça, velha, relógio no futuro) ou de posição fraca = em movimento para a trava: a sequência recomeça.
         lock.run = undefined;
         await this.save(lock);
         return;

@@ -441,3 +441,39 @@ describe('LiveStateStore — hora da posição (positionAt; link de localizaçã
     expect(await gw.getLiveState(T)).toMatchObject({ positionAt: '2026-11-03T14:59:58.000Z' });
   });
 });
+
+describe('LiveStateStore — qualidade do GPS (satélites e modo de economia; bancada 2026-11-04)', () => {
+  const tel = (over: Record<string, unknown> = {}) => ({ lat: -23.56, lng: -46.69, velocidade_kmh: 0, bateria_pct: 70, travada: true, ignicao: false, sinal: 4, timestamp: '2026-11-04T14:59:58.000Z', ...over });
+
+  it('satélites da telemetria mais nova vão para o hash (vazio = desconhecido); outra instância não apaga', async () => {
+    const clock = new FakeClock(Date.parse('2026-11-04T15:00:00Z'));
+    const redis = new MemoryRedisStore();
+    const a = new LiveStateStore(redis, clock);
+    const b = new LiveStateStore(redis, clock);
+    await a.applyTelemetry(T, tel({ satelites: 7 }) as any);
+    expect((await redis.hgetall('iot:live:' + T)).gpsSatellites).toBe('7');
+    await clock.advance(1_000);
+    await b.applyReported(T, { travada: true }); // outra instância grava o hash inteiro: não pode apagar o valor
+    expect((await redis.hgetall('iot:live:' + T)).gpsSatellites).toBe('7');
+    await clock.advance(1_000);
+    await a.applyTelemetry(T, tel({ timestamp: '2026-11-04T15:00:01.000Z' }) as any); // sem o campo
+    expect((await redis.hgetall('iot:live:' + T)).gpsSatellites).toBe('');
+  });
+
+  it('reported.gps_economia → gpsSleep/gpsSleepAt no hash; MQTT = hora de chegada, polling = metadata (sem ela, ignorado)', async () => {
+    const clock = new FakeClock(Date.parse('2026-11-04T15:00:00Z'));
+    const redis = new MemoryRedisStore();
+    const a = new LiveStateStore(redis, clock);
+    await a.applyReported(T, { gps_economia: true });
+    expect(await redis.hgetall('iot:live:' + T)).toMatchObject({ gpsSleep: 'true', gpsSleepAt: String(Date.parse('2026-11-04T15:00:00Z')) });
+    await clock.advance(5_000);
+    await a.applyReported(T, { gps_economia: false }, { fromPoll: true });
+    expect(await redis.hgetall('iot:live:' + T)).toMatchObject({ gpsSleep: 'true' });
+    await a.applyReported(T, { gps_economia: false }, { fromPoll: true, gpsSleepAt: Date.parse('2026-11-04T15:00:03Z') });
+    expect(await redis.hgetall('iot:live:' + T)).toMatchObject({ gpsSleep: 'false', gpsSleepAt: String(Date.parse('2026-11-04T15:00:03Z')) });
+    const b = new LiveStateStore(redis, clock);
+    await b.load(T);
+    await b.applyTelemetry(T, tel({ timestamp: '2026-11-04T15:00:04.000Z' }) as any);
+    expect(await redis.hgetall('iot:live:' + T)).toMatchObject({ gpsSleep: 'false', gpsSleepAt: String(Date.parse('2026-11-04T15:00:03Z')) });
+  });
+});

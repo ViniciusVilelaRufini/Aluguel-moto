@@ -86,6 +86,15 @@ bancada do J16 (TIMER mínimo de 10 s; `docs/decisoes.md`, 2026-11-03); 120 s se
 corte sem confirmação em 120 s → `timeout` e o corte pendente apagado (`travada: null`; nunca `travada: false`, que soltaria
 uma moto cortada cujo status só atrasou). `speed_limit` e `horn` → `unsupported_by_tracker`. O fluxo
 `speed_control` (`SafeLockService`) não muda. Spec: `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`.
+**Qualidade do GPS (bancada 2026-11-04).** Telemetria com `satelites` conhecido abaixo de 5 (`MIN_GPS_SATELLITES`,
+`mqtt-contract.ts`) é **posição fraca**: fica no mapa e no trajeto, mas parada não conta para a trava só relé (`RelaySample.weak`:
+a sequência recomeça; só dificulta o corte) e o motor de cercas não é chamado (sem ENTER/EXIT nem mudança de limite de zona; vale
+o último estado). Sem o campo, como antes. `reported.gps_economia` (ponte GT06: GPS desligado com a ACC desligada, do byte de
+status do heartbeat) vai para o hash `iot:live:*` (`gpsSleep`/`gpsSleepAt`; MQTT = hora de chegada, polling = metadata) e os
+satélites da posição exibida em `gpsSatellites` (vazio = desconhecido). O GET (`withLiveState`) expõe `Vehicle.gpsSatellites` e
+`Vehicle.gpsSleep` (este só com reporte de até 3 min, `GPS_SLEEP_FRESH_MS`); não há coluna no banco. Para cliente, só junto com a
+posição visível (regra do `positionAt`). No modo aws o shadow só é lido por polling enquanto há comando aguardando a moto, então
+`gpsSleep` só aparece nesse intervalo (é quando a trava espera o GPS).
 Moto que cai durante a espera: o comando volta de `in_progress` para `pending`/`offline` (única regressão aceita pelo
 `CommandsService`, só pelo `iot.command-updated`); na reconexão a janela de 120 s recomeça e o comando volta a `in_progress`.
 Moto já travada (`LiveStateStore.lockConfirmed`: online e `locked` gravado por telemetria/reported depois da reconexão — campo

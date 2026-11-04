@@ -38,6 +38,19 @@ export function thingFromTopic(topic: string): string | null {
   return null;
 }
 
+/**
+ * Posição fraca (bancada do J16, 2026-11-04): `satelites` conhecido abaixo disto. Continua no mapa e no trajeto, mas não é
+ * amostra parada da trava só relé (a sequência recomeça: só dificulta o corte) nem muda cerca/limite de zona (o motor de cercas
+ * mantém o último estado). Sem o campo, nada muda. Mesmo valor de MIN_GPS_SATELLITES em services/traccar-bridge/src/contract.ts
+ * (copiado, não importado entre pacotes; contrato: packages/contracts/mqtt.md).
+ */
+export const MIN_GPS_SATELLITES = 5;
+
+/** Satélites conhecidos e abaixo de `MIN_GPS_SATELLITES`. */
+export function isWeakFix(t: Pick<TelemetryMessage, 'satelites'>): boolean {
+  return t.satelites !== undefined && t.satelites < MIN_GPS_SATELLITES;
+}
+
 export interface TelemetryMessage {
   lat: number;
   lng: number;
@@ -49,6 +62,8 @@ export interface TelemetryMessage {
   timestamp: string;
   /** Opcional (ausente = `true`): `false` = sem leitura da bateria, `bateria_pct` 0 não é carga real (bancada do J16). */
   bateria_conhecida?: boolean;
+  /** Opcional (ausente = desconhecido): satélites do fix. Abaixo de `MIN_GPS_SATELLITES` = posição fraca. */
+  satelites?: number;
 }
 
 export interface DeviceEventMessage {
@@ -65,7 +80,7 @@ const isIso = (v: unknown): v is string => typeof v === 'string' && v.length >= 
 
 export function parseTelemetry(raw: unknown): TelemetryMessage | null {
   if (!isObj(raw)) return null;
-  const { lat, lng, velocidade_kmh, bateria_pct, travada, ignicao, sinal, timestamp, bateria_conhecida } = raw;
+  const { lat, lng, velocidade_kmh, bateria_pct, travada, ignicao, sinal, timestamp, bateria_conhecida, satelites } = raw;
   if (!isNum(lat, -90, 90) || !isNum(lng, -180, 180)) return null;
   if (!isNum(velocidade_kmh, 0, 200) || !isNum(bateria_pct, 0, 100)) return null;
   if (!isBool(travada) || !isBool(ignicao)) return null;
@@ -73,7 +88,13 @@ export function parseTelemetry(raw: unknown): TelemetryMessage | null {
   if (!isIso(timestamp)) return null;
   // `null` = ausente (projeção da regra do IoT Core com o atributo faltando); outro tipo = fora do schema.
   if (bateria_conhecida !== undefined && bateria_conhecida !== null && !isBool(bateria_conhecida)) return null;
-  return { lat, lng, velocidade_kmh, bateria_pct, travada, ignicao, sinal, timestamp, ...(isBool(bateria_conhecida) ? { bateria_conhecida } : {}) };
+  const hasSatellites = satelites !== undefined && satelites !== null;
+  if (hasSatellites && (!isNum(satelites, 0, 255) || !Number.isInteger(satelites))) return null;
+  return {
+    lat, lng, velocidade_kmh, bateria_pct, travada, ignicao, sinal, timestamp,
+    ...(isBool(bateria_conhecida) ? { bateria_conhecida } : {}),
+    ...(hasSatellites ? { satelites: satelites as number } : {}),
+  };
 }
 
 export function parseDeviceEvent(raw: unknown): DeviceEventMessage | null {
@@ -91,6 +112,7 @@ export function sanitizeReported(r: Record<string, unknown>): ReportedState {
   if (isBool(r.modo_roubada)) out.modo_roubada = r.modo_roubada;
   if (typeof r.firmware === 'string' && r.firmware.length <= 64) out.firmware = r.firmware;
   if (isNum(r.velocidade_kmh, 0, 200)) out.velocidade_kmh = r.velocidade_kmh;
+  if (isBool(r.gps_economia)) out.gps_economia = r.gps_economia;
   return out;
 }
 

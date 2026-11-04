@@ -104,6 +104,22 @@ describe('RelayLockService (spec GT06 §5)', () => {
     expect(s.cuts()).toHaveLength(1);
   });
 
+  it('posição fraca (< 5 satélites) parada não conta e zera a sequência (só dificulta o corte)', async () => {
+    const s = setup();
+    await s.svc.start({ commandId: 'c1', thingName: T }, s.state);
+    await s.sample(0);
+    await s.clock.advance(10_000);
+    await s.sample(0, { weak: true });
+    await s.clock.advance(10_000);
+    await s.sample(0);
+    await s.clock.advance(10_000);
+    await s.sample(0);
+    expect(s.cuts()).toEqual([]); // 2 boas depois da fraca, 10 s
+    await s.clock.advance(10_000);
+    await s.sample(0);
+    expect(s.cuts()).toHaveLength(1);
+  });
+
   it('amostra em movimento fora de ordem (medida entre as paradas, chegou atrasada) também zera a sequência', async () => {
     const s = setup();
     await s.svc.start({ commandId: 'c1', thingName: T }, s.state);

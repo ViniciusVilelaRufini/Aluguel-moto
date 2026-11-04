@@ -1,4 +1,4 @@
-import { parseDeviceEvent, parseReported, parseTelemetry, thingFromTopic, TOPICS } from './mqtt-contract';
+import { MIN_GPS_SATELLITES, parseDeviceEvent, parseReported, parseTelemetry, thingFromTopic, TOPICS } from './mqtt-contract';
 
 const telemetry = { lat: -23.56, lng: -46.69, velocidade_kmh: 18.5, bateria_pct: 76, travada: false, ignicao: true, sinal: 4, timestamp: '2026-10-21T15:00:00.000Z' };
 
@@ -24,6 +24,21 @@ describe('mqtt-contract', () => {
     expect(parseTelemetry({ ...telemetry, bateria_conhecida: true })).toEqual({ ...telemetry, bateria_conhecida: true });
     expect(parseTelemetry(telemetry)).not.toHaveProperty('bateria_conhecida');
     expect(parseTelemetry({ ...telemetry, bateria_conhecida: null })).toEqual(telemetry); // projeção do IoT Core sem o atributo
+  });
+
+  it('satelites opcional (bancada 2026-11-04): inteiro ≥ 0 repassado; null = ausente; outro valor = fora do schema', () => {
+    expect(MIN_GPS_SATELLITES).toBe(5);
+    expect(parseTelemetry({ ...telemetry, satelites: 4 })).toEqual({ ...telemetry, satelites: 4 });
+    expect(parseTelemetry({ ...telemetry, satelites: 0 })).toEqual({ ...telemetry, satelites: 0 });
+    expect(parseTelemetry(telemetry)).not.toHaveProperty('satelites');
+    expect(parseTelemetry({ ...telemetry, satelites: null })).toEqual(telemetry); // projeção do IoT Core sem o atributo
+    for (const satelites of [-1, 2.5, '7', 256]) expect(parseTelemetry({ ...telemetry, satelites })).toBeNull();
+  });
+
+  it('reported.gps_economia (modo de economia do GPS): só boolean', () => {
+    expect(parseReported({ state: { reported: { gps_economia: true } } })).toEqual({ gps_economia: true });
+    expect(parseReported({ state: { reported: { travada: true, gps_economia: false } } })).toEqual({ travada: true, gps_economia: false });
+    expect(parseReported({ state: { reported: { gps_economia: 'sim' } } })).toEqual({});
   });
 
   it.each([

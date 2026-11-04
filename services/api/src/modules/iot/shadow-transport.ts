@@ -15,6 +15,8 @@ export interface ReportedState {
   modo_roubada?: boolean;
   firmware?: string;
   velocidade_kmh?: number;
+  /** Ponte GT06: rastreamento GPS desligado com a ignição desligada (modo de economia do J16). Ausente = desconhecido. */
+  gps_economia?: boolean;
 }
 
 /** Comando momentâneo em `motos/{thingName}/comandos`. */

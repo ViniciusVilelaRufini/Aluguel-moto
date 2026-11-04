@@ -98,6 +98,23 @@ describe('painel de bancada (2026-11-03): hora da posição (positionAt)', () =>
   });
 });
 
+describe('bancada 2026-11-04: satélites e modo de economia do GPS (gpsSatellites, gpsSleep)', () => {
+  it('staff recebe sempre que conhecidos; desconhecidos → ausentes', () => {
+    expect(toVehicle(row({ gpsSatellites: 4, gpsSleep: true }), { staff: true, now: NOW })).toMatchObject({ gpsSatellites: 4, gpsSleep: true });
+    expect(toVehicle(row({ gpsSatellites: 0, gpsSleep: false }), { staff: true, now: NOW })).toMatchObject({ gpsSatellites: 0, gpsSleep: false });
+    const unknown = toVehicle(row(), { staff: true, now: NOW });
+    expect(unknown).not.toHaveProperty('gpsSatellites');
+    expect(unknown).not.toHaveProperty('gpsSleep');
+  });
+
+  it('cliente: só junto com a posição visível (regra do positionAt); com locationHidden, nunca', () => {
+    expect(toVehicle(row({ gpsSatellites: 3, gpsSleep: true }), { staff: false, now: NOW })).toMatchObject({ gpsSatellites: 3, gpsSleep: true });
+    const hidden = toVehicle(row({ gpsSatellites: 3, gpsSleep: true }), { staff: false, hideLocation: true, now: NOW });
+    expect(hidden).not.toHaveProperty('gpsSatellites');
+    expect(hidden).not.toHaveProperty('gpsSleep');
+  });
+});
+
 describe('painel de bancada (2026-11-03): bateria instalada numa moto sem leitura', () => {
   it('battery.chargeKnown false quando a moto não tem leitura (batteryKnown false)', () => {
     const battery = { id: 'b1', serial: 'BT-1', chargePct: 63, cycleCount: 2, status: 'in_vehicle', vehicleId: 'v1', holderId: null, stationId: null, depotId: null, updatedAt: ago(1e3) } as any;

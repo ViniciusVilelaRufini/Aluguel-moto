@@ -123,3 +123,34 @@ describe('withLiveState — positionAt', () => {
     expect((await withLiveState(redis, [row]))[0].positionAt).toBeNull();
   });
 });
+
+/** Bancada 2026-11-04: satélites da última posição e modo de economia do GPS, só do estado ao vivo. */
+describe('withLiveState — gpsSatellites e gpsSleep', () => {
+  const NOW = Date.parse('2026-11-04T15:00:10.000Z');
+  const row = {
+    id: 'v1', thingName: 'moto-0059', lat: -23.5, lng: -46.6, speedKmh: 0, batteryPct: 70, batteryKnown: true, locked: false, ignition: false, signal: 4, online: true,
+    lastSeenAt: new Date('2026-11-04T15:00:00.000Z'), gpsSatellites: undefined as number | undefined, gpsSleep: undefined as boolean | undefined,
+  };
+  const live = { lat: '-23.51', lng: '-46.61', online: 'true', lastSeenAt: '2026-11-04T15:00:06.000Z' };
+
+  it('satélites junto com a posição do Redis; vazio ou sem posição → desconhecido', async () => {
+    const redis = new MemoryRedisStore();
+    await redis.hset('iot:live:moto-0059', { ...live, gpsSatellites: '4' });
+    expect((await withLiveState(redis, [row], NOW))[0].gpsSatellites).toBe(4);
+    await redis.hset('iot:live:moto-0059', { gpsSatellites: '' });
+    expect((await withLiveState(redis, [row], NOW))[0].gpsSatellites).toBeUndefined();
+    await redis.hset('iot:live:moto-0059', { lat: '0', lng: '0', gpsSatellites: '9' });
+    expect((await withLiveState(redis, [row], NOW))[0].gpsSatellites).toBeUndefined();
+  });
+
+  it('gpsSleep só com reporte de até 3 min (também sem posição); velho ou vazio → desconhecido', async () => {
+    const redis = new MemoryRedisStore();
+    await redis.hset('iot:live:moto-0059', { ...live, lat: '0', lng: '0', gpsSleep: 'true', gpsSleepAt: String(NOW - 180_000) });
+    expect((await withLiveState(redis, [row], NOW))[0].gpsSleep).toBe(true);
+    expect((await withLiveState(redis, [row], NOW + 1))[0].gpsSleep).toBeUndefined();
+    await redis.hset('iot:live:moto-0059', { gpsSleep: 'false', gpsSleepAt: String(NOW) });
+    expect((await withLiveState(redis, [row], NOW))[0].gpsSleep).toBe(false);
+    await redis.hset('iot:live:moto-0059', { gpsSleep: '', gpsSleepAt: '' });
+    expect((await withLiveState(redis, [row], NOW))[0].gpsSleep).toBeUndefined();
+  });
+});

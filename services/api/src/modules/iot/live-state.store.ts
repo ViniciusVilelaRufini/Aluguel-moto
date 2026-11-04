@@ -40,6 +40,11 @@ export const PARKED_GAP_FACTOR = 2.5;
  * reconexão (a própria amostra cai na graça). Configurável por `IOT_QUEUE_LAG_MS`.
  */
 export const DEFAULT_QUEUE_LAG_MS = 5_000;
+/**
+ * `reported.gps_economia` (heartbeat do J16 a cada ~60 s) mais velho que isto é desconhecido: o painel/app não mostram
+ * `Vehicle.gpsSleep` (live-overlay.ts).
+ */
+export const GPS_SLEEP_FRESH_MS = 180_000;
 /** Relógio do rastreador que volta mais que isto entre duas telemetrias = salto (GPS/NTP, RTC zerado): reconexão uma vez e nova referência. */
 export const CLOCK_JUMP_BACK_MS = 30_000;
 
@@ -100,6 +105,13 @@ export class LiveStateStore {
   private readonly lockedAt = new Map<string, number>();
   /** Hora da medição (limitada a agora) da posição exibida. Vai junto no hash do Redis (campo `positionAt`, vazio = desconhecida). */
   private readonly positionAtMs = new Map<string, number>();
+  /** Satélites da posição exibida (`telemetria.satelites`). Hash: campo `gpsSatellites` (vazio = desconhecido). */
+  private readonly gpsSatellites = new Map<string, number>();
+  /**
+   * Último `reported.gps_economia` e a hora dele (MQTT: chegada; polling: metadata). Hash: `gpsSleep`/`gpsSleepAt` (vazios =
+   * desconhecido); quem exibe aplica `GPS_SLEEP_FRESH_MS`.
+   */
+  private readonly gpsSleep = new Map<string, { value: boolean; at: number }>();
   /**
    * A4-1: hora (ms) do último `desired.travada: false` (unlock só relé) — gravada antes de publicar. Uma trava com origem até
    * este instante não confirma (`lockConfirmed`): a ponte pode ter enviado o `engineResume` e o relé estar aberto. Vai para o
@@ -226,6 +238,12 @@ export class LiveStateStore {
     const positionAt = h.positionAt ? Number(h.positionAt) : NaN;
     if (Number.isFinite(positionAt)) this.positionAtMs.set(thingName, positionAt);
     else this.positionAtMs.delete(thingName);
+    const satellites = h.gpsSatellites ? Number(h.gpsSatellites) : NaN;
+    if (Number.isInteger(satellites) && satellites >= 0) this.gpsSatellites.set(thingName, satellites);
+    else this.gpsSatellites.delete(thingName);
+    const sleepAt = h.gpsSleepAt ? Number(h.gpsSleepAt) : NaN;
+    if ((h.gpsSleep === 'true' || h.gpsSleep === 'false') && Number.isFinite(sleepAt)) this.gpsSleep.set(thingName, { value: h.gpsSleep === 'true', at: sleepAt });
+    else this.gpsSleep.delete(thingName);
     if (mem) {
       if (fromRedis.batteryKnown === undefined) delete mem.batteryKnown;
       Object.assign(mem, fromRedis);
@@ -630,6 +648,8 @@ export class LiveStateStore {
       if (t.bateria_conhecida === false) s.batteryKnown = false;
       else delete s.batteryKnown;
       this.positionAtMs.set(thingName, Number.isFinite(deviceTs) ? measuredAt : now);
+      if (t.satelites !== undefined) this.gpsSatellites.set(thingName, t.satelites);
+      else this.gpsSatellites.delete(thingName);
       // Origem da trava: hora da medição; relógio do rastreador não confiável (futuro distante) = origem desconhecida.
       if (Number.isFinite(deviceTs) && deviceTs <= now + MAX_CLOCK_SKEW_MS) this.lockedAt.set(thingName, measuredAt);
       else this.lockedAt.delete(thingName);
@@ -650,7 +670,7 @@ export class LiveStateStore {
   async applyReported(
     thingName: string,
     r: ReportedState,
-    opts: { fromPoll?: boolean; speedAt?: number; travadaAt?: number } = {},
+    opts: { fromPoll?: boolean; speedAt?: number; travadaAt?: number; gpsSleepAt?: number } = {},
   ): Promise<{ state: VehicleLiveState; speedAccepted: boolean }> {
     const s = (await this.load(thingName)) ?? this.blank(thingName);
     const now = this.clock.now();
@@ -666,6 +686,11 @@ export class LiveStateStore {
     }
     if (r.limite_kmh !== undefined) s.speedLimitKmh = r.limite_kmh;
     if (r.modo_roubada !== undefined) s.stolenMode = r.modo_roubada;
+    if (r.gps_economia !== undefined) {
+      // Hora do reporte: MQTT = chegada; polling = metadata (sem ela não dá para saber se é fresco: ignorado).
+      const at = opts.fromPoll ? opts.gpsSleepAt : (opts.gpsSleepAt ?? now);
+      if (at !== undefined && Number.isFinite(at)) this.gpsSleep.set(thingName, { value: r.gps_economia, at: Math.min(at, now) });
+    }
     let speedAccepted = false;
     if (r.velocidade_kmh !== undefined) {
       // Polling: horário da metadata (sem ele, não vale). MQTT do rastreador: horário de chegada.
@@ -713,6 +738,10 @@ export class LiveStateStore {
     // Sempre gravado (vazio = desconhecida): o `hset` não apaga campo, e uma origem velha não pode sobrar para outra instância.
     values.lockedAt = String(this.lockedAt.get(s.thingName) ?? '');
     values.positionAt = String(this.positionAtMs.get(s.thingName) ?? '');
+    values.gpsSatellites = String(this.gpsSatellites.get(s.thingName) ?? '');
+    const sleep = this.gpsSleep.get(s.thingName);
+    values.gpsSleep = sleep ? String(sleep.value) : '';
+    values.gpsSleepAt = sleep ? String(sleep.at) : '';
     // `reconnectAt` não vai na escrita em bloco (a cópia desta instância pode estar velha e apagaria/baixaria a reconexão de
     // outra — false confirm): só por máximo atômico, depois.
     delete values.reconnectAt;

@@ -465,7 +465,12 @@ export abstract class BaseIotGateway implements IotGateway {
   // ── entradas vindas dos rastreadores (chamadas pelo TelemetryService) ──
 
   async onReported(thingName: string, reported: ReportedState, meta: ReportedMeta = {}): Promise<void> {
-    const { speedAccepted } = await this.live.applyReported(thingName, reported, { fromPoll: meta.fromPoll, speedAt: meta.timestamps?.velocidade_kmh, travadaAt: meta.timestamps?.travada });
+    const { speedAccepted } = await this.live.applyReported(thingName, reported, {
+      fromPoll: meta.fromPoll,
+      speedAt: meta.timestamps?.velocidade_kmh,
+      travadaAt: meta.timestamps?.travada,
+      gpsSleepAt: meta.timestamps?.gps_economia,
+    });
     // A rampa só vê velocidade que é amostra fresca e mais nova (reported velho replayed pelo polling não trava ninguém).
     const forLock: ReportedState = { ...reported };
     if (!speedAccepted) delete forLock.velocidade_kmh;

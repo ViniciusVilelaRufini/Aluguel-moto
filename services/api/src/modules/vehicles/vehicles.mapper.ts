@@ -51,6 +51,9 @@ export function toVehicleSummary(v: VehicleLike, distanceM?: number) {
 type VehicleRow = Omit<Vehicle, 'batteryKnown'> & {
   /** Ausente (linha antiga, `select` parcial) = conhecida. */
   batteryKnown?: boolean;
+  /** Só do estado ao vivo (live-overlay.ts); ausente = desconhecido. */
+  gpsSatellites?: number | null;
+  gpsSleep?: boolean | null;
   tracker?: { id: string; controlMode?: TrackerControlMode; firmwareVersion?: string | null } | null;
   vehicleModel?: VehicleModelRef | null;
 };
@@ -125,7 +128,9 @@ export function toVehicle(
   if (!opts.staff && opts.hideLocation) return compact({ ...base, lat: 0, lng: 0, address: undefined as string | undefined, addressUpdatedAt: undefined as string | undefined, locationHidden: true });
   // Devolução sem GPS (2026-11-04): a hora da posição vai junto com a posição visível — o app avisa que a moto está sem GPS e
   // por isso não trava. Com a posição oculta, não vem (o `compact` acima já tira; aqui ela nunca entra).
-  if (!opts.staff) return { ...compact({ ...base, positionAt: iso(v.positionAt) }), ...address };
+  // Bancada 2026-11-04: satélites e modo de economia do GPS seguem a mesma regra (o app explica por que a trava espera).
+  const gps = { gpsSatellites: v.gpsSatellites ?? undefined, gpsSleep: v.gpsSleep ?? undefined };
+  if (!opts.staff) return { ...compact({ ...base, positionAt: iso(v.positionAt), ...gps }), ...address };
   const staffView = compact({
     ...base,
     thingName: v.thingName,
@@ -143,6 +148,7 @@ export function toVehicle(
     lastSeenAt: iso(v.lastSeenAt),
     // Hora da medição de lat/lng: o heartbeat avança `lastSeenAt` sem posição nova (J16 sem GPS válido).
     positionAt: iso(v.positionAt),
+    ...gps,
     currentRentalId: opts.currentRentalId,
     odometerKm: round1(v.odometerKm ?? 0),
     usageHours: round1(v.usageHours ?? 0),

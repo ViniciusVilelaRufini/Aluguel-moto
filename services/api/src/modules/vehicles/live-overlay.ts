@@ -1,5 +1,5 @@
 import type { RedisStore } from '../../redis/redis-store';
-import { MAX_CLOCK_SKEW_MS } from '../iot/live-state.store';
+import { GPS_SLEEP_FRESH_MS, MAX_CLOCK_SKEW_MS } from '../iot/live-state.store';
 import { telemetryLockWins } from './lock-precedence';
 
 interface LiveFields {
@@ -19,6 +19,10 @@ interface LiveFields {
   /** Origem da trava gravada (lock-precedence.ts). */
   lockedAt?: Date | null;
   lockedFromReport?: boolean | null;
+  /** Satélites da posição do Redis; ausente = desconhecido (não há coluna no banco). */
+  gpsSatellites?: number;
+  /** Modo de economia do GPS do último reporte de até `GPS_SLEEP_FRESH_MS`; ausente = desconhecido. */
+  gpsSleep?: boolean;
 }
 
 const num = (v: string | undefined) => (v === undefined || v === '' || !Number.isFinite(Number(v)) ? undefined : Number(v));
@@ -34,7 +38,7 @@ const num = (v: string | undefined) => (v === undefined || v === '' || !Number.i
  * com origem conhecida (`lockedAt`): o `locked: true` do estado em branco (presença sem mensagem) não vale. O status da moto
  * (`offline`) continua do banco (a vigia de inatividade é quem decide).
  */
-export async function withLiveState<T extends LiveFields>(redis: Pick<RedisStore, 'hgetall'>, rows: T[]): Promise<T[]> {
+export async function withLiveState<T extends LiveFields>(redis: Pick<RedisStore, 'hgetall'>, rows: T[], now: number = Date.now()): Promise<T[]> {
   return Promise.all(
     rows.map(async (v) => {
       const h = await redis.hgetall(`iot:live:${v.thingName}`).catch(() => ({}) as Record<string, string>);
@@ -47,6 +51,9 @@ export async function withLiveState<T extends LiveFields>(redis: Pick<RedisStore
       // conservadora da ponte, `travada: false` com o bit velho) e não desfaz um reported recente gravado no banco.
       const redisLockedAt = num(h.lockedAt);
       if (h.locked !== undefined && redisLockedAt !== undefined && telemetryLockWins(v, redisLockedAt)) out.locked = h.locked === 'true';
+      // Bancada 2026-11-04: modo de economia do GPS vem do heartbeat (também sem posição); só com reporte de até 3 min.
+      const sleepAt = num(h.gpsSleepAt);
+      if ((h.gpsSleep === 'true' || h.gpsSleep === 'false') && sleepAt !== undefined && now - sleepAt <= GPS_SLEEP_FRESH_MS) out.gpsSleep = h.gpsSleep === 'true';
       const lat = num(h.lat);
       const lng = num(h.lng);
       if (lat === undefined || lng === undefined || (lat === 0 && lng === 0)) return out;
@@ -58,6 +65,8 @@ export async function withLiveState<T extends LiveFields>(redis: Pick<RedisStore
         lat,
         lng,
         positionAt: positionAtMs !== undefined && positionAtMs > 0 ? new Date(positionAtMs) : null,
+        // Satélites da mesma posição (vazio = desconhecido).
+        ...(num(h.gpsSatellites) === undefined ? {} : { gpsSatellites: num(h.gpsSatellites) }),
         speedKmh: num(h.speedKmh) ?? v.speedKmh,
         batteryPct: battery === undefined ? v.batteryPct : Math.round(battery),
         ...(h.batteryKnown === undefined ? {} : { batteryKnown: h.batteryKnown !== 'false' }),

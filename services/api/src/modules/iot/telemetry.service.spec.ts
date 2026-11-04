@@ -64,6 +64,22 @@ describe('TelemetryService', () => {
     expect(geofence.onPosition).toHaveBeenCalledWith({ vehicleId: VEHICLE_ID, thingName: T, lat: -23.5614, lng: -46.6914, ts: '2026-10-21T15:00:00.000Z' });
   });
 
+  it('posição fraca (satelites < 5): trava só relé recebe weak e o motor de cercas não é chamado (mantém o último estado)', async () => {
+    const { svc, gateway, geofence, clock } = setup();
+    const samples = jest.spyOn(gateway, 'onTelemetrySample');
+    await svc.telemetry(T, msg({ satelites: 4 }));
+    expect(geofence.onPosition).not.toHaveBeenCalled();
+    expect(samples.mock.calls.at(-1)?.[1]).toMatchObject({ weak: true });
+    await clock.advance(1_000);
+    await svc.telemetry(T, msg({ satelites: 5, timestamp: '2026-10-21T15:00:01.000Z' }));
+    expect(geofence.onPosition).toHaveBeenCalledTimes(1);
+    expect(samples.mock.calls.at(-1)?.[1]).toMatchObject({ weak: false });
+    await clock.advance(1_000);
+    await svc.telemetry(T, msg({ timestamp: '2026-10-21T15:00:02.000Z' })); // sem o campo: como antes
+    expect(geofence.onPosition).toHaveBeenCalledTimes(2);
+    expect(samples.mock.calls.at(-1)?.[1]).toMatchObject({ weak: false });
+  });
+
   it('bancada do J16: bateria_conhecida false → iot.telemetry com batteryKnown false; ausente → true; não booleana → descartada', async () => {
     const { svc, emitted, clock } = setup();
     await svc.telemetry(T, msg({ bateria_pct: 0, bateria_conhecida: false }));

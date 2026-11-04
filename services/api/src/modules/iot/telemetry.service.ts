@@ -7,7 +7,7 @@ import type { Clock } from './clock';
 import type { PositionInput, RentalLookup } from './geofence/geofence.service';
 import type { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
 import { DEFAULT_QUEUE_LAG_MS, DEFAULT_RECONNECT_GAP_MS, MAX_CLOCK_SKEW_MS } from './live-state.store';
-import { parseDeviceEvent, parseTelemetry } from './mqtt-contract';
+import { isWeakFix, parseDeviceEvent, parseTelemetry } from './mqtt-contract';
 import type { InboundHandler, ReportedMeta, ReportedState } from './shadow-transport';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -168,9 +168,12 @@ export class TelemetryService implements InboundHandler {
       if (applied.speedAccepted) {
         await this.gateway.onSpeed(thingName, msg.velocidade_kmh).catch((err: Error) => this.logger.error({ msg: 'safe_lock_speed_failed', thingName, error: err.message }));
       }
-      // Rastreador só relé (spec GT06 §5): toda telemetria vai para a trava; só a aceita (fresca, em ordem, fora da graça) conta parada.
+      // Posição fraca (bancada 2026-11-04): satélites conhecidos < 5. Fica no mapa e no trajeto; não confirma parada nem muda cerca.
+      const weak = isWeakFix(msg);
+      // Rastreador só relé (spec GT06 §5): toda telemetria vai para a trava; só a aceita (fresca, em ordem, fora da graça) e não
+      // fraca conta parada.
       await this.gateway
-        .onTelemetrySample(thingName, { kmh: msg.velocidade_kmh, deviceTs, measuredAt: Math.min(deviceTs, now), accepted: applied.speedAccepted })
+        .onTelemetrySample(thingName, { kmh: msg.velocidade_kmh, deviceTs, measuredAt: Math.min(deviceTs, now), accepted: applied.speedAccepted, weak })
         .catch((err: Error) => this.logger.error({ msg: 'relay_lock_sample_failed', thingName, error: err.message }));
 
       // LGPD (QA-09): trajeto só com aluguel e consentimento de localização vigente; revogado no meio do aluguel, a posição
@@ -189,7 +192,8 @@ export class TelemetryService implements InboundHandler {
           },
         });
       }
-      await this.geofence.onPosition({ vehicleId, thingName, lat: msg.lat, lng: msg.lng, ts });
+      // Posição fraca não dispara ENTER/EXIT nem muda o limite de zona: o motor de cercas mantém o último estado.
+      if (!weak) await this.geofence.onPosition({ vehicleId, thingName, lat: msg.lat, lng: msg.lng, ts });
       if (this.zoneSpeed && applied.newest) {
         await this.zoneSpeed
           .onSample({ vehicleId, thingName, speedKmh: msg.velocidade_kmh, measuredAt: Math.min(deviceTs, now), locked: msg.travada })
