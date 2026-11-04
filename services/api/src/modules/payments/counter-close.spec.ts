@@ -54,3 +54,28 @@ describe('recordCounterClose', () => {
     expect((await db.deposit.findUnique({ where: { id: card.id } })).status).toBe('held');
   });
 });
+
+describe('recordCounterClose: inadimplência e repetição', () => {
+  it('débito novo marca o cliente delinquent; resíduo 0 não marca', async () => {
+    const { db, deposit, prepaid } = await seed(10000);
+    await db.customer.create({ data: { id: C, cognitoSub: 'sub', email: 'c@example.com' } });
+    await recordCounterClose(db as any, { rentalId: R, customerId: C, depositId: deposit.id, prepaidPaymentId: prepaid.id, residualCents: 0, method: 'cash' });
+    expect((await db.customer.findUnique({ where: { id: C } })).delinquent).toBe(false);
+    await recordCounterClose(db as any, { rentalId: R, customerId: C, depositId: deposit.id, prepaidPaymentId: prepaid.id, residualCents: 6000, method: 'cash' });
+    expect((await db.customer.findUnique({ where: { id: C } })).delinquent).toBe(true);
+  });
+
+  it('repetir o fechamento não duplica débito, não religa a flag limpa e mantém o valor original', async () => {
+    const { db, deposit, prepaid } = await seed(10000);
+    await db.customer.create({ data: { id: C, cognitoSub: 'sub', email: 'c@example.com' } });
+    const input = { rentalId: R, customerId: C, depositId: deposit.id, prepaidPaymentId: prepaid.id, residualCents: 6000, method: 'cash' as const };
+    const first = await recordCounterClose(db as any, input);
+    await db.customer.update({ where: { id: C }, data: { delinquent: false } });
+    const again = await recordCounterClose(db as any, { ...input, residualCents: 9000, method: 'counter_pix' });
+    expect(again.paymentId).toBe(first.paymentId);
+    expect(await db.payment.count({ where: { kind: 'rental', status: 'pending' } })).toBe(1);
+    expect(await db.payment.findUnique({ where: { id: first.paymentId } })).toMatchObject({ amountCents: 6000, method: 'cash' });
+    expect((await db.customer.findUnique({ where: { id: C } })).delinquent).toBe(false);
+    expect((await db.rental.findUnique({ where: { id: R } })).paymentId).toBe(first.paymentId);
+  });
+});

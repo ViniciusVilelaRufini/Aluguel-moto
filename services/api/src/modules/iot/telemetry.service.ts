@@ -11,6 +11,8 @@ import { parseDeviceEvent, parseTelemetry } from './mqtt-contract';
 import type { InboundHandler, ReportedMeta, ReportedState } from './shadow-transport';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Intervalo mínimo entre dois logs `telemetry_unknown_thing` do mesmo thingName. */
+const UNKNOWN_THING_LOG_INTERVAL_MS = 5 * 60_000;
 
 export interface TelemetryOptions {
   trackRetentionDays: number;
@@ -31,6 +33,8 @@ export class TelemetryService implements InboundHandler {
   private readonly logger = new Logger('TelemetryService');
   private readonly vehicleIds = new Map<string, string | null>();
   private readonly chains = new Map<string, Promise<void>>();
+  /** Última vez que `telemetry_unknown_thing` foi registrado por thingName (rastreador não cadastrado chama a cada ~5 s). */
+  private readonly unknownLoggedAt = new Map<string, number>();
 
   constructor(
     private readonly gateway: BaseIotGateway,
@@ -91,6 +95,15 @@ export class TelemetryService implements InboundHandler {
     await this.gateway.onReconnected(thingName).catch((err: Error) => this.logger.error({ msg: 'relay_lock_reconnect_failed', thingName, error: err.message }));
   }
 
+  /** A mensagem é sempre descartada; só o log é limitado a 1 por thingName a cada 5 min. */
+  private logUnknownThing(thingName: string): void {
+    const now = this.clock.now();
+    const last = this.unknownLoggedAt.get(thingName);
+    if (last !== undefined && now - last < UNKNOWN_THING_LOG_INTERVAL_MS) return;
+    this.unknownLoggedAt.set(thingName, now);
+    this.logger.warn({ msg: 'telemetry_unknown_thing', thingName });
+  }
+
   private nowIso(): string {
     return new Date(this.clock.now()).toISOString();
   }
@@ -104,7 +117,7 @@ export class TelemetryService implements InboundHandler {
       }
       const vehicleId = await this.vehicleIdOf(thingName);
       if (!vehicleId) {
-        this.logger.warn({ msg: 'telemetry_unknown_thing', thingName });
+        this.logUnknownThing(thingName);
         return;
       }
       const now = this.clock.now();
