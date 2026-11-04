@@ -6,7 +6,8 @@ export interface CounterCloseInput {
   rentalId: string;
   customerId: string;
   depositId: string;
-  prepaidPaymentId: string;
+  /** Pré-pago do balcão; `null` só no recuo de dado inconsistente (o aluguel não tem pré-pago). */
+  prepaidPaymentId: string | null;
   /** Total do fechamento já descontado o pré-pago (`breakdown.totalCents`), em centavos. */
   residualCents: number;
   method: CounterMethod;
@@ -21,7 +22,7 @@ export interface CounterCloseInput {
  * - caução do balcão com valor 0 ainda `held` → `released` (não há o que devolver).
  * Chamado dentro da transação que fecha o aluguel (cliente travado), então não há corrida na chave.
  */
-export async function recordCounterClose(db: Prisma.TransactionClient | PrismaService, input: CounterCloseInput): Promise<{ paymentId: string }> {
+export async function recordCounterClose(db: Prisma.TransactionClient | PrismaService, input: CounterCloseInput): Promise<{ paymentId: string | null }> {
   let paymentId = input.prepaidPaymentId;
   if (input.residualCents > 0) {
     const idempotencyKey = `counter-excess:${input.rentalId}`;
@@ -37,7 +38,7 @@ export async function recordCounterClose(db: Prisma.TransactionClient | PrismaSe
         })
       ).id;
   }
-  await db.rental.update({ where: { id: input.rentalId }, data: { paymentId } });
+  if (paymentId) await db.rental.update({ where: { id: input.rentalId }, data: { paymentId } });
   await db.deposit.updateMany({
     where: { id: input.depositId, status: 'held', amountCents: 0, method: { in: [...COUNTER_METHODS] } },
     data: { status: 'released' },

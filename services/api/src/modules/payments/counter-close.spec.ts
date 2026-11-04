@@ -36,6 +36,17 @@ describe('recordCounterClose', () => {
     expect((await db.deposit.findUnique({ where: { id: deposit.id } })).status).toBe('released');
   });
 
+  it('recuo sem pré-pago (fix round 1): resíduo > 0 grava o débito; resíduo 0 não mexe no paymentId', async () => {
+    const { db, deposit } = await seed(10000);
+    await db.rental.update({ where: { id: R }, data: { paymentId: null } });
+    const none = await recordCounterClose(db as any, { rentalId: R, customerId: C, depositId: deposit.id, prepaidPaymentId: null, residualCents: 0, method: 'cash' });
+    expect(none.paymentId).toBeNull();
+    expect((await db.rental.findUnique({ where: { id: R } })).paymentId).toBeNull();
+    const out = await recordCounterClose(db as any, { rentalId: R, customerId: C, depositId: deposit.id, prepaidPaymentId: null, residualCents: 1500, method: 'cash' });
+    expect(out.paymentId).toEqual(expect.any(String));
+    expect((await db.rental.findUnique({ where: { id: R } })).paymentId).toBe(out.paymentId);
+  });
+
   it('caução de cartão (não balcão) com valor 0 não é mexida', async () => {
     const { db, prepaid } = await seed(0);
     const card = await db.deposit.create({ data: { customerId: C, method: 'card', status: 'held', amountCents: 0, refundedCents: 0 } });

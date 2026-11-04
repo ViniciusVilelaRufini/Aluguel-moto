@@ -319,7 +319,7 @@ export class RentalEndService {
     // Pré-reserva/balcão (decisão 12): aluguel do balcão não abate carteira nem pacote e nunca vai ao gateway; o resíduo
     // (total − pré-pago) vira débito acertado no galpão, gravado na mesma transação do fechamento.
     const counter = !!snapshot.counter;
-    const { claimed, breakdown } = await this.prisma.$transaction(async (tx) => {
+    const { claimed, breakdown, counterReview } = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${rental.customerId}::uuid FOR UPDATE`;
       const walletAvailableCents = counter ? 0 : await walletCentsAvailable(tx, rental.customerId);
       // Auditoria run-4 onda 2: minutos de pacote abatem antes da carteira (só plano por minuto sem assinatura).
@@ -348,10 +348,10 @@ export class RentalEndService {
       });
       if (claimed.count === 1 && counter) {
         const prepaid = await this.counterPrepaid(tx, rental);
-        await recordCounterClose(tx, {
+        const closed = await recordCounterClose(tx, {
           rentalId, customerId: rental.customerId, depositId: rental.depositId, prepaidPaymentId: prepaid.id, residualCents: breakdown.totalCents, method: prepaid.method,
         });
-        return { claimed, breakdown };
+        return { claimed, breakdown, counterReview: prepaid.consistent ? null : { paymentId: closed.paymentId ?? undefined } };
       }
       const packageMinutes = breakdown.lines.find((l) => l.code === 'minute_package')?.quantity ?? 0;
       if (claimed.count === 1 && packageMinutes > 0) {
@@ -366,9 +366,18 @@ export class RentalEndService {
           description: 'Aluguel: abatido da carteira no fechamento',
         });
       }
-      return { claimed, breakdown };
+      return { claimed, breakdown, counterReview: null };
     });
     if (claimed.count === 0) return toRental(await this.load(rentalId));
+    if (counterReview) {
+      // Fechamento nunca trava (fix round 1): fechou com o método de recuo; o financeiro revisa o acerto no galpão.
+      await this.alerts
+        .create(
+          { type: 'payment_needs_review', priority: 'high', message: 'Aluguel do balcão fechado sem pré-pago consistente — revisar acerto', vehicleId: rental.vehicleId, rentalId, paymentId: counterReview.paymentId },
+          { dedupe: false },
+        )
+        .catch((err: Error) => this.logger.error({ msg: 'counter_close_alert_failed', rentalId, error: err.message }));
+    }
 
     // Auditoria item adiado 1: moto com trava da equipe/sistema ou hold não volta à frota como `free` (todo aluguel seguinte
     // seria recusado no desbloqueio); vai para `maintenance` com alerta para a operação liberar. Vale também para a chegada no
@@ -427,15 +436,19 @@ export class RentalEndService {
 
   /**
    * Pagamento pré-pago no balcão (gravado pelo `counter-checkout` junto com o aluguel). Sem ele, ou com método que não é
-   * de balcão, o dado está inconsistente: o fechamento aborta (a transação desfaz) em vez de cobrar pelo caminho errado.
+   * de balcão, o dado está inconsistente — mas o fechamento nunca trava (fix round 1): o excedente usa o método da caução
+   * de balcão (ou `cash`), com log `counter_close_prepaid_missing`; quem chama abre o alerta para o financeiro.
    */
-  private async counterPrepaid(tx: Prisma.TransactionClient, rental: Pick<Rental, 'id' | 'paymentId'>): Promise<{ id: string; method: CounterMethod }> {
+  private async counterPrepaid(
+    tx: Prisma.TransactionClient,
+    rental: Pick<Rental, 'id' | 'paymentId' | 'depositId'>,
+  ): Promise<{ id: string | null; method: CounterMethod; consistent: boolean }> {
     const prepaid = rental.paymentId ? await tx.payment.findUnique({ where: { id: rental.paymentId }, select: { id: true, method: true } }) : null;
-    if (!prepaid || !isCounterMethod(prepaid.method)) {
-      this.logger.error({ msg: 'counter_close_prepaid_missing', rentalId: rental.id, paymentId: rental.paymentId });
-      throw new Error(`Aluguel do balcão ${rental.id} sem pagamento pré-pago de balcão.`);
-    }
-    return { id: prepaid.id, method: prepaid.method };
+    if (prepaid && isCounterMethod(prepaid.method)) return { id: prepaid.id, method: prepaid.method, consistent: true };
+    const deposit = await tx.deposit.findUnique({ where: { id: rental.depositId }, select: { method: true } });
+    const method: CounterMethod = isCounterMethod(deposit?.method) ? deposit!.method : 'cash';
+    this.logger.error({ msg: 'counter_close_prepaid_missing', rentalId: rental.id, paymentId: rental.paymentId, fallbackMethod: method });
+    return { id: rental.paymentId ?? null, method, consistent: false };
   }
 
   /**
@@ -670,29 +683,12 @@ export class RentalEndService {
       where: { status: 'ending', endAttempts: { lt: MAX_END_ATTEMPTS }, OR: [{ endLastAttemptAt: null }, { endLastAttemptAt: { lt: cutoff } }] },
       take: 100,
     });
+    // Fix round 1: cada aluguel no seu try/catch — um aluguel com erro não derruba o lote (log e segue para o próximo).
     for (const r of pending) {
-      // Auditoria run-4 (a): trava de fim `relay_only` já encerrada sem corte (evento perdido) → volta a `active`, sem reenviar.
-      const notCut = await this.endLockNotCut(r);
-      if (notCut) {
-        await this.revertEnding(r.id, notCut.id, notCut.statusReason);
-        continue;
-      }
-      await this.prisma.rental.updateMany({
-        where: { id: r.id, status: 'ending' },
-        data: { endLastAttemptAt: new Date(), endAttempts: { increment: 1 } },
-      });
-      const confirmed = await this.requestLock(r.id, r.vehicleId, 'rental_end');
-      if (confirmed) {
-        await this.finalize(r.id, 'ended');
-        continue;
-      }
-      const attempts = r.endAttempts + 1;
-      this.logger.warn({ msg: 'rental_end_lock_pending', rentalId: r.id, attempts });
-      if (attempts >= MAX_END_ATTEMPTS) {
-        await this.alerts.create(
-          { type: 'command_failed', priority: 'high', message: `Encerramento sem confirmação de travamento após ${attempts} tentativas.`, vehicleId: r.vehicleId, rentalId: r.id },
-          { dedupe: false },
-        );
+      try {
+        await this.retryEndingOne(r);
+      } catch (err) {
+        this.logger.error({ msg: 'rental_end_retry_item_failed', rentalId: r.id, error: (err as Error).message });
       }
     }
     // Auditoria run-4 (a): `relay_only` que esgotou as tentativas e cuja trava terminou sem corte depois (evento perdido) não
@@ -707,6 +703,34 @@ export class RentalEndService {
       if (notCut) await this.revertEnding(r.id, notCut.id, notCut.statusReason);
     }
   }
+
+  /** Uma retentativa de encerramento (`retryEnding`): relê a trava, reenvia o bloqueio e fecha quando confirmado. */
+  private async retryEndingOne(r: Rental): Promise<void> {
+    // Auditoria run-4 (a): trava de fim `relay_only` já encerrada sem corte (evento perdido) → volta a `active`, sem reenviar.
+    const notCut = await this.endLockNotCut(r);
+    if (notCut) {
+      await this.revertEnding(r.id, notCut.id, notCut.statusReason);
+      return;
+    }
+    await this.prisma.rental.updateMany({
+      where: { id: r.id, status: 'ending' },
+      data: { endLastAttemptAt: new Date(), endAttempts: { increment: 1 } },
+    });
+    const confirmed = await this.requestLock(r.id, r.vehicleId, 'rental_end');
+    if (confirmed) {
+      await this.finalize(r.id, 'ended');
+      return;
+    }
+    const attempts = r.endAttempts + 1;
+    this.logger.warn({ msg: 'rental_end_lock_pending', rentalId: r.id, attempts });
+    if (attempts >= MAX_END_ATTEMPTS) {
+      await this.alerts.create(
+        { type: 'command_failed', priority: 'high', message: `Encerramento sem confirmação de travamento após ${attempts} tentativas.`, vehicleId: r.vehicleId, rentalId: r.id },
+        { dedupe: false },
+      );
+    }
+  }
+
 
   private async pauseAfterLateLock(rental: { id: string; vehicleId: string }, commandId: string): Promise<void> {
     const paused = await pauseAfterLateLock(this.prisma, rental, commandId, 'rental_end');

@@ -791,12 +791,66 @@ describe('Balcão: fechamento sem gateway', () => {
     });
   });
 
-  it('sem pré-pago de balcão (inconsistência): o fechamento aborta em vez de ir ao gateway', async () => {
-    const { service: svc, billing, prisma } = counterSetup(86_400 + 1);
-    prisma.payment.findUnique.mockResolvedValue({ id: PREPAID_ID, method: 'card' } as any);
-    await expect(svc.finalize(RENTAL_ID, 'ended')).rejects.toThrow(/sem pagamento pré-pago de balcão/);
+  it('fix round 1: pré-pago inconsistente → fecha mesmo assim, débito com o método da caução de balcão e alerta high', async () => {
+    const { service: svc, billing, prisma, rental, alerts } = counterSetup(86_400 + 1);
+    prisma.payment.findUnique.mockImplementation((async (args: any) => (args.where.id === PREPAID_ID ? { id: PREPAID_ID, method: 'card' } : null)) as any);
+    prisma.deposit.findUnique.mockResolvedValue({ method: 'counter_card' } as any);
+    await expect(svc.finalize(RENTAL_ID, 'ended')).resolves.toMatchObject({ status: 'ended' });
+    expect(rental.status).toBe('ended');
+    expect(prisma.payment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ kind: 'rental', status: 'pending', method: 'counter_card', amountCents: 6000, idempotencyKey: `counter-excess:${RENTAL_ID}` }),
+    });
+    expect(rental.paymentId).toBe('excess-1');
     expect(billing.settle).not.toHaveBeenCalled();
-    expect(prisma.payment.create).not.toHaveBeenCalled();
+    expect(alerts.create).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'payment_needs_review', priority: 'high', message: 'Aluguel do balcão fechado sem pré-pago consistente — revisar acerto', rentalId: RENTAL_ID, paymentId: 'excess-1' }),
+      { dedupe: false },
+    );
+  });
+
+  it('fix round 1: sem pré-pago e caução que não é de balcão → débito em cash; sem excedente, paymentId fica como está', async () => {
+    const a = counterSetup(86_400 + 1);
+    a.rental.paymentId = null;
+    a.prisma.deposit.findUnique.mockResolvedValue({ method: 'card' } as any);
+    await a.service.finalize(RENTAL_ID, 'ended');
+    expect(a.prisma.payment.create).toHaveBeenCalledWith({ data: expect.objectContaining({ method: 'cash', amountCents: 6000 }) });
+    expect(a.alerts.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'payment_needs_review', rentalId: RENTAL_ID }), { dedupe: false });
+    const b = counterSetup(3600);
+    b.rental.paymentId = null;
+    b.prisma.deposit.findUnique.mockResolvedValue(null);
+    await expect(b.service.finalize(RENTAL_ID, 'ended')).resolves.toMatchObject({ status: 'ended' });
+    expect(b.prisma.payment.create).not.toHaveBeenCalled();
+    expect(b.prisma.rental.update).not.toHaveBeenCalled();
+    expect(b.alerts.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'payment_needs_review', priority: 'high', paymentId: undefined }), { dedupe: false });
+  });
+
+  it('fix round 1: encerramento forçado funciona com pré-pago inconsistente', async () => {
+    const { service: svc, prisma, rental, alerts } = counterSetup(86_400 + 1);
+    rental.paymentId = null;
+    prisma.deposit.findUnique.mockResolvedValue({ method: 'cash' } as any);
+    await expect(svc.forceEnd(admin, RENTAL_ID, 'Cliente sumiu')).resolves.toMatchObject({ status: 'force_ended' });
+    expect(rental.status).toBe('force_ended');
+    expect(prisma.payment.create).toHaveBeenCalledWith({ data: expect.objectContaining({ method: 'cash' }) });
+    expect(alerts.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'payment_needs_review' }), { dedupe: false });
+  });
+
+  it('fix round 1: retryEnding — um aluguel com erro não derruba o lote', async () => {
+    const { service: svc, prisma, rental, commands } = counterSetup(3600);
+    rental.status = 'ending';
+    rental.endRequestedAt = new Date(Date.now() - 60_000);
+    const BAD = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    prisma.rental.findMany.mockResolvedValueOnce([{ ...rental, id: BAD }, { ...rental }] as any).mockResolvedValue([] as any);
+    const base = prisma.rental.updateMany.getMockImplementation()!;
+    prisma.rental.updateMany.mockImplementation((async (args: any) => {
+      if (args.where.id === BAD) throw new Error('banco indisponível');
+      return base(args);
+    }) as any);
+    const error = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    await svc.retryEnding();
+    expect(rental.status).toBe('ended');
+    expect(commands.dispatch).toHaveBeenCalledTimes(1);
+    expect(error).toHaveBeenCalledWith(expect.objectContaining({ msg: 'rental_end_retry_item_failed', rentalId: BAD }));
+    error.mockRestore();
   });
 
   it('aluguel comum continua liquidando no gateway', async () => {
