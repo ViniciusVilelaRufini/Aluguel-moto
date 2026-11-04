@@ -42,7 +42,8 @@ function setup() {
   const billing = {
     isDelinquent: jest.fn().mockResolvedValue(false),
     isCpfRestricted: jest.fn().mockResolvedValue(false),
-    holdDeposit: jest.fn().mockResolvedValue({ depositId: DEPOSIT_ID, status: 'held' }),
+    // Sentinela: a pré-reserva nunca retém caução (os testes conferem que nada chama).
+    holdDeposit: jest.fn(),
     settle: jest.fn(),
   };
   const events = new EventEmitter2();
@@ -61,7 +62,6 @@ function setup() {
   prisma.subscription.findFirst.mockResolvedValue(null);
   prisma.deposit.findUnique.mockResolvedValue(deposit() as any);
   prisma.depositRelease.findUnique.mockResolvedValue(null);
-  prisma.paymentCard.findFirst.mockResolvedValue({ id: 'card-default', customerId: CUSTOMER_ID, isDefault: true, deletedAt: null } as any);
   prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
   prisma.reservation.create.mockImplementation((async (args: any) => ({
     id: RES_ID, status: 'active', createdAt: new Date(), updatedAt: new Date(), endedAt: null, reminderSentAt: null,

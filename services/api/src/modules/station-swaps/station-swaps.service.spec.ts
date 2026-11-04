@@ -160,9 +160,15 @@ describe('StationSwapsService.create (regras)', () => {
       { open24h: false, openingHours: 'Todos os dias, 1h às 2h' },
       { availableBatteries: 0 },
     ];
-    for (const station of cases) {
-      const { service } = setup({ station });
-      expect(await problem(service.create(customer, STATION_ID, body(), 'k1234567'))).toEqual({ status: 422, slug: 'station-unavailable' });
+    // Relógio fixo (12:00 em São Paulo): "1h às 2h" fica fechada qualquer que seja a hora em que o teste roda.
+    jest.useFakeTimers({ now: new Date('2026-10-22T15:00:00Z') });
+    try {
+      for (const station of cases) {
+        const { service } = setup({ station });
+        expect(await problem(service.create(customer, STATION_ID, body(), 'k1234567'))).toEqual({ status: 422, slug: 'station-unavailable' });
+      }
+    } finally {
+      jest.useRealTimers();
     }
     // Task 12 das lacunas: desativada pelo painel entre a pré-checagem e o lock → 422, nada inserido.
     const raced = setup({ station: { lockedActive: false } });

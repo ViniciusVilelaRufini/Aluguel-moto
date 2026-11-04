@@ -1,4 +1,4 @@
-import { buildCounterQuote, COUNTER_QUANTITY_MAX, counterPeriodSeconds, counterSnapshot } from './counter-pricing';
+import { buildCounterQuote, COUNTER_QUANTITY_MAX, counterPeriodSeconds, counterSnapshot, isCounterPlanCode } from './counter-pricing';
 import { calculatePrice } from './pricing.service';
 
 describe('preço do balcão', () => {
@@ -15,6 +15,13 @@ describe('preço do balcão', () => {
       planCode: 'weekly', quantity: 2, coverage: 'basic', planUnitCents: 25000, planCents: 50000, insuranceCents: 1500, totalCents: 51500,
       excessDayCents: 6000, periodDays: 14,
     });
+  });
+
+  it('plano fora do balcão não vira CounterPlanCode (sem cast cego)', () => {
+    expect(['day', 'weekly', 'monthly'].every(isCounterPlanCode)).toBe(true);
+    expect(isCounterPlanCode('minute')).toBe(false);
+    expect(() => buildCounterQuote({ plan: { code: 'minute', unit: 'minute', unitPriceCents: 100 } as any, dayPlan: day, premiumCents: 0, coverage: 'basic', quantity: 1 }))
+      .toThrow('counter_plan_not_supported:minute');
   });
 
   it('snapshot congela quantidade, pré-pago e diária do excedente', () => {

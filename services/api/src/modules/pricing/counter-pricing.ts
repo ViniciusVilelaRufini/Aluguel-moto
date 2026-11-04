@@ -1,6 +1,9 @@
 import type { PricingPlan } from '@prisma/client';
 import type { InsuranceCoverage } from '../../common/enums';
-import { type PlanUnit, type PriceSnapshot, PricingService, UNIT_SECONDS } from './pricing.service';
+import { counterPeriodSeconds, UNIT_SECONDS } from './plan-units';
+import { type PriceSnapshot, PricingService } from './pricing.service';
+
+export { counterPeriodSeconds } from './plan-units';
 
 /** Planos vendidos no balcão (pré-pagos pelo período). */
 export const COUNTER_PLAN_CODES = ['day', 'weekly', 'monthly'] as const;
@@ -9,8 +12,8 @@ export type CounterPlanCode = (typeof COUNTER_PLAN_CODES)[number];
 /** Quantidade máxima por plano: diária até 30, semana até 4, mês até 3. */
 export const COUNTER_QUANTITY_MAX: Record<CounterPlanCode, number> = { day: 30, weekly: 4, monthly: 3 };
 
-/** Período pré-pago em segundos (dia = 24 h, semana = 7 dias, mês = 30 dias). */
-export const counterPeriodSeconds = (unit: PlanUnit, quantity: number): number => UNIT_SECONDS[unit] * quantity;
+/** Plano vendido no balcão (`day`, `weekly`, `monthly`). */
+export const isCounterPlanCode = (code: string): code is CounterPlanCode => (COUNTER_PLAN_CODES as readonly string[]).includes(code);
 
 /** `CounterQuote` do contrato: valor a receber no balcão. */
 export interface CounterQuote {
@@ -36,9 +39,12 @@ export function buildCounterQuote(input: {
   coverage: InsuranceCoverage;
   quantity: number;
 }): CounterQuote {
+  const planCode = input.plan.code;
+  // Só chega aqui plano lido por `activePlan(planCode do balcão)`; outro código é erro de programação, não do cliente.
+  if (!isCounterPlanCode(planCode)) throw new Error(`counter_plan_not_supported:${planCode}`);
   const planCents = input.plan.unitPriceCents * input.quantity;
   return {
-    planCode: input.plan.code as CounterPlanCode,
+    planCode,
     quantity: input.quantity,
     coverage: input.coverage,
     planUnitCents: input.plan.unitPriceCents,

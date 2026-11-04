@@ -5,8 +5,9 @@ import type { Coupon, PricingPlan } from '@prisma/client';
 import type { InsuranceCoverage, PlanCode } from '../../common/enums';
 import { notFound, unprocessable } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
+import { counterPeriodSeconds, type PlanUnit, UNIT_SECONDS } from './plan-units';
 
-export type PlanUnit = 'minute' | 'hour' | 'day' | 'week' | 'month';
+export { type PlanUnit, UNIT_SECONDS } from './plan-units';
 
 export interface CouponSnapshot {
   code: string;
@@ -64,7 +65,6 @@ export interface FeeCharge {
   amountCents: number;
 }
 
-export const UNIT_SECONDS: Record<PlanUnit, number> = { minute: 60, hour: 3600, day: 86400, week: 7 * 86400, month: 30 * 86400 };
 const UNIT_LABEL: Record<PlanUnit, string> = { minute: 'minuto', hour: 'hora', day: 'dia', week: 'semana', month: 'mês' };
 /** Dias por unidade para o excedente pro rata da assinatura (auditoria run-4). */
 const PRO_RATA_DAYS: Partial<Record<PlanUnit, number>> = { week: 7, month: 30 };
@@ -200,7 +200,7 @@ export class PricingService {
       unitCents: s.unitPriceCents,
       amountCents: planCents,
     });
-    const excessDays = startedUnits(elapsed - UNIT_SECONDS[s.unit] * c.quantity, UNIT_SECONDS.day);
+    const excessDays = startedUnits(elapsed - counterPeriodSeconds(s.unit, c.quantity), UNIT_SECONDS.day);
     if (excessDays > 0) {
       lines.push({ code: 'excess_day', description: 'Excedente (por dia iniciado)', quantity: excessDays, unitCents: c.excessDayCents, amountCents: excessDays * c.excessDayCents });
     }
