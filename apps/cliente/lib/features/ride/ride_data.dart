@@ -111,6 +111,12 @@ String? lastSystemMessage(Iterable<RentalEvent> events) {
 /// posicao a cada 5-10 s em aluguel.
 const kGpsStaleSeconds = 30;
 
-/// Quanto tempo a corrida mostra "Pausando… mantenha a moto parada" depois de
-/// pedir a pausa: a trava de um rastreador so rele espera a moto parar.
+/// Velocidade abaixo da qual a trava segura corta (CLAUDE.md: travar so abaixo
+/// de 3 km/h).
+const kSafeLockSpeedKmh = 3.0;
+
+/// Teto do "Pausando… mantenha a moto parada" depois de pedir a pausa: a trava
+/// de um rastreador so rele espera a moto parar. Termina antes com a primeira
+/// `vehicle.position` abaixo de [kSafeLockSpeedKmh] (o cliente nao recebe o
+/// estado da trava; e o sinal mais limpo que o app tem).
 const kPausePendingWindow = Duration(seconds: 30);

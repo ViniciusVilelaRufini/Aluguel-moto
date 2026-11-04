@@ -815,7 +815,8 @@ class AppLocalizationsPt extends AppLocalizations {
   String get waitingLock => 'Aguardando a moto travar';
 
   @override
-  String get waitingLockText => 'Deixe a moto parada. Pode levar até 30 s.';
+  String get waitingLockText =>
+      'Deixe a moto parada. Costuma levar menos de 1 minuto.';
 
   @override
   String get wallet => 'Carteira';

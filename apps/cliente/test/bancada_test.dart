@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:built_collection/built_collection.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
@@ -81,9 +82,12 @@ class _BenchRide extends FakeBackend {
   @override
   Future<Rental> pause(String id) async {
     if (pauseGate != null) await pauseGate!.future;
-    status = RentalStatus.paused;
-    return sampleRental(status: RentalStatus.paused);
+    status = pauseResult;
+    return sampleRental(status: pauseResult);
   }
+
+  /// Status que o `POST /pause` devolve (`active` = did_not_stop chegou antes).
+  RentalStatus pauseResult = RentalStatus.paused;
 
   @override
   Future<Rental> resume(String id) async {
@@ -311,7 +315,7 @@ void main() {
       await pumpReturn(t, _EndB());
       await takeAndEnd(t);
       expect(find.text('Aguardando a moto travar'), findsOneWidget);
-      expect(find.text('Deixe a moto parada. Pode levar até 30 s.'), findsOneWidget);
+      expect(find.text('Deixe a moto parada. Costuma levar menos de 1 minuto.'), findsOneWidget);
       await t.pump(const Duration(seconds: 12));
       expect(find.byKey(const Key('lock-elapsed')), findsOneWidget);
       expect(find.textContaining('12 s'), findsOneWidget);
@@ -454,6 +458,226 @@ void main() {
     });
   });
 
+  group('rodada 1 de correcoes', () {
+    late FakeRealtime rt;
+
+    Future<void> pumpRide(WidgetTester t, _BenchRide b, {List<Override> extra = const []}) async {
+      tallScreen(t);
+      rt = FakeRealtime();
+      await t.pumpWidget(testApp(const RideScreen(), overrides: [
+        backendProvider.overrideWithValue(b),
+        realtimeFactoryProvider.overrideWithValue(() => rt),
+        locationServiceProvider.overrideWithValue(FakeLocation()),
+        rentalTrackProvider.overrideWith((ref, id) async => const []),
+        ...extra,
+      ]));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 50));
+      await t.pump(const Duration(milliseconds: 50));
+    }
+
+    testWidgets('pausa devolvida ja ativa (did_not_stop na corrida) mostra "pausa desfeita"', (t) async {
+      final b = _BenchRide(vehicle: _benchBike())
+        ..pauseResult = RentalStatus.active
+        ..events = [_sysEvent('A moto não parou; pare e peça a pausa de novo.')];
+      await pumpRide(t, b);
+      await t.tap(find.widgetWithText(VoltiButton, 'Pausar'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 600));
+      expect(b.eventCalls, 1);
+      expect(find.text('A moto não parou; pare e peça a pausa de novo.'), findsOneWidget);
+      expect(find.textContaining('Pausando'), findsNothing);
+      // _userTarget limpo: uma pausa tardia depois e surpresa (avisa de novo).
+      b.events = [_sysEvent('A moto foi travada; retome pelo app para seguir.', type: RentalEventType.paused, minute: 6)];
+      rt.emit(const RentalUpdated(rentalId: 'r1', status: 'paused', elapsedSeconds: 140, costCents: 270));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 600));
+      expect(b.eventCalls, 2);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('moto que confirma rapido: "Pausando…" some com a primeira posicao parada (< 3 km/h)', (t) async {
+      await pumpRide(t, _BenchRide(vehicle: sampleVehicle()));
+      await t.tap(find.widgetWithText(VoltiButton, 'Pausar'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('Pausando… mantenha a moto parada'), findsOneWidget);
+      // Ainda andando: continua pendente.
+      rt.emit(const VehiclePositionEvent(lat: -23.56, lng: -46.65, speedKmh: 8, batteryPct: 70, speedLimitKmh: 32));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('Pausando… mantenha a moto parada'), findsOneWidget);
+      rt.emit(const VehiclePositionEvent(lat: -23.56, lng: -46.65, speedKmh: 0, batteryPct: 70, speedLimitKmh: 32));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 400));
+      await t.pump(const Duration(milliseconds: 400)); // fim do cross-fade do selo
+      expect(find.textContaining('Pausando'), findsNothing);
+      expect(find.textContaining('Corrida pausada'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('devolucao aberta por cima: a corrida nao repete o aviso do sistema', (t) async {
+      final b = _BenchRide(vehicle: _benchBike())..events = [_sysEvent('A moto não parou; pare e peça o encerramento de novo.')];
+      final open = ReturnScreensOpen()..count = 1;
+      await pumpRide(t, b, extra: [returnScreensOpenProvider.overrideWithValue(open)]);
+      rt.emit(const RentalUpdated(rentalId: 'r1', status: 'ending', elapsedSeconds: 140, costCents: 270));
+      await t.pump();
+      rt.emit(const RentalUpdated(rentalId: 'r1', status: 'active', elapsedSeconds: 150, costCents: 280));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 600));
+      expect(b.eventCalls, 0, reason: 'a devolucao aberta e quem avisa');
+      expect(find.text('A moto não parou; pare e peça o encerramento de novo.'), findsNothing);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('sem tempo real: sem a faixa de GPS (a faixa de conexao ja explica)', (t) async {
+      await pumpRide(t, _BenchRide(vehicle: _benchBike()));
+      rt.conn.add(false);
+      await t.pump();
+      await t.pump(const Duration(seconds: 31));
+      await t.pump(const Duration(milliseconds: 500));
+      expect(find.text('Sem conexão em tempo real'), findsOneWidget);
+      expect(find.text('Sem sinal de GPS da moto'), findsNothing);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('entrega: lastError antigo nao encerra a espera do destravamento', (t) async {
+      phone(t);
+      final b = HandoverBackend();
+      b.handovers['h1'] = handoverFixture(lastError: 'payment-declined');
+      b.acceptErrors.add(problem(409, 'conflict', detail: 'Requisição com esta Idempotency-Key ainda em processamento.'));
+      final hub = RtHub();
+      await pumpApp(t, b, hub, initial: '/handover/h1');
+      await settle(t);
+      await t.tap(find.byKey(const Key('handover-accept')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 100));
+      await t.pump(const Duration(seconds: 3));
+      await t.pump(const Duration(milliseconds: 100));
+      // A entrega ainda traz o erro da tentativa anterior: segue destravando.
+      expect(find.text('Destravando a moto… pode levar até 30 s'), findsOneWidget);
+      b.handovers['h1'] = handoverFixture(status: HandoverStatus.accepted);
+      await t.pump(const Duration(seconds: 3));
+      await settle(t);
+      expect(find.byKey(const Key('handover-accepted')), findsOneWidget);
+    });
+
+    testWidgets('entrega: erro novo durante a espera encerra e mostra o motivo', (t) async {
+      phone(t);
+      final b = HandoverBackend();
+      b.acceptErrors.add(problem(409, 'conflict', detail: 'Requisição com esta Idempotency-Key ainda em processamento.'));
+      final hub = RtHub();
+      await pumpApp(t, b, hub, initial: '/handover/h1');
+      await settle(t);
+      await t.tap(find.byKey(const Key('handover-accept')));
+      await t.pump();
+      b.handovers['h1'] = handoverFixture(lastError: 'vehicle-offline');
+      await t.pump(const Duration(seconds: 3));
+      await settle(t);
+      expect(find.text('Destravando a moto… pode levar até 30 s'), findsNothing);
+      expect(find.byKey(const Key('handover-error')), findsOneWidget);
+    });
+
+    testWidgets('entrega: sair da tela durante a espera nao quebra (sem setState depois do dispose)', (t) async {
+      phone(t);
+      final b = HandoverBackend();
+      b.acceptErrors.add(problem(409, 'conflict', detail: 'Requisição com esta Idempotency-Key ainda em processamento.'));
+      final hub = RtHub();
+      await pumpApp(t, b, hub, initial: '/handover/h1');
+      await settle(t);
+      await t.tap(find.byKey(const Key('handover-accept')));
+      await t.pump();
+      await t.pumpWidget(const SizedBox());
+      await t.pump(const Duration(seconds: 60));
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('devolucao: sair durante a espera da trava nao quebra; espera tem "Falar com o suporte"', (t) async {
+      tallScreen(t);
+      final b = _EndB();
+      await t.pumpWidget(testApp(const ReturnScreen(rentalId: 'r1'), overrides: [
+        backendProvider.overrideWithValue(b),
+        photoPickerProvider.overrideWithValue(FakePhotoPicker()),
+      ]));
+      await t.pumpAndSettle();
+      await t.tap(find.byType(PhotoCapture));
+      await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(VoltiButton, 'Travar e encerrar'));
+      await t.pumpAndSettle();
+      await t.tap(find.descendant(of: find.byType(Dialog), matching: find.widgetWithText(VoltiButton, 'Travar e encerrar')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 50));
+      expect(find.text('Aguardando a moto travar'), findsOneWidget);
+      expect(find.byKey(const Key('lock-wait-support')), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+      await t.pump(const Duration(seconds: 10));
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('devolucao: uma consulta por vez enquanto espera', (t) async {
+      tallScreen(t);
+      final b = _EndB();
+      await t.pumpWidget(testApp(const ReturnScreen(rentalId: 'r1', pollInterval: Duration(seconds: 1)), overrides: [
+        backendProvider.overrideWithValue(b),
+        photoPickerProvider.overrideWithValue(FakePhotoPicker()),
+      ]));
+      await t.pumpAndSettle();
+      await t.tap(find.byType(PhotoCapture));
+      await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(VoltiButton, 'Travar e encerrar'));
+      await t.pumpAndSettle();
+      // Daqui em diante o GET do aluguel fica "em voo" ate o teste soltar.
+      b.rentalGate = Completer<void>();
+      await t.tap(find.descendant(of: find.byType(Dialog), matching: find.widgetWithText(VoltiButton, 'Travar e encerrar')));
+      await t.pump();
+      final before = b.rentalCalls;
+      await t.pump(const Duration(seconds: 5));
+      expect(b.rentalCalls - before, 1, reason: 'a primeira consulta ainda nao respondeu');
+      b.rentalGate!.complete();
+      await t.pumpWidget(const SizedBox());
+    });
+
+    test('texto da espera nao promete 30 s (a espera vai ate 150 s)', () {
+      final l = lookupAppLocalizations(const Locale('pt'));
+      expect(l.waitingLockText, isNot(contains('30 s')));
+    });
+  });
+
+  group('prazo de 45 s enviado de verdade (Dio)', () {
+    late _CaptureAdapter adapter;
+    late ApiBackend backend;
+    setUp(() {
+      adapter = _CaptureAdapter();
+      backend = ApiBackend(buildVoltiApi(baseUrl: 'http://x', auth: _StubAuth(), httpClientAdapter: adapter, maxAttempts: 1));
+    });
+
+    test('endRental', () async {
+      await _ignore(() => backend.endRental('r1', 'k1', idempotencyKey: 'key-12345678'));
+      expect(adapter.calls.single.receiveTimeout, kLongReceiveTimeout);
+    });
+
+    test('acceptHandover', () async {
+      await _ignore(() => backend.acceptHandover('h1', 'key-12345678'));
+      expect(adapter.calls.single.receiveTimeout, kLongReceiveTimeout);
+    });
+
+    test('startRental (sem tela que chame hoje; o Backend ja manda)', () async {
+      await _ignore(() => backend.startRental(
+          StartRentalRequest((b) => b
+            ..vehicleId = 'v1'
+            ..planCode = PlanCode.minute
+            ..coverage = InsuranceCoverage.basic
+            ..depositMethod = DepositMethod.card),
+          idempotencyKey: 'key-12345678'));
+      expect(adapter.calls.single.receiveTimeout, kLongReceiveTimeout);
+    });
+
+    test('outras chamadas ficam no prazo padrao', () async {
+      await _ignore(() => backend.rental('r1'));
+      expect(adapter.calls.single.receiveTimeout, const Duration(seconds: 15));
+    });
+  });
+
   test('ajuda: limites de zona sem prometer reducao automatica', () {
     final l = lookupAppLocalizations(const Locale('pt'));
     expect(l.helpRule1Text, isNot(contains('sozinha')));
@@ -462,15 +686,56 @@ void main() {
   });
 }
 
+/// O corpo `{}` nao desserializa: so interessa a requisicao enviada.
+Future<void> _ignore(Future<Object?> Function() call) async {
+  try {
+    await call();
+  } catch (_) {}
+}
+
+class _CaptureAdapter implements HttpClientAdapter {
+  final calls = <RequestOptions>[];
+  @override
+  Future<ResponseBody> fetch(RequestOptions o, Stream<Uint8List>? s, Future<void>? c) async {
+    calls.add(o);
+    return ResponseBody.fromString('{}', 200, headers: {
+      Headers.contentTypeHeader: ['application/json'],
+    });
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+class _StubAuth implements AuthRepository {
+  @override
+  AuthMode get mode => AuthMode.dev;
+  @override
+  AuthSession? get session => null;
+  @override
+  Future<String?> accessToken() async => 'tok';
+  @override
+  Future<void> signOut() async {}
+}
+
 class _EndB extends FakeBackend {
   final keys = <String?>[];
+  int rentalCalls = 0;
+
+  /// Segura o `GET /rentals/{id}` ate o teste soltar (consulta em voo).
+  Completer<void>? rentalGate;
   int uploads = 0;
   RentalStatus status = RentalStatus.ending;
   Object? endError;
   List<RentalEvent> events = [];
 
   @override
-  Future<Rental> rental(String id) async => sampleRental(status: status);
+  Future<Rental> rental(String id) async {
+    rentalCalls++;
+    if (rentalGate != null) await rentalGate!.future;
+    return sampleRental(status: status);
+  }
+
   // Sem posicao da moto: a tela pede confirmacao e o servidor decide o ponto verde.
   @override
   Future<Vehicle> vehicleByCode(String code) async => throw AppFailure(kind: FailureKind.network);

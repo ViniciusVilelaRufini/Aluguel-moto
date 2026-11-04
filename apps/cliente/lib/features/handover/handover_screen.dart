@@ -6,6 +6,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/clock.dart';
 import '../../core/battery.dart';
 import '../../core/errors.dart';
 import '../../core/flash.dart';
@@ -66,6 +67,13 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
   static const _unlockPoll = Duration(seconds: 3);
   static const _unlockPolls = 15;
 
+  /// Teto de relogio da espera (cada consulta pode demorar ate o prazo da rede).
+  static const _unlockMaxWait = Duration(seconds: 50);
+
+  /// `lastError` da entrega antes deste aceite: um erro antigo (de outra
+  /// tentativa) nao encerra a espera; so um status novo ou um erro diferente.
+  String? _lastErrorBeforeAccept;
+
   /// Motivo da ultima tentativa que falhou nesta tela (o `lastError` da entrega
   /// cobre o que aconteceu fora dela).
   String? _error;
@@ -110,6 +118,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
 
   Future<void> _accept() async {
     if (_accepting) return;
+    _lastErrorBeforeAccept = _h?.lastError;
     setState(() {
       _accepting = true;
       _error = null;
@@ -161,13 +170,16 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
   Future<void> _waitUnlock() async {
     final l = context.l;
     setState(() => _unlocking = true);
-    for (var i = 0; i < _unlockPolls; i++) {
+    final now = ref.read(clockProvider);
+    final deadline = now().add(_unlockMaxWait);
+    for (var i = 0; i < _unlockPolls && now().isBefore(deadline); i++) {
       await Future<void>.delayed(_unlockPoll);
       if (!mounted) return;
       try {
         final h = await ref.read(backendProvider).handover(widget.handoverId);
         if (!mounted) return;
-        final done = h.status != HandoverStatus.pendingCustomer || h.lastError != null;
+        final newError = h.lastError != null && h.lastError != _lastErrorBeforeAccept;
+        final done = h.status != HandoverStatus.pendingCustomer || newError;
         setState(() {
           _h = h;
           if (done) _unlocking = false;

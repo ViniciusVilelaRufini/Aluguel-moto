@@ -1621,7 +1621,7 @@ abstract class AppLocalizations {
   /// No description provided for @waitingLockText.
   ///
   /// In pt, this message translates to:
-  /// **'Deixe a moto parada. Pode levar até 30 s.'**
+  /// **'Deixe a moto parada. Costuma levar menos de 1 minuto.'**
   String get waitingLockText;
 
   /// No description provided for @wallet.

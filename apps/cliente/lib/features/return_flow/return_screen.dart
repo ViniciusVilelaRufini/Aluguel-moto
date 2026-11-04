@@ -12,6 +12,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/app_channel.dart';
 import '../../core/backend.dart';
+import '../../core/clock.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
 import '../../core/launcher.dart';
@@ -110,6 +111,12 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   /// Segundos esperando a trava (contador da tela de espera).
   int _waitSeconds = 0;
   Timer? _waitTick;
+
+  /// Geracao da espera: consultas de uma espera antiga sao descartadas.
+  int _pollGen = 0;
+
+  /// Uma consulta por vez (rede lenta nao empilha GETs).
+  bool _pollInFlight = false;
 
   /// Espera a partir da qual a tela sugere conferir o GPS da moto.
   static const _gpsHintAfter = 45;
@@ -314,6 +321,16 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     _waitTick?.cancel();
     final maxTicks = (widget.lockTimeout.inMilliseconds / widget.pollInterval.inMilliseconds).ceil();
     var ticks = 0;
+    final gen = ++_pollGen;
+    _pollInFlight = false;
+    // Prazo tambem pelo relogio: consultas lentas nao esticam a espera.
+    final now = ref.read(clockProvider);
+    final deadline = now().add(widget.lockTimeout);
+    void timeOut() {
+      _poll?.cancel();
+      _waitTick?.cancel();
+      if (mounted) setState(() => _lockTimedOut = true);
+    }
     setState(() {
       _waitingLock = true;
       _lockTimedOut = false;
@@ -323,9 +340,12 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       if (mounted) setState(() => _waitSeconds++);
     });
     _poll = Timer.periodic(widget.pollInterval, (_) async {
+      if (++ticks >= maxTicks || !now().isBefore(deadline)) return timeOut();
+      if (_pollInFlight) return;
+      _pollInFlight = true;
       try {
         final r = await ref.read(backendProvider).rental(widget.rentalId);
-        if (!mounted || !_waitingLock) return;
+        if (!mounted || !_waitingLock || gen != _pollGen) return;
         if (r.status == RentalStatus.ended || r.status == RentalStatus.forceEnded) {
           _poll?.cancel();
           _finish();
@@ -337,11 +357,8 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
         }
       } catch (_) {
         // rede instavel: segue tentando ate o prazo
-      }
-      if (++ticks >= maxTicks) {
-        _poll?.cancel();
-        _waitTick?.cancel();
-        if (mounted) setState(() => _lockTimedOut = true);
+      } finally {
+        if (gen == _pollGen) _pollInFlight = false;
       }
     });
   }
@@ -492,6 +509,15 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                   const SizedBox(height: 12),
                   NoticeBanner(key: const Key('lock-gps-hint'), icon: LucideIcons.satelliteDish, message: l.waitingLockGpsHint),
                 ],
+                const SizedBox(height: 16),
+                VoltiButton(
+                  key: const Key('lock-wait-support'),
+                  label: l.contactSupport,
+                  icon: LucideIcons.messageCircle,
+                  variant: VoltiButtonVariant.ghost,
+                  fullWidth: true,
+                  onPressed: () => context.push('/account/support'),
+                ),
               ],
             ),
           ),

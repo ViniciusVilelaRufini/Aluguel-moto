@@ -371,6 +371,9 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
           _battery = e.knownBatteryPct;
           if (_battery == null) _range = null;
           _limit = e.speedLimitKmh;
+          // Moto parada (< 3 km/h) depois da pausa: a trava segura corta nessa
+          // velocidade, entao o "Pausando…" acaba aqui (moto que confirma rapido).
+          if (_pausing && _rental?.status == RentalStatus.paused && e.speedKmh < kSafeLockSpeedKmh) _stopPausing();
           _vehiclePos = LatLng(e.lat, e.lng);
           appendTrail(_trail, _vehiclePos!);
         });
@@ -630,13 +633,21 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
       VoltiHaptics.tap();
       if (mounted) {
         final prev = _rental?.status;
+        final pauseUndone = pausing && updated.status != RentalStatus.paused;
         setState(() {
           _rental = updated;
           _syncElapsed();
           if (pausing && updated.status == RentalStatus.paused) _startPausing();
-          if (!pausing) _stopPausing();
+          if (!pausing || pauseUndone) _stopPausing();
         });
-        _statusChanged(prev, updated.status);
+        if (pauseUndone) {
+          // O `did_not_stop` chegou antes de a resposta da pausa sair: o POST ja
+          // devolve `active`. Sem mudanca de status na tela, mas e "pausa desfeita".
+          _userTarget = null;
+          if (!_returnOpen) _showSystemNotice(RentalStatus.paused, updated.status);
+        } else {
+          _statusChanged(prev, updated.status);
+        }
       }
     } catch (e) {
       _userTarget = null;
@@ -671,7 +682,8 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     if (next != RentalStatus.paused && _pausing) setState(_stopPausing);
     final surprise = (next == RentalStatus.active || next == RentalStatus.paused) && next != _userTarget;
     _userTarget = null;
-    if (surprise) _showSystemNotice(prev, next);
+    // Devolucao aberta por cima: ela mostra a mensagem (sem aviso nem vibracao em dobro).
+    if (surprise && !_returnOpen) _showSystemNotice(prev, next);
   }
 
   Future<void> _showSystemNotice(RentalStatus prev, RentalStatus next) async {
@@ -920,7 +932,8 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
               ),
               VoltiStatusBanner(
                 key: const Key('gps-stale'),
-                visible: stale,
+                // Sem tempo real a faixa de conexao ja explica a falta de posicoes.
+                visible: stale && !_rtDown,
                 tone: VoltiStatusTone.warning,
                 icon: LucideIcons.satelliteDish,
                 title: l.gpsStaleTitle,
