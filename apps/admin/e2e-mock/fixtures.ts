@@ -262,5 +262,44 @@ export function makeHandovers(): S<'Handover'>[] {
   return [
     { id: 'ho-1', type: 'pickup', depotId: 'dep-1', reservationId: 'res-1', rentalId: 'rent-002', vehicleId: 'veh-002', vehicleCode: 'VLT-002', operatorId: 'staff-campo', operatorFirstName: 'Rafael', checklist, photoKeys: [], batteryPct: 96, status: 'accepted', createdAt: iso(90), respondedAt: iso(85) },
     { id: 'ho-2', type: 'return_depot', depotId: 'dep-1', rentalId: 'rent-009', vehicleId: 'veh-009', vehicleCode: 'VLT-009', operatorId: 'staff-campo', operatorFirstName: 'Rafael', checklist, photoKeys: [], batteryPct: 31, status: 'pending_customer', createdAt: iso(20) },
+    { id: 'ho-3', type: 'pickup', depotId: 'dep-1', reservationId: 'res-3', vehicleId: 'veh-003', vehicleCode: 'VLT-003', operatorId: 'staff-campo', operatorFirstName: 'Rafael', checklist, photoKeys: [], batteryPct: 98, status: 'pending_customer', createdAt: iso(10) },
   ];
+}
+
+/* ───── balcão (pré-reserva 2026-11-04): agenda de retiradas e saldo do acerto ───── */
+
+/** Agenda do dia: uma reserva aguardando e uma já em entrega (`handover`, com `handoverId`) aguardando o balcão. */
+export function makeReservations(): S<'Reservation'>[] {
+  const vehicle = (n: number): S<'VehicleSummary'> => ({ id: `veh-${pad(n)}`, code: `VLT-${pad(n)}`, model: 'Volti One', status: 'reserved', lat: -23.5636, lng: -46.6914, batteryPct: 95, estimatedRangeKm: 60 });
+  return [
+    { id: 'res-2', vehicleId: 'veh-004', vehicle: vehicle(4), status: 'active', depotId: 'dep-1', pickupMode: 'scheduled', pickupAt: iso(-60), createdAt: iso(120), expiresAt: iso(-90), customerFirstName: 'Bruno' },
+    { id: 'res-3', vehicleId: 'veh-003', vehicle: vehicle(3), status: 'handover', depotId: 'dep-1', pickupMode: 'now', createdAt: iso(30), expiresAt: iso(-90), handoverId: 'ho-3', customerFirstName: 'Carla' },
+  ];
+}
+
+/** Preços do balcão do mock (centavos): plano × quantidade + prêmio único do seguro. */
+export const COUNTER_PRICES = { plan: { day: 7500, weekly: 25000, monthly: 90000 }, insurance: { basic: 1500, full: 4000 } } as const;
+
+export function makeCounterQuote(planCode: S<'CounterPlanCode'>, coverage: S<'InsuranceCoverage'>, quantity: number): S<'CounterQuote'> {
+  const unit = COUNTER_PRICES.plan[planCode];
+  const insurance = COUNTER_PRICES.insurance[coverage];
+  const days = { day: 1, weekly: 7, monthly: 30 }[planCode];
+  return { planCode, coverage, quantity, planUnitCents: unit, planCents: unit * quantity, insuranceCents: insurance, totalCents: unit * quantity + insurance, excessDayCents: COUNTER_PRICES.plan.day, periodDays: days * quantity };
+}
+
+/** Saldo do acerto de `rent-002`: excedente de R$ 60,00 e caução em dinheiro de R$ 100,00. */
+export function makeCounterState() {
+  return {
+    rentalStatus: 'ended' as S<'RentalStatus'>,
+    debts: [{ paymentId: 'a1b2c3d4-0000-4000-8000-000000000060', rentalId: 'rent-002', kind: 'rental', status: 'pending', method: 'cash', outstandingCents: 6000, createdAt: iso(60) }] as S<'CounterDebt'>[],
+    deposits: [{ depositId: 'd1e2f3a4-0000-4000-8000-000000010000', rentalId: 'rent-002', method: 'cash', status: 'held', amountCents: 10000, capturedCents: 0, refundedCents: 0, availableCents: 10000 }] as S<'CounterDepositBalance'>[],
+    /** O próximo checkout responde 422 `counter-amount-mismatch` uma vez. */
+    mismatchOnce: false,
+    /** Força um erro no checkout (ex.: 422 `location-consent-required`). */
+    checkoutError: undefined as { status: number; slug: string; title: string } | undefined,
+    /** O próximo acerto é registrado e a resposta "se perde" (500), como um timeout depois do commit. */
+    failAfterApplyOnce: false,
+    /** Respostas de sucesso do acerto por `Idempotency-Key` (replay como na API). */
+    idempotent: new Map<string, { status?: number; json: unknown }>(),
+  };
 }

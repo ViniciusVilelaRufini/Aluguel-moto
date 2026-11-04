@@ -24,7 +24,7 @@ export async function override(page: Page, mock: Mock, method: string, re: RegEx
     if (req.method() !== method) return route.fallback();
     const url = new URL(req.url());
     let body: unknown; try { body = req.postDataJSON(); } catch { body = undefined; }
-    mock.calls.push({ method, path: url.pathname, query: url.searchParams, body });
+    mock.calls.push({ method, path: url.pathname, query: url.searchParams, body, headers: req.headers() });
     const out = typeof json === 'function' ? (json as any)(body, url) : json;
     return route.fulfill({ status, headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify(out) });
   });

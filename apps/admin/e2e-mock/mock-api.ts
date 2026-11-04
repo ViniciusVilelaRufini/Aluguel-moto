@@ -22,7 +22,11 @@ export interface MockOptions {
   failPaths?: string[];
 }
 
-export interface ApiCall { method: string; path: string; query: URLSearchParams; body: unknown }
+export interface ApiCall {
+  method: string; path: string; query: URLSearchParams; body: unknown;
+  /** Cabeçalhos da requisição, em minúsculas (ex.: `idempotency-key`). */
+  headers: Record<string, string>;
+}
 
 export interface Mock {
   calls: ApiCall[];
@@ -59,6 +63,9 @@ function makeDb(group: NonNullable<MockOptions['group']>) {
     depots: F.makeDepots(),
     stations: F.makeStationRegistry(),
     handovers: F.makeHandovers(),
+    reservations: F.makeReservations(),
+    counter: F.makeCounterState(),
+    uploadSeq: 1,
   };
 }
 
@@ -89,11 +96,11 @@ export async function installMockApi(page_: Page, opts: MockOptions = {}): Promi
     if (url.pathname.startsWith('/socket.io')) return route.fulfill({ status: 404, headers: CORS });
     let body: unknown;
     try { body = req.postDataJSON(); } catch { body = undefined; }
-    mock.calls.push({ method, path: url.pathname, query: url.searchParams, body });
+    mock.calls.push({ method, path: url.pathname, query: url.searchParams, body, headers: req.headers() });
     if (opts.latencyMs) await new Promise((r) => setTimeout(r, opts.latencyMs));
     const send = (status: number, json: unknown) => route.fulfill({ status, headers: { ...CORS, 'content-type': 'application/json' }, body: JSON.stringify(json) });
     if (opts.failPaths?.some((p) => url.pathname.startsWith(p))) return send(500, problem(500, 'Falha simulada'));
-    const res = handle(db, method, url.pathname, url.searchParams, body);
+    const res = handle(db, method, url.pathname, url.searchParams, body, req.headers()['idempotency-key']);
     if (res === undefined) {
       mock.unmocked.push(`${method} ${url.pathname}`);
       return send(404, problem(404, `Sem mock para ${method} ${url.pathname}`, 'not-mocked'));
@@ -121,7 +128,7 @@ export async function installMockApi(page_: Page, opts: MockOptions = {}): Promi
 type Res = { status?: number; json: unknown } | undefined;
 const ok = (json: unknown, status = 200): Res => ({ status, json });
 
-function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: URLSearchParams, body: unknown): Res {
+function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: URLSearchParams, body: unknown, idemKey?: string): Res {
   const p = path.replace(/\/$/, '');
   const seg = p.split('/').filter(Boolean);
   // /pricing/plans/{id}, /insurance/coverages/{c}, /maintenance/tasks/{id} e /support/{recurso}/{id} levam o id no 3o segmento
@@ -275,12 +282,76 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
   if (method === 'GET' && match(/^\/depots\/[^/]+$/)) { const d = find(db.depots); return d ? ok(d) : notFound(); }
   if (method === 'PATCH' && match(/^\/depots\/[^/]+$/)) { const d = find(db.depots); if (!d) return notFound(); Object.assign(d, b, { updatedAt: now }); return ok(d); }
   if (method === 'GET' && match(/^\/depots\/[^/]+\/vehicles$/)) { if (!find(db.depots)) return notFound(); return ok({ items: db.vehicles.filter((v) => (v.depotId ?? 'dep-1') === id) }); }
-  if (method === 'GET' && match(/^\/depots\/[^/]+\/pickups$/)) { if (!find(db.depots)) return notFound(); return ok({ date: q.get('date') ?? now.slice(0, 10), items: [] }); }
+  if (method === 'GET' && match(/^\/depots\/[^/]+\/pickups$/)) {
+    if (!find(db.depots)) return notFound();
+    const st = q.get('status');
+    return ok({ date: q.get('date') ?? now.slice(0, 10), items: db.reservations.filter((r) => r.depotId === id && (!st || r.status === st)) });
+  }
   if (method === 'GET' && p === '/swap-stations/registry') return ok({ items: db.stations });
   if (method === 'GET' && match(/^\/swap-stations\/[^/]+\/swaps$/)) { if (!find(db.stations)) return notFound(); return ok({ items: [] }); }
   if (method === 'GET' && p === '/handovers') {
     const st = q.get('status'); const dep = q.get('depotId'); const ty = q.get('type');
     return ok(page(db.handovers.filter((h) => (!st || h.status === st) && (!dep || h.depotId === dep) && (!ty || h.type === ty)), q));
+  }
+  // Balcão (pré-reserva 2026-11-04): upload do contrato, cotação, contrato e pagamento, saldo e acerto.
+  if (method === 'POST' && p === '/handovers/uploads') {
+    const key = `${b.purpose === 'contract' ? 'contracts' : 'handovers'}/up-${db.uploadSeq++}.${b.contentType === 'image/png' ? 'png' : 'jpg'}`;
+    return ok({ uploadUrl: `${API_HOST}/uploads/${key}`, method: 'PUT', headers: { 'Content-Type': String(b.contentType) }, objectKey: key, expiresAt: now }, 201);
+  }
+  if (method === 'PUT' && p.startsWith('/uploads/')) return ok({});
+  if (method === 'GET' && match(/^\/handovers\/[^/]+\/counter-quote$/)) {
+    if (!find(db.handovers)) return notFound();
+    return ok(F.makeCounterQuote((q.get('planCode') ?? 'day') as never, (q.get('coverage') ?? 'basic') as never, Number(q.get('quantity') ?? 1)));
+  }
+  if (method === 'POST' && match(/^\/handovers\/[^/]+\/counter-checkout$/)) {
+    const h = find(db.handovers); if (!h) return notFound();
+    const c = db.counter;
+    if (c.checkoutError) return { status: c.checkoutError.status, json: problem(c.checkoutError.status, c.checkoutError.title, c.checkoutError.slug) };
+    const mismatch = (): Res => ({ status: 422, json: problem(422, 'O valor não confere com o calculado. Atualize o valor e tente de novo.', 'counter-amount-mismatch') });
+    if (c.mismatchOnce) { c.mismatchOnce = false; return mismatch(); }
+    const quote = F.makeCounterQuote(b.planCode as never, b.coverage as never, Number(b.quantity ?? 1));
+    if ((b.payment as { amountCents: number }).amountCents !== quote.totalCents) return mismatch();
+    const rental = { ...db.rentals[0]!, id: `rent-counter-${h.id}`, vehicleId: h.vehicleId, vehicleCode: h.vehicleCode, planCode: b.planCode, coverage: b.coverage, status: 'active', startedAt: now, createdAt: now, updatedAt: now };
+    Object.assign(h, { status: 'accepted', rentalId: rental.id, respondedAt: now });
+    const r = db.reservations.find((x) => x.handoverId === h.id);
+    if (r) r.status = 'converted';
+    db.rentals.unshift(rental as never);
+    return ok(rental, 201);
+  }
+  if (method === 'GET' && match(/^\/rentals\/[^/]+\/counter-balance$/)) {
+    if (!find(db.rentals)) return notFound();
+    const c = db.counter;
+    const debts = c.debts.filter((d) => d.outstandingCents > 0);
+    return ok({ rentalId: id, customerId: 'cus-002', customerFirstName: 'Carla', rentalStatus: c.rentalStatus, debtTotalCents: debts.reduce((s, d) => s + d.outstandingCents, 0), debts, deposits: c.deposits.filter((d) => d.availableCents > 0) });
+  }
+  // Acerto: como a API, a mesma Idempotency-Key devolve o resultado já registrado (erros não são memorizados).
+  const replay = idemKey && (method === 'POST') ? db.counter.idempotent.get(idemKey) : undefined;
+  if (replay && /\/counter-(settle|refund)$/.test(p)) return replay;
+  const remember = (res: Res): Res => {
+    if (idemKey && res) db.counter.idempotent.set(idemKey, res);
+    if (db.counter.failAfterApplyOnce) { db.counter.failAfterApplyOnce = false; return { status: 500, json: problem(500, 'Falha simulada depois do registro') }; }
+    return res;
+  };
+  if (method === 'POST' && match(/^\/payments\/deposits\/[^/]+\/counter-refund$/)) {
+    const d = db.counter.deposits.find((x) => x.depositId === seg[2]); if (!d) return notFound();
+    const amount = Number(b.amountCents);
+    if (amount > d.availableCents) return { status: 422, json: problem(422, `O valor passa do disponível da caução (${d.availableCents}).`, 'counter-amount-mismatch') };
+    d.refundedCents += amount; d.availableCents -= amount;
+    if (d.availableCents === 0) d.status = d.capturedCents > 0 ? 'captured' : 'released';
+    return remember(ok({ id: d.depositId, customerId: 'cus-002', rentalId: d.rentalId, method: d.method, status: d.status, amountCents: d.amountCents, capturedCents: d.capturedCents, refundedCents: d.refundedCents, createdAt: now }));
+  }
+  if (method === 'POST' && match(/^\/payments\/[^/]+\/counter-settle$/)) {
+    const debt = db.counter.debts.find((x) => x.paymentId === id); if (!debt) return notFound();
+    const amount = Number(b.amountCents);
+    if (amount > debt.outstandingCents) return { status: 422, json: problem(422, `O valor passa do saldo do débito (${debt.outstandingCents}).`, 'counter-amount-mismatch') };
+    if (b.fromDepositId) {
+      const d = db.counter.deposits.find((x) => x.depositId === b.fromDepositId);
+      if (!d || amount > d.availableCents) return { status: 422, json: problem(422, 'O valor passa do disponível da caução.', 'counter-amount-mismatch') };
+      d.capturedCents += amount; d.availableCents -= amount;
+    }
+    debt.outstandingCents -= amount;
+    if (debt.outstandingCents === 0) debt.status = 'paid';
+    return remember(ok({ id: debt.paymentId, customerId: 'cus-002', rentalId: debt.rentalId, kind: debt.kind, status: debt.status, method: debt.method, amountCents: 6000, refundedCents: 0, outstandingCents: debt.outstandingCents, createdAt: debt.createdAt }));
   }
   if (method === 'GET' && match(/^\/handovers\/[^/]+$/)) { const h = find(db.handovers); return h ? ok(h) : notFound(); }
   if (method === 'GET' && match(/^\/batteries\/[^/]+\/movements$/)) return ok({ items: [] });

@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { can } from '@/lib/permissions';
 import { localDay } from '@/lib/format';
 import { RESERVATION_STATUS, RESERVATION_STATUSES, toPickupRows, type PickupModeFilter, type ReservationStatus } from '@/lib/pickups';
 import { summarizeHours } from '@/lib/depot-hours';
@@ -24,6 +26,7 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
 
 /** Agenda de retiradas do dia por galpão (`GET /depots/{id}/pickups`), em America/Sao_Paulo. */
 export default function PickupsPage() {
+  const { groups } = useAuth();
   const [depotId, setDepotId] = useState('');
   const [date, setDate] = useState(() => localDay());
   const [mode, setMode] = useState<PickupModeFilter>('all');
@@ -92,7 +95,7 @@ export default function PickupsPage() {
       {!depotsQ.isLoading && depots.length === 0 ? (
         <Empty icon="Warehouse" hint="Cadastre um galpão em Galpões para ver a agenda.">Nenhum galpão cadastrado</Empty>
       ) : (
-        <PickupTable items={items} mode={mode} loading={pickupsQ.isLoading || depotsQ.isLoading} />
+        <PickupTable items={items} mode={mode} loading={pickupsQ.isLoading || depotsQ.isLoading} canCheckout={can(groups, 'counter.checkout')} />
       )}
     </Page>
   );
