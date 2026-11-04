@@ -81,6 +81,11 @@ export function checkoutErrorMessage(e: unknown): string {
   return e instanceof Error ? e.message : 'Algo deu errado. Tente de novo.';
 }
 
+/** Há algo a acertar no balcão: dívida em aberto ou caução de balcão a devolver. */
+export function hasCounterBalance(b: Pick<S<'CounterBalance'>, 'debtTotalCents' | 'deposits'>): boolean {
+  return b.debtTotalCents > 0 || b.deposits.length > 0;
+}
+
 /** Quanto tempo uma `Idempotency-Key` guardada no painel ainda vale (a API também não memoriza chave velha). */
 export const IDEMPOTENCY_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 

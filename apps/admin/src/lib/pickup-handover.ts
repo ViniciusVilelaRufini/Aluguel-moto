@@ -8,7 +8,7 @@ import type { S } from './types';
  */
 
 /** Mesmos códigos e rótulos do checklist de saída do app do operador (`pickupChecklistCodes`). */
-export const PICKUP_CHECKLIST: { code: string; label: string }[] = [
+export const PICKUP_CHECKLIST: ChecklistItem[] = [
   { code: 'freios', label: 'Freios' },
   { code: 'luzes', label: 'Luzes' },
   { code: 'pneus', label: 'Pneus' },
@@ -67,8 +67,23 @@ export function parseBattery(text: string): number | null {
 export type ChecklistAnswer = { ok: boolean | null; note: string };
 export type ChecklistState = Record<string, ChecklistAnswer>;
 
-export const emptyChecklist = (): ChecklistState =>
-  Object.fromEntries(PICKUP_CHECKLIST.map((i) => [i.code, { ok: null, note: '' }]));
+export type ChecklistItem = { code: string; label: string };
+
+/** Checklist sem respostas (padrão: o de saída; a chegada passa `ARRIVAL_CHECKLIST`). */
+export const emptyChecklist = (items: ChecklistItem[] = PICKUP_CHECKLIST): ChecklistState =>
+  Object.fromEntries(items.map((i) => [i.code, { ok: null, note: '' }]));
+
+export const checklistAnswered = (items: ChecklistItem[], state: ChecklistState): boolean =>
+  items.every((i) => state[i.code]?.ok != null);
+
+/** `HandoverChecklistItem[]` na ordem dos itens; nota aparada (até 500) só quando preenchida. */
+export function checklistBody(items: ChecklistItem[], state: ChecklistState): S<'HandoverChecklistItem'>[] {
+  return items.map((i) => {
+    const a = state[i.code]!;
+    const note = a.note.trim().slice(0, NOTE_MAX);
+    return { code: i.code, ok: a.ok === true, ...(note ? { note } : {}) };
+  });
+}
 
 export type Identification =
   | { kind: 'code'; code: string | null }
@@ -92,7 +107,7 @@ export function missingForPickup(d: PickupDraft): string[] {
     const n = d.id.reason.trim().length;
     if (n < NO_CODE_REASON_MIN || n > NO_CODE_REASON_MAX) out.push(`Informe o motivo (${NO_CODE_REASON_MIN} a ${NO_CODE_REASON_MAX} caracteres)`);
   }
-  if (PICKUP_CHECKLIST.some((i) => d.checklist[i.code]?.ok == null)) out.push('Responda todo o checklist');
+  if (!checklistAnswered(PICKUP_CHECKLIST, d.checklist)) out.push('Responda todo o checklist');
   if (d.photoKeys.length === 0) out.push('Envie ao menos uma foto da moto');
   if (parseBattery(d.battery) === null) out.push('Informe a bateria (0 a 100)');
   return out;
@@ -101,11 +116,7 @@ export function missingForPickup(d: PickupDraft): string[] {
 /** Corpo de `POST /handovers` (`HandoverCreate`, `pickup`); `null` enquanto falta algo. */
 export function buildPickupBody(d: PickupDraft): S<'HandoverCreate'> | null {
   if (missingForPickup(d).length) return null;
-  const checklist = PICKUP_CHECKLIST.map((i) => {
-    const a = d.checklist[i.code]!;
-    const note = a.note.trim().slice(0, NOTE_MAX);
-    return { code: i.code, ok: a.ok === true, ...(note ? { note } : {}) };
-  });
+  const checklist = checklistBody(PICKUP_CHECKLIST, d.checklist);
   const serial = d.batterySerial.trim().slice(0, 64);
   return {
     type: 'pickup',

@@ -7,7 +7,7 @@ import { formatBRL } from '@/lib/format';
 import { toReais } from '@/lib/money';
 import { DEPOSIT_METHOD, PAYMENT_KIND, PAYMENT_METHOD } from '@/lib/labels';
 import { useSubmitGuard } from '@/lib/submit-guard';
-import { COUNTER_METHODS, COUNTER_METHOD_LABEL, counterKeys, isLostResponse, isRentalOpen, reaisToCents, type CounterMethod } from '@/lib/counter';
+import { COUNTER_METHODS, COUNTER_METHOD_LABEL, counterKeys, hasCounterBalance, isLostResponse, isRentalOpen, reaisToCents, type CounterMethod } from '@/lib/counter';
 import type { S } from '@/lib/types';
 import { ErrorNote, Field, Modal, PanelSkeleton, SectionTitle, Select, TextInput, useToast } from './ui';
 import { Alert } from '@/ds/Alert';
@@ -28,7 +28,7 @@ type Action = { kind: 'receive' | 'deduct'; paymentId: string } | { kind: 'refun
 const actionKey = (signature: string) => counterKeys.keyFor(signature);
 
 /** Consulta do saldo, compartilhada entre o botão "Acertar no balcão" e o diálogo (mesma chave de cache). */
-function counterBalanceQuery(rentalId: string) {
+export function counterBalanceQuery(rentalId: string) {
   return {
     queryKey: ['counter-balance', rentalId],
     queryFn: () => unwrap(api.GET('/rentals/{id}/counter-balance', { params: { path: { id: rentalId } } })),
@@ -43,7 +43,7 @@ function counterBalanceQuery(rentalId: string) {
 export function CounterSettleButton({ rentalId, testId, onClick }: { rentalId: string; testId: string; onClick: () => void }) {
   const q = useQuery(counterBalanceQuery(rentalId));
   const d = q.data;
-  if (!d || (d.debtTotalCents <= 0 && d.deposits.length === 0)) return null;
+  if (!d || !hasCounterBalance(d)) return null;
   return <Button size="sm" variant="secondary" icon="Wallet" testId={testId} style={{ alignSelf: 'flex-start' }} onClick={onClick}>Acertar no balcão</Button>;
 }
 
