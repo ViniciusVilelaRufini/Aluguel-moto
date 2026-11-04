@@ -28,3 +28,10 @@ describe('aviso do mapa', () => {
     expect(MAP_LOAD_TIMEOUT_MS).toBe(15000);
   });
 });
+
+describe('metadata do 404', () => {
+  it('título em pt-BR', async () => {
+    const m = await import('@/app/not-found');
+    expect((m.metadata as { title: string }).title).toBe('Página não encontrada · Volti');
+  });
+});

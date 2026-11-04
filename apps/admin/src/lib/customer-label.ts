@@ -30,3 +30,9 @@ export function customerIdentity(c: CustomerIdentityInput): CustomerIdentity {
 export function customerLabel(c: CustomerIdentityInput): string {
   return customerIdentity(c).label;
 }
+
+/** Texto para as iniciais do avatar: conta sem nome nem e-mail real mostra "?" (Initials cai em "?" com texto vazio). */
+export function initialsSource(c: CustomerIdentityInput): string {
+  const i = customerIdentity(c);
+  return i.shortId !== undefined || i.label === 'Conta sem nome' ? '' : i.label;
+}

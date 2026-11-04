@@ -405,6 +405,18 @@ export function tableScrollClass(sticky?: boolean, overflowing?: boolean): strin
   return ['table-scroll', sticky ? 'table-sticky' : '', overflowing ? 'table-overflow' : ''].filter(Boolean).join(' ');
 }
 
+/** Avisa `onChange` quando o contêiner passa a transbordar na horizontal (e o contrário); devolve a função que para de observar. */
+export function watchOverflow(el: HTMLElement, onChange: (overflowing: boolean) => void): () => void {
+  const check = () => onChange(el.scrollWidth > el.clientWidth + 1);
+  check();
+  if (typeof ResizeObserver === 'undefined') return () => {};
+  const ro = new ResizeObserver(check);
+  ro.observe(el);
+  const t = el.firstElementChild;
+  if (t) ro.observe(t);
+  return () => ro.disconnect();
+}
+
 export function DataTable<T extends object>({
   columns, rows, rowKey = 'id', selectedKey, onRowClick, dense, loading, empty = 'Nada por aqui ainda.', emptyIcon = 'Search', emptyHint, emptyAction, pager, testId, rowClassName, label, sticky,
 }: {
@@ -425,18 +437,11 @@ export function DataTable<T extends object>({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const check = () => setOverflowing(el.scrollWidth > el.clientWidth + 1);
-    check();
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    const t = el.firstElementChild;
-    if (t) ro.observe(t);
-    return () => ro.disconnect();
+    return watchOverflow(el, setOverflowing);
   }, [columns.length, rows.length]);
   return (
     <div data-testid={testId} className="dt" style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
-      <div ref={scrollRef} className={tableScrollClass(sticky, overflowing)} data-overflowing={overflowing || undefined} tabIndex={overflowing ? 0 : undefined} role={overflowing ? 'region' : undefined} aria-label={overflowing && label ? `${label} (role para o lado para ver mais colunas)` : undefined}>
+      <div ref={scrollRef} className={tableScrollClass(sticky, overflowing)} data-overflowing={overflowing || undefined} tabIndex={overflowing ? 0 : undefined} role={overflowing ? 'region' : undefined} aria-label={overflowing ? `${label ?? 'Tabela'} (role para o lado para ver mais colunas)` : undefined}>
         <table aria-label={label} aria-busy={skeleton || refetching || undefined} style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 14, fontWeight: 500 }}>
           <thead>
             <tr>

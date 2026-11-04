@@ -1,6 +1,9 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Icon } from '@/ds/Icon';
 import { LogoMark } from '@/ds/LogoMark';
+
+export const metadata: Metadata = { title: 'Página não encontrada · Volti' };
 
 /** Rota desconhecida (exportação estática: vira 404.html). Sem hooks: funciona dentro e fora do painel. */
 export default function NotFound() {

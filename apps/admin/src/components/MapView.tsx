@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Map as MlMap, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Button } from '@/ds/Button';
+import { MAP_LOAD_TIMEOUT_MS, startMapLoad, type MapLoadState } from '@/lib/map-load';
 
 export const SP_CENTER: [number, number] = [-46.675, -23.563];
 
@@ -34,10 +35,8 @@ declare global {
   }
 }
 
-/** Tempo máximo esperando o 'load' do mapa antes de mostrar a falha. */
-export const MAP_LOAD_TIMEOUT_MS = 15_000;
-
-export type MapLoadState = 'loading' | 'ready' | 'failed';
+export { MAP_LOAD_TIMEOUT_MS };
+export type { MapLoadState };
 
 /** Aviso por cima do mapa. Só o estado de carregamento ignora cliques (KPIs e filtros por cima continuam clicáveis). */
 export function MapOverlay({ state, onRetry }: { state: MapLoadState; onRetry: () => void }) {
@@ -74,33 +73,23 @@ export function MapView({ onReady, onDestroy, center = SP_CENTER, zoom = 13.5, c
   cb.current = { onReady, onDestroy };
 
   useEffect(() => {
-    let map: MlMap | undefined;
-    let cancelled = false;
-    let done = false;
-    const fail = () => { if (!done && !cancelled) { done = true; setState('failed'); } };
-    const timer = setTimeout(fail, MAP_LOAD_TIMEOUT_MS);
-    (async () => {
-      const ml = await import('maplibre-gl');
-      if (cancelled || !el.current) return;
-      map = new ml.Map({ container: el.current, style: baseStyle(), center, zoom, attributionControl: { compact: true } });
-      map.addControl(new ml.NavigationControl({ showCompass: false }), 'bottom-right');
-      window.__voltiMap = map;
-      // Falha de tile isolada não derruba o mapa; erro do estilo/fonte antes do 'load' sim (a espera longa cai no timeout).
-      map.on('error', (e) => { if (!(e as { tile?: unknown }).tile) fail(); });
-      map.on('load', () => {
-        if (!map || cancelled || done) return;
-        done = true;
-        clearTimeout(timer);
-        setState('ready');
-        cb.current.onReady(map);
-      });
-    })();
+    let created: MlMap | undefined;
+    const dispose = startMapLoad<MlMap>({
+      createMap: async () => {
+        const ml = await import('maplibre-gl');
+        if (!el.current) throw new Error('container ausente');
+        const map = new ml.Map({ container: el.current, style: baseStyle(), center, zoom, attributionControl: { compact: true } });
+        map.addControl(new ml.NavigationControl({ showCompass: false }), 'bottom-right');
+        window.__voltiMap = created = map;
+        return map;
+      },
+      onState: setState,
+      onReady: (map) => cb.current.onReady(map),
+      onDestroy: () => cb.current.onDestroy?.(),
+    });
     return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      cb.current.onDestroy?.();
-      map?.remove();
-      if (window.__voltiMap === map) window.__voltiMap = undefined;
+      dispose();
+      if (created && window.__voltiMap === created) window.__voltiMap = undefined;
     };
     // O mapa é criado uma vez (e de novo a cada "Tentar de novo").
     // eslint-disable-next-line react-hooks/exhaustive-deps

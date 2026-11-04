@@ -21,7 +21,7 @@ import { canSeeFullPixKey, displayPixKey } from '@/lib/pix';
 import { useNarrow } from '@/lib/use-narrow';
 import { useRealtime } from '@/lib/realtime';
 import { SUBSCRIPTION_STATUS } from '@/lib/labels';
-import { customerLabel, realEmail } from '@/lib/customer-label';
+import { initialsSource, realEmail } from '@/lib/customer-label';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { Input } from '@/ds/Input';
@@ -116,7 +116,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
           emptyHint={debounced ? 'Confira a grafia ou busque por CPF, e-mail ou telefone.' : undefined}
           emptyAction={debounced || filter !== 'all' ? <Button size="sm" variant="ghost" icon="X" onClick={() => { setQ(''); setFilter('all'); }}>Limpar busca e filtros</Button> : undefined}
           columns={([
-            { key: 'name', label: 'Cliente', render: (r) => <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Initials name={customerLabel(r)} /><span><CustomerName id={r.id} name={r.name} email={r.email} /></span></div> },
+            { key: 'name', label: 'Cliente', render: (r) => <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Initials name={initialsSource(r)} /><span><CustomerName id={r.id} name={r.name} email={r.email} /></span></div> },
             { key: 'cpf', label: 'CPF', mono: true, render: (r) => displayCpf(r.cpf, full) },
             { key: 'kycStatus', label: 'Verificação', render: (r) => { const [l, t, i] = KYC_STATUS[r.kycStatus]; return <Badge size="sm" tone={t} icon={i}>{l}</Badge>; } },
             { key: 'plan', label: 'Plano', render: (r) => (r.activePlanCode ? <Pill tone="info" icon="Repeat">{PLAN_LABEL[r.activePlanCode]}</Pill> : <span style={{ color: 'var(--text-secondary)' }}>Avulso</span>) },
@@ -158,7 +158,7 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
     <SidePanel width={400} onClose={onClose} testId="customer-sheet" title={
       c && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Initials name={customerLabel(c)} size={48} />
+          <Initials name={initialsSource(c)} size={48} />
           <div>
             <div style={{ font: '700 18px/1.25 var(--font-sans)' }}><CustomerName id={c.id} name={c.name} email={c.email} bold={false} /></div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Cliente desde {formatDate(c.createdAt)}</div>

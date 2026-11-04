@@ -34,3 +34,13 @@ describe('tabela larga', () => {
     expect(tableScrollClass(false, true)).toBe('table-scroll table-overflow');
   });
 });
+
+describe('iniciais do avatar', () => {
+  it('conta sem nome mostra "?" e não "CS"', async () => {
+    const { initialsSource } = await import('@/lib/customer-label');
+    expect(initialsSource({ id: 'a', email: 'a@sem-email.volti.invalid' })).toBe('');
+    expect(initialsSource({ id: 'a', name: 'Ana Souza' })).toBe('Ana Souza');
+    const html = renderToStaticMarkup((await import('@/components/ui')).Initials({ name: '' }));
+    expect(html).toContain('>?<');
+  });
+});
