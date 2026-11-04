@@ -161,3 +161,20 @@ describe('ficha: posição ao vivo que chegou com o GET em voo', () => {
     expect(sheetVehicle(undefined, live)).toBe(live);
   });
 });
+
+import { restoredCommand } from '@/lib/command-steps';
+
+describe('revisão: comando restaurado ao reabrir a ficha', () => {
+  const now = Date.parse('2026-11-03T12:10:00.000Z');
+  const cmd = (over: Record<string, unknown>) => ({ id: 'c1', type: 'lock' as const, status: 'in_progress' as const, createdAt: '2026-11-03T12:09:00.000Z', ...over });
+  it('em curso há menos de 3 min → em andamento', () => {
+    expect(restoredCommand([cmd({})], now)).toEqual({ id: 'c1', type: 'lock', status: 'in_progress', reason: undefined });
+  });
+  it('pendente há mais de 3 min (órfão no banco) → "sem confirmação", não trava o Bloquear', () => {
+    expect(restoredCommand([cmd({ createdAt: '2026-11-03T12:00:00.000Z' })], now)).toMatchObject({ id: 'c1', stale: true });
+  });
+  it('já terminado antes de abrir → nada (sem toast)', () => {
+    expect(restoredCommand([cmd({ status: 'confirmed' })], now)).toBeNull();
+    expect(restoredCommand([], now)).toBeNull();
+  });
+});

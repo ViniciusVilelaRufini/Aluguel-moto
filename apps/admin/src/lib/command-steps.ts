@@ -1,4 +1,4 @@
-import type { CommandStatus, CommandStatusReason } from './types';
+import type { CommandStatus, CommandStatusReason, CommandType } from './types';
 
 export type StepState = 'done' | 'active' | 'waiting' | 'todo' | 'failed';
 export interface CommandStep { key: 'pending' | 'in_progress' | 'result'; label: string; state: StepState }
@@ -50,4 +50,21 @@ export function commandOutcome(label: string, status: CommandStatus, reason?: Co
   if (status === 'failed' && reason === 'superseded') return { msg: `${label}: substituído por um comando mais novo`, tone: 'info' };
   if (status === 'failed') return { msg: `${label}: falhou. Veja o motivo na ficha`, tone: 'danger' };
   return null;
+}
+
+/** Comando em curso restaurado ao reabrir a ficha só vale como "em andamento" se for recente (revisão do painel de bancada). */
+export const RESTORE_IN_FLIGHT_MS = 3 * 60_000;
+
+export interface RestoredCommand { id: string; type: CommandType; status: CommandStatus; reason?: CommandStatusReason; stale?: true }
+
+/**
+ * Comando a mostrar ao reabrir a ficha: o mais novo ainda `pending`/`in_progress`. Criado há mais de 3 min é órfão provável
+ * (o acompanhamento do gateway é em memória e não há varredura no banco): volta como `stale` ("sem confirmação") e não
+ * segura o Bloquear. Já terminado antes de abrir → nada (sem toast).
+ */
+export function restoredCommand(items: Array<{ id: string; type: CommandType; status: CommandStatus; statusReason?: CommandStatusReason; createdAt: string }>, now = Date.now()): RestoredCommand | null {
+  const c = items.find((x) => x.status === 'pending' || x.status === 'in_progress');
+  if (!c) return null;
+  const base: RestoredCommand = { id: c.id, type: c.type, status: c.status, reason: c.statusReason };
+  return now - Date.parse(c.createdAt) > RESTORE_IN_FLIGHT_MS ? { ...base, stale: true } : base;
 }

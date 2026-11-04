@@ -126,3 +126,12 @@ describe('ReportsService.occupancy — ponderada pelo tempo (painel de bancada, 
     });
   });
 });
+
+describe('ReportsService.occupancy — janela máxima (revisão)', () => {
+  it('mais de 400 dias → 400 problem+json em pt-BR, sem consultar o banco', async () => {
+    const prisma = mockDeep<PrismaClient>();
+    const svc = new ReportsService(prisma as any);
+    await expect(svc.occupancy('2025-01-01T03:00:00.000Z', '2026-03-01T03:00:00.000Z', 'month')).rejects.toMatchObject({ status: 400 });
+    expect(prisma.rental.findMany).not.toHaveBeenCalled();
+  });
+});

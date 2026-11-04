@@ -21,7 +21,7 @@ import { Button } from '@/ds/Button';
 import { FleetStatus } from '@/ds/FleetStatus';
 import { Alert } from '@/ds/Alert';
 import { CommandTimeline } from './CommandTimeline';
-import { commandOutcome } from '@/lib/command-steps';
+import { commandOutcome, restoredCommand } from '@/lib/command-steps';
 import { auditHref, auditTime, commandSentMessage, signalLabel, stolenModeDescription, toAuditRows } from '@/lib/fleet-copy';
 import { MAINTENANCE_STATUS, RENTAL_STATUS } from '@/lib/labels';
 import { SERVICE_STATUS, formatHours, formatKm, maintenanceOrigin, nextServiceLabel } from '@/lib/maintenance';
@@ -29,7 +29,8 @@ import { SubscriptionVehicleDialog } from './SubscriptionVehicleDialog';
 import { VehicleFormModal } from './VehicleFormModal';
 import { Field, FieldError, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, Skeleton, TextInput, Select, DataTable, useToast } from './ui';
 
-interface ActiveCommand { id: string; type: CommandType; status: CommandStatus; reason?: CommandStatusReason }
+/** `stale`: restaurado do histórico, em curso há mais de 3 min sem desfecho (órfão provável) — "sem confirmação". */
+interface ActiveCommand { id: string; type: CommandType; status: CommandStatus; reason?: CommandStatusReason; stale?: true }
 
 const COMMAND_LABEL: Record<CommandType, string> = {
   lock: 'Bloquear', unlock: 'Desbloquear', horn: 'Buzina', speed_limit: 'Limitar velocidade', stolen_mode: 'Modo roubada',
@@ -58,7 +59,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   // Avisa quando o comando termina (confirmado pela moto ou falhou), mesmo que o operador esteja olhando o mapa.
   const announced = useRef<string | null>(null);
   useEffect(() => {
-    if (!active) return;
+    if (!active || active.stale) return;
     const out = commandOutcome(COMMAND_LABEL[active.type], active.status, active.reason);
     const key = `${active.id}:${active.status}`;
     if (out && announced.current !== key) { announced.current = key; toast(out.msg, out.tone); }
@@ -79,11 +80,11 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   useEffect(() => {
     if (!commands.data || restored.current === vehicleId) return;
     restored.current = vehicleId;
-    const inFlight = commands.data.items.find((c) => c.status === 'pending' || c.status === 'in_progress');
-    if (inFlight) {
-      // O histórico é a fonte do comando em curso; não sobrescreve um comando enviado agora.
-      setActive((a) => a ?? { id: inFlight.id, type: inFlight.type, status: inFlight.status, reason: inFlight.statusReason });
-      announced.current = `${inFlight.id}:${inFlight.status}`;
+    const r = restoredCommand(commands.data.items);
+    if (r) {
+      // O histórico é a fonte do comando em curso; não sobrescreve um comando enviado agora. Sem toast do estado restaurado.
+      setActive((a) => a ?? r);
+      announced.current = `${r.id}:${r.status}`;
     }
   }, [commands.data, vehicleId]);
 
@@ -113,11 +114,11 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
 
   useRealtimeEvent('command.updated', (p) => {
     if (p.vehicleId !== vehicleId) return;
-    setActive((a) => (a && a.id === p.commandId ? { ...a, status: p.status, reason: p.reason } : a));
+    setActive((a) => (a && a.id === p.commandId ? { id: a.id, type: a.type, status: p.status, reason: p.reason } : a));
   });
 
   // Fallback por consulta enquanto o comando estiver pendente (caso o evento se perca).
-  const pendingId = active && (active.status === 'pending' || active.status === 'in_progress') ? active.id : null;
+  const pendingId = active && !active.stale && (active.status === 'pending' || active.status === 'in_progress') ? active.id : null;
   useEffect(() => {
     if (!pendingId) return;
     const t = setInterval(async () => {
@@ -144,7 +145,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   // L4: até o GET /vehicles/{id} chegar, a cópia da frota pode estar velha (até 60 s) ou sem os campos do rastreador.
   const loadingDetail = !detail.data && !detail.isError;
   const lockedNow = v.locked === true;
-  const lockInFlight = !!active && active.type === 'lock' && (active.status === 'pending' || active.status === 'in_progress');
+  const lockInFlight = !!active && !active.stale && active.type === 'lock' && (active.status === 'pending' || active.status === 'in_progress');
   const send = async (type: CommandType, reason: string, extra: { speedLimitKmh?: number; on?: boolean }) => {
     // Última barreira: nenhum chamador envia limite fora de 0..32 km/h.
     if (type === 'speed_limit') assertSpeedLimit(extra.speedLimitKmh);
@@ -230,9 +231,11 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
             <div key={active.id} className="section-in" style={{ marginTop: 12, padding: '12px 12px 10px', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)', display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div data-testid="command-state" data-status={active.status} data-reason={active.reason ?? ''} role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{COMMAND_LABEL[active.type]}:</span>
-                <Pill tone={commandStateTone(active.status, active.reason)}>{commandStateLabel(active.status, active.reason, { type: active.type, controlMode: mode })}</Pill>
+                {active.stale
+                  ? <Pill tone="warning">sem confirmação</Pill>
+                  : <Pill tone={commandStateTone(active.status, active.reason)}>{commandStateLabel(active.status, active.reason, { type: active.type, controlMode: mode })}</Pill>}
               </div>
-              <CommandTimeline status={active.status} reason={active.reason} />
+              {!active.stale && <CommandTimeline status={active.status} reason={active.reason} />}
             </div>
           )}
         </div>
@@ -277,7 +280,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         </div>
       )}
 
-      {dialog && <CommandDialog type={dialog} vehicle={v} mode={mode} moving={moving} onClose={() => setDialog(null)} onSend={send} />}
+      {dialog && <CommandDialog type={dialog} vehicle={v} mode={mode} moving={moving} speedUnknown={pos.stale || v.speedKmh == null} onClose={() => setDialog(null)} onSend={send} />}
       {moveFixed && v.assignedSubscriptionId && <SubscriptionVehicleDialog subscriptionId={v.assignedSubscriptionId} currentCode={v.code} onClose={() => setMoveFixed(false)} />}
       {editing && <VehicleFormModal vehicle={v} onClose={() => setEditing(false)} />}
       {history && <HistoryModal vehicleId={vehicleId} code={v.code} groups={groups} onClose={() => setHistory(false)} />}
@@ -285,8 +288,8 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   );
 }
 
-function CommandDialog({ type, vehicle, mode, moving, onClose, onSend }: {
-  type: CommandType; vehicle: S<'Vehicle'>; mode: S<'Vehicle'>['trackerControlMode']; moving: boolean; onClose: () => void;
+function CommandDialog({ type, vehicle, mode, moving, speedUnknown, onClose, onSend }: {
+  type: CommandType; vehicle: S<'Vehicle'>; mode: S<'Vehicle'>['trackerControlMode']; moving: boolean; speedUnknown: boolean; onClose: () => void;
   onSend: (type: CommandType, reason: string, extra: { speedLimitKmh?: number; on?: boolean }) => Promise<void>;
 }) {
   const [limit, setLimit] = useState('20');
@@ -327,6 +330,9 @@ function CommandDialog({ type, vehicle, mode, moving, onClose, onSend }: {
     >
       {type === 'lock' && vehicle.locked === true && (
         <Alert tone="info" icon="Lock">A moto já consta como travada. Reenvie só se ela não estiver travada de fato.</Alert>
+      )}
+      {type === 'lock' && speedUnknown && (
+        <Alert tone="warning" icon="TriangleAlert">Velocidade desconhecida (sem GPS recente) — a moto só trava parada.</Alert>
       )}
       {type === 'lock' && moving && (
         <Alert tone="warning" icon="TriangleAlert">A moto está a {Math.round(vehicle.speedKmh ?? 0)} km/h. {lockMovingWarning(mode)}</Alert>

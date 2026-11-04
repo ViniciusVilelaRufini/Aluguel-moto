@@ -28,6 +28,8 @@ export function startOfTodaySaoPaulo(now = new Date()): Date {
 }
 
 const SP_OFFSET_MS = 3 * 3600 * 1000;
+/** Janela máxima do relatório de ocupação (lido em memória). */
+export const OCCUPANCY_MAX_DAYS = 400;
 
 /** Início do período (`date_trunc` no fuso de São Paulo, UTC−3 fixo) que contém `t`, e o início do seguinte. */
 function periodOf(t: Date, groupBy: GroupBy): { start: Date; next: (d: Date) => Date } {
@@ -239,6 +241,10 @@ export class ReportsService {
 
   async occupancy(fromIso: string, toIso: string, groupBy: GroupBy) {
     const { from, to } = this.window(fromIso, toIso, groupBy);
+    // Revisão: a ocupação lê os aluguéis do intervalo em memória; limita a janela (qualquer agrupamento).
+    if (to.getTime() - from.getTime() > OCCUPANCY_MAX_DAYS * 86400_000) {
+      throw badRequest(`Período longo demais para o relatório de ocupação (máximo de ${OCCUPANCY_MAX_DAYS} dias).`, [{ field: 'from', message: `no máximo ${OCCUPANCY_MAX_DAYS} dias` }]);
+    }
     const [rentals, vehicles] = await Promise.all([
       this.prisma.rental.findMany({ where: { startedAt: { lt: to }, OR: [{ endedAt: null }, { endedAt: { gt: from } }] }, select: { vehicleId: true, startedAt: true, endedAt: true } }),
       this.prisma.vehicle.findMany({ where: { createdAt: { lt: to } }, select: { createdAt: true } }),
