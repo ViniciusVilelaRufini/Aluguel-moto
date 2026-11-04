@@ -356,8 +356,9 @@ void main() {
         phone(t, scale: scale);
         await t.pumpWidget(testApp(const HistoryScreen(), overrides: [backendProvider.overrideWithValue(_HistoryB())]));
         await t.pumpAndSettle();
-        expect(find.text('4 min 9 s'), findsOneWidget);
-        expect(find.text('04:09'), findsNothing);
+        // Subtitulo "dd/mm hh:mm · 4 min 9 s".
+        expect(find.textContaining(' · 4 min 9 s'), findsOneWidget);
+        expect(find.textContaining(' · 04:09'), findsNothing);
         expect(t.takeException(), isNull);
       });
     }
