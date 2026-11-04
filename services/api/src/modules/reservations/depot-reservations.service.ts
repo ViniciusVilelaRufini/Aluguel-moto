@@ -2,8 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DepotsService } from '../depots/depots.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
-import type { Depot, Deposit, InsuranceCoverage, PlanCode } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
+import type { Depot } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { DepositReleaseRequestedEvent, EV, VehicleStatusChangedEvent } from '../../common/events';
 import { assertNotFixedForOther } from '../../common/fixed-vehicle';
@@ -12,10 +11,9 @@ import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { PUSH_NOTIFIER, type PushNotifier } from '../../ports/push-notifier.port';
 import { RENTAL_BILLING, type RentalBillingPort } from '../../ports/rental-billing.port';
 import { PrismaService } from '../../prisma/prisma.service';
-import { assertCustomerEligible } from '../customers/eligibility';
+import { assertCustomerEligible, COUNTER_DEBT_MESSAGE } from '../customers/eligibility';
 import { type DepotRulesInput, type OpeningHours, pickupExpiry, type PickupErrorCode, type PickupMode, validatePickup } from '../depots/depot-rules';
 import { isUniqueViolation } from '../payments/payment-state.service';
-import { assertDepositCard } from '../payments/card-required';
 import { PICKUP_CODE_SECRET, signPickupCode } from './pickup-code';
 import { ReservationsService, toReservation } from './reservations.service';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
@@ -25,18 +23,11 @@ export interface DepotReservationInput {
   depotId: string;
   pickupMode: PickupMode;
   pickupAt?: string;
-  planCode: PlanCode;
-  coverage: InsuranceCoverage;
-  depositMethod: 'card' | 'pix';
-  cardId?: string;
-  couponCode?: string;
 }
 
 /** Lembrete de retirada: reservas que vencem em até 30 min. */
 const REMIND_BEFORE_MS = 30 * 60_000;
-/** Marca da chave de idempotência da caução de reserva de galpão (`deposit:<cliente>:reservation:<Idempotency-Key>`). */
-const RESERVATION_KEY_MARK = ':reservation:';
-/** Caução de reserva sem reserva nem aluguel depois disto é órfã (processo caiu entre a caução e a transação). */
+/** Caução de reserva antiga (beta12) sem reserva nem aluguel depois disto é órfã (processo caiu entre a caução e a transação). */
 const ORPHAN_DEPOSIT_AGE_MS = 10 * 60_000;
 
 /** Erros de `validatePickup` → problemas do contrato (`depot-closed` não tem slug próprio: vira `pickup-outside-hours`). */
@@ -49,10 +40,11 @@ const PICKUP_ERRORS: Record<PickupErrorCode, () => ProblemException> = {
 };
 
 /**
- * Reserva de retirada no galpão (`POST /reservations` com `depotId`): valida galpão, horário, cliente e moto, bloqueia a
- * caução (as mesmas funções do início de aluguel: cartão pré-autorizado, Pix com QR) e separa a moto com uma transição
- * condicional (`free` + mesmo galpão → `reserved`). Quem perde a corrida tem a caução liberada e recebe `409`.
- * Cancelamento e expiração reaproveitam o `ReservationsService` (caução liberada, moto `reserved → free`).
+ * Pré-reserva de retirada no galpão (`POST /reservations` com `depotId`): valida galpão, horário, cliente (com consentimento
+ * de localização) e moto e separa a moto com uma transição condicional (`free` + mesmo galpão → `reserved`). Sem caução e
+ * sem plano: plano, seguro, caução e pagamento são acertados no balcão (os campos antigos dos apps beta12 são ignorados).
+ * Quem perde a corrida recebe `409`. Cancelamento e expiração reaproveitam o `ReservationsService` (moto `reserved → free`;
+ * reservas antigas com caução ainda têm a caução liberada).
  */
 @Injectable()
 export class DepotReservationsService {
@@ -74,7 +66,8 @@ export class DepotReservationsService {
     return signPickupCode(reservationId, expiresAt, this.pickupSecret);
   }
 
-  async create(customerId: string, dto: DepotReservationInput, idempotencyKey: string) {
+  /** O `Idempotency-Key` é exigido e repetido pelo interceptor do controller (sem cobrança aqui, nada mais o usa). */
+  async create(customerId: string, dto: DepotReservationInput, _idempotencyKey: string) {
     const now = new Date();
     const depot = await this.requireActiveDepot(dto.depotId);
     const rules = depotRules(depot);
@@ -83,7 +76,7 @@ export class DepotReservationsService {
     if (!check.ok) throw PICKUP_ERRORS[check.code]();
 
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
-    await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: false, requireTerms: true, debtAsConflict: true });
+    await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: true, requireTerms: true, debtAsConflict: true, debtMessage: COUNTER_DEBT_MESSAGE });
 
     const openRental = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
     if (openRental) throw conflict('rental-already-active', 'Você já tem um aluguel em andamento.');
@@ -99,9 +92,6 @@ export class DepotReservationsService {
     // Contrato v2: moto fixa de outro plano vigente.
     await assertNotFixedForOther(this.prisma, vehicle.id, customerId);
 
-    // Task 30 (item 12): sem cartão para a caução, erro claro antes de criar qualquer cobrança.
-    if (dto.depositMethod === 'card') await assertDepositCard(this.prisma, customerId, dto.cardId);
-    const deposit = await this.holdDeposit(customerId, dto, idempotencyKey);
     const expiresAt = pickupExpiry(rules, dto.pickupMode, now, pickupAt);
     let reservation;
     try {
@@ -113,22 +103,21 @@ export class DepotReservationsService {
             customerId,
             vehicleId: vehicle.id,
             depotId: depot.id,
-            depositId: deposit.id,
+            depositId: null,
             expiresAt,
             pickupMode: dto.pickupMode,
             pickupAt: dto.pickupMode === 'scheduled' ? pickupAt : null,
-            planCode: dto.planCode,
-            coverage: dto.coverage,
-            depositMethod: dto.depositMethod,
-            // Fix round 1: cartão da caução só faz sentido com depositMethod card.
-            cardId: dto.depositMethod === 'card' ? dto.cardId ?? null : null,
-            couponCode: dto.couponCode ?? null,
+            // Plano, seguro, caução e cupom são escolhidos no balcão.
+            planCode: null,
+            coverage: null,
+            depositMethod: null,
+            cardId: null,
+            couponCode: null,
           },
           include: { vehicle: true },
         });
       });
     } catch (err) {
-      await this.requestDepositRelease(deposit.id, customerId);
       if (isUniqueViolation(err)) {
         const target = JSON.stringify((err as { meta?: { target?: unknown } }).meta?.target ?? '');
         throw target.includes('customer') ? reservationOpen() : vehicleUnavailable();
@@ -138,36 +127,13 @@ export class DepotReservationsService {
 
     await this.reservations.trackExpiry(reservation.id, customerId, expiresAt);
     this.events.emit(EV.VEHICLE_STATUS_CHANGED, { vehicleId: vehicle.id, status: 'reserved', ts: new Date().toISOString() } satisfies VehicleStatusChangedEvent);
-    this.logger.log({ msg: 'depot_reservation_created', reservationId: reservation.id, depotId: depot.id, pickupMode: dto.pickupMode, depositMethod: dto.depositMethod });
-    return toReservation(reservation, { deposit, pickupCode: this.pickupCode(reservation.id, expiresAt) });
+    this.logger.log({ msg: 'depot_reservation_created', reservationId: reservation.id, depotId: depot.id, pickupMode: dto.pickupMode });
+    return toReservation(reservation, { pickupCode: this.pickupCode(reservation.id, expiresAt) });
   }
 
-  /** Cancelamento grátis: caução liberada e moto `reserved → free`; `handover` → 409 `reservation-in-handover`. */
+  /** Cancelamento grátis: moto `reserved → free` (caução de reserva antiga liberada); `handover` → 409 `reservation-in-handover`. */
   async cancel(customerId: string, id: string): Promise<void> {
     await this.reservations.cancel(customerId, id);
-  }
-
-  /**
-   * Caução pelo mesmo `RentalBillingPort` do início de aluguel. Chave própria da reserva (`deposit:<cliente>:reservation:<chave>`),
-   * para não colidir com a do `POST /rentals`.
-   */
-  private async holdDeposit(customerId: string, dto: DepotReservationInput, idempotencyKey: string): Promise<Deposit> {
-    const held = await this.billing.holdDeposit({
-      customerId,
-      rentalId: randomUUID(),
-      method: dto.depositMethod,
-      idempotencyKey: `deposit:${customerId}${RESERVATION_KEY_MARK}${idempotencyKey}`,
-      ...(dto.depositMethod === 'card' && dto.cardId ? { cardId: dto.cardId } : {}),
-    });
-    const d = await this.prisma.deposit.findUnique({ where: { id: held.depositId } });
-    // Repetição com a mesma chave depois de um 409: a caução daquela tentativa já foi liberada.
-    if (d && (d.status === 'released' || d.status === 'captured' || (await this.prisma.depositRelease.findUnique({ where: { depositId: d.id } })))) {
-      throw conflict('conflict', 'A caução desta tentativa já foi liberada. Tente de novo com uma nova requisição.');
-    }
-    if (held.status === 'failed' || !d) {
-      throw new ProblemException(422, 'payment-declined', 'Não foi possível bloquear a caução. Tente outro cartão ou pague com Pix.', undefined, 'Pagamento não aprovado');
-    }
-    return d;
   }
 
   private requireActiveDepot(depotId: string): Promise<Depot> {

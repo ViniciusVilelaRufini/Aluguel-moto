@@ -7,11 +7,13 @@ type CustomerGateFields = Pick<Customer, 'kycStatus' | 'status' | 'delinquent'> 
 
 /** Texto do `409 payment-pending` (reserva com dívida em aberto). */
 export const PAYMENT_PENDING_MESSAGE = 'Pague o valor pendente para alugar de novo.';
+/** Texto do `409 payment-pending` na pré-reserva de galpão (o débito é acertado no balcão, nada se paga no app). */
+export const COUNTER_DEBT_MESSAGE = 'Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.';
 
 /**
  * Regras comuns para reservar e alugar (ordem fixa): KYC aprovado → sem bloqueio (conta ativa e CPF fora da lista de
  * restrição, auditoria run-4) → sem inadimplência
- * → (só para iniciar o aluguel) consentimento de localização → termos aceitos (QA-24; na versão `TERMS_CURRENT_VERSION`,
+ * → (iniciar o aluguel e pré-reserva de galpão) consentimento de localização → termos aceitos (QA-24; na versão `TERMS_CURRENT_VERSION`,
  * quando definida). Sem slug próprio no contrato: `403 forbidden` (proposta `terms-not-accepted` em docs/decisoes.md).
  */
 export async function assertCustomerEligible(
@@ -23,6 +25,8 @@ export async function assertCustomerEligible(
     requireTerms?: boolean;
     /** Reservas (R2-01): inadimplência/dívida em aberto vira `409 payment-pending` com o texto do app, em vez de `403`. */
     debtAsConflict?: boolean;
+    /** Texto do `409 payment-pending` (padrão `PAYMENT_PENDING_MESSAGE`). */
+    debtMessage?: string;
   },
 ): Promise<void> {
   if (!customer) throw notFound('Cliente não encontrado.');
@@ -34,7 +38,7 @@ export async function assertCustomerEligible(
     throw forbidden('Sua conta está bloqueada. Fale com o suporte.', 'customer-blocked');
   }
   if (customer.delinquent || (await billing.isDelinquent(customerId))) {
-    if (opts.debtAsConflict) throw conflict('payment-pending', PAYMENT_PENDING_MESSAGE);
+    if (opts.debtAsConflict) throw conflict('payment-pending', opts.debtMessage ?? PAYMENT_PENDING_MESSAGE);
     throw forbidden('Há um pagamento pendente. Regularize para alugar.', 'customer-delinquent');
   }
   if (opts.requireLocationConsent && !customer.locationConsent) {

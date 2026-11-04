@@ -37,7 +37,7 @@ export class HandoversController {
     return this.handovers.get(user, id);
   }
 
-  /** acceptHandover — 201 com o `Rental`; aceites repetidos convergem no mesmo aluguel. */
+  /** acceptHandover — apps beta12: sempre `409 handover-counter-checkout` (o aluguel começa no balcão); outro cliente → 404. */
   @Post(':id/accept')
   @CustomerOnly()
   @Idempotent({ required: true })

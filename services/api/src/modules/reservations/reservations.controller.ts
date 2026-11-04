@@ -7,7 +7,11 @@ import { CurrentUser, CustomerOnly, Principal } from '../auth/principal';
 import { DepotReservationsService } from './depot-reservations.service';
 import { ReservationsService } from './reservations.service';
 
-/** Só `vehicleId` = reserva de rua; com `depotId` = retirada no galpão (demais campos validados no handler). */
+/**
+ * Só `vehicleId` = reserva de rua; com `depotId` = pré-reserva de retirada no galpão (`pickupMode` validado no handler).
+ * `planCode`, `coverage`, `depositMethod`, `cardId` e `couponCode` vêm dos apps beta12: validados aqui e ignorados (tudo
+ * isso é escolhido no balcão).
+ */
 export class ReservationCreateDto {
   @IsUUID()
   vehicleId: string;
@@ -46,7 +50,7 @@ export class ReservationCreateDto {
   couponCode?: string;
 }
 
-const DEPOT_REQUIRED = ['pickupMode', 'planCode', 'coverage', 'depositMethod'] as const;
+const DEPOT_REQUIRED = ['pickupMode'] as const;
 
 @Controller('reservations')
 export class ReservationsController {
@@ -75,11 +79,6 @@ export class ReservationsController {
         depotId: dto.depotId,
         pickupMode: dto.pickupMode!,
         pickupAt: dto.pickupAt,
-        planCode: dto.planCode!,
-        coverage: dto.coverage!,
-        depositMethod: dto.depositMethod!,
-        cardId: dto.cardId,
-        couponCode: dto.couponCode,
       },
       key!,
     );

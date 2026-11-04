@@ -16,7 +16,6 @@ import { isStaff, type Principal } from '../auth/principal';
 import { isUniqueViolation } from '../payments/payment-state.service';
 import { DEPOT_RETURN_RADIUS_M, depotPosition, RentalEndService } from '../rentals/rental-end.service';
 import { RentalStartService } from '../rentals/rental-start.service';
-import { toRental } from '../rentals/rentals.mapper';
 import { PICKUP_CODE_SECRET, verifyPickupCode } from '../reservations/pickup-code';
 import { ReservationsService } from '../reservations/reservations.service';
 import { SupportService } from '../support/support.service';
@@ -26,19 +25,23 @@ import { STAFF_FALLBACK_NAME, staffFirstName } from '../../common/staff-display-
 
 /** Links das fotos da entrega: 24 h (contrato). */
 const PHOTO_URL_TTL_SECONDS = 24 * 60 * 60;
-/** Trava do aceite por entrega (aceites concorrentes com chaves diferentes não disputam a mesma moto). */
+/**
+ * Trava do aceite por entrega (o cancelamento pela operação a respeita). Fica para o início do aluguel no balcão
+ * (`counter-checkout`), que usa a mesma trava.
+ */
 const ACCEPT_LOCK_SCOPE = 'handover-accept';
 
 type HandoverRow = Handover & { vehicle?: Pick<Vehicle, 'code'> | null };
 
 const handoverNotFound = () => notFound('Entrega não encontrada.');
 const alreadyAccepted = () => conflict('conflict', 'Esta entrega já foi aceita pelo cliente; encerre pelo aluguel.');
-/** Recusas reais de pagamento vindas do start() (caução recusada pelo gateway). */
-const PAYMENT_REFUSALS = new Set(['payment-failed', 'payment-declined']);
 /** Run-2: a chegada só encerra com a moto (posição viva) no galpão; fora disso, o encerramento forçado do admin. */
 const notAtDepot = () =>
   new ProblemException(422, 'vehicle-not-at-depot', 'A moto não está no galpão. Use o encerramento forçado pelo suporte.', undefined, 'Moto fora do galpão');
 const notPending = () => new ProblemException(422, 'handover-not-pending', 'Esta entrega não está mais aguardando o seu aceite.', undefined, 'Entrega não está pendente');
+/** Decisão 10 (pré-reserva/balcão): o aceite pelo app (beta12) deixou de iniciar o aluguel. */
+const counterCheckout = () =>
+  new ProblemException(409, 'handover-counter-checkout', 'O aluguel é iniciado pelo atendente no galpão.', undefined, 'Aluguel iniciado no balcão');
 
 export interface CreateResult {
   status: 200 | 201;
@@ -46,9 +49,9 @@ export interface CreateResult {
 }
 
 /**
- * Entrega formal no galpão (Task 6). Saída (`pickup`): o operador lê o código da reserva, faz o checklist e o cliente aceita
- * (o aceite delega ao `RentalStartService.start()` com `fromHandover`: cobrança, caução e destravamento seguem o caminho
- * único do início de aluguel) ou aponta um problema. Chegada (`return_depot`): encerra o aluguel pelo fechamento normal
+ * Entrega formal no galpão (Task 6). Saída (`pickup`): o operador lê o código da reserva e faz o checklist; o aluguel é
+ * iniciado pelo atendente no balcão (o aceite pelo app responde `409 handover-counter-checkout`) e o cliente ainda pode
+ * apontar um problema. Chegada (`return_depot`): encerra o aluguel pelo fechamento normal
  * com a moto no galpão. Logs só com ids.
  */
 @Injectable()
@@ -131,69 +134,14 @@ export class HandoversService {
   }
 
   /**
-   * Aceite do cliente dono (outro cliente → 404). Já aceita → o mesmo aluguel (aceites repetidos convergem, uma cobrança);
-   * fora de `pending_customer` → 422. Exige a caução da reserva retida. Pagamento recusado → a entrega continua pendente
-   * com `lastError`, a reserva continua `handover` e a moto não destrava (o `start()` só destrava depois da cobrança/caução).
+   * Aceite pelo app (apps beta12). O aluguel do galpão agora é iniciado pelo atendente no balcão: o cliente dono recebe
+   * `409 handover-counter-checkout` sem nenhuma leitura de caução nem trava; outro cliente (ou entrega que não é de saída)
+   * → 404, sem revelar a entrega.
    */
-  async accept(customer: Principal, id: string) {
+  async accept(customer: Principal, id: string): Promise<never> {
     const h = await this.prisma.handover.findUnique({ where: { id }, include: { reservation: true } });
     if (!h || h.type !== 'pickup' || !h.reservation || h.reservation.customerId !== customer.customerId) throw handoverNotFound();
-    if (h.status === 'accepted' && h.rentalId) return this.rentalOf(h.rentalId);
-    if (h.status !== 'pending_customer') throw notPending();
-    const r = h.reservation;
-
-    const deposit = r.depositId ? await this.prisma.deposit.findUnique({ where: { id: r.depositId } }) : null;
-    const releasing = deposit ? await this.prisma.depositRelease.findUnique({ where: { depositId: deposit.id } }) : null;
-    if (!deposit || deposit.status !== 'held' || releasing) {
-      throw new ProblemException(422, 'deposit-not-held', 'A caução da reserva não está retida. Fale com o suporte.', undefined, 'Caução não retida');
-    }
-
-    const lock = await this.locks.begin(ACCEPT_LOCK_SCOPE, id, 'accept');
-    if (lock.state === 'in_progress') throw conflict('conflict', 'O aceite desta entrega já está em processamento. Tente de novo em instantes.');
-    try {
-      const result = await this.starter.start(
-        customer,
-        {
-          vehicleId: h.vehicleId,
-          planCode: r.planCode!,
-          coverage: r.coverage!,
-          depositMethod: (r.depositMethod ?? deposit.method) === 'pix' ? 'pix' : 'card',
-          cardId: r.cardId ?? undefined,
-          couponCode: r.couponCode ?? undefined,
-          depositId: deposit.id,
-        },
-        `handover:${id}`,
-        { fromHandover: { reservationId: r.id, handoverId: id } },
-      );
-      if (result.status !== 201 || !result.body.rental) throw new Error('handover_accept_unexpected_awaiting_deposit');
-      this.emitUpdated({ handoverId: id, status: 'accepted', customerId: r.customerId, depotId: h.depotId });
-      this.logger.log({ msg: 'handover_accepted', handoverId: id, rentalId: result.body.rental.id });
-      return result.body.rental;
-    } catch (err) {
-      // Outro aceite (outra instância, trava vencida) já concluiu: converge no mesmo aluguel.
-      const now = await this.prisma.handover.findUnique({ where: { id } });
-      if (now?.status === 'accepted' && now.rentalId) return this.rentalOf(now.rentalId);
-      // Fix round 2: o aceite perdeu a corrida para um cancelamento ou disputa → sem lastError e sem evento obsoleto.
-      if (now && now.status !== 'pending_customer') throw notPending();
-      if (err instanceof ProblemException && err.slug !== 'handover-not-pending') {
-        // Moto já `rented` por um start() em andamento desta mesma entrega (mesma caução): não é falha do aceite.
-        if (await this.startInFlight(h.vehicleId, deposit.id)) throw acceptError(err);
-        // Só recusa de pagamento de verdade vira `payment-declined`; o resto mantém o slug do start().
-        const declined = PAYMENT_REFUSALS.has(err.slug);
-        const lastError = declined ? 'payment-declined' : err.slug;
-        const marked = await this.prisma.handover.updateMany({ where: { id, status: 'pending_customer' }, data: { lastError } });
-        if (marked.count !== 1) throw notPending();
-        this.emitUpdated({ handoverId: id, status: 'pending_customer', lastError, customerId: r.customerId, depotId: h.depotId });
-        this.logger.warn({ msg: 'handover_accept_failed', handoverId: id, lastError });
-        if (declined) {
-          throw new ProblemException(422, 'payment-declined', 'O pagamento não foi aprovado. Tente outro cartão ou fale com o operador.', undefined, 'Pagamento não aprovado');
-        }
-        throw acceptError(err);
-      }
-      throw err;
-    } finally {
-      await this.locks.abort(ACCEPT_LOCK_SCOPE, id).catch(() => undefined);
-    }
+    throw counterCheckout();
   }
 
   /** Problema apontado pelo cliente: `disputed`, conversa de suporte aberta; moto `reserved` e reserva `handover`. */
@@ -422,12 +370,6 @@ export class HandoversService {
   }
 
   /** start() desta entrega ainda no meio (moto reivindicada com a caução da reserva, marcador `RentalStart` presente). */
-  private async startInFlight(vehicleId: string, depositId: string): Promise<boolean> {
-    const v = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { status: true } });
-    if (v?.status !== 'rented') return false;
-    return !!(await this.prisma.rentalStart.findFirst({ where: { vehicleId, depositId }, select: { rentalId: true } }));
-  }
-
   // ───────────────────────── leitura ─────────────────────────
 
   /** Cliente: só a entrega da própria reserva ou do próprio aluguel (senão 404). Staff: qualquer uma. */
@@ -488,12 +430,6 @@ export class HandoversService {
     return toHandover(h, { operatorFirstName, photoUrls, cancel: canceled?.get(h.id), staff });
   }
 
-  private async rentalOf(rentalId: string) {
-    const rental = await this.prisma.rental.findUnique({ where: { id: rentalId }, include: { vehicle: true } });
-    if (!rental) throw handoverNotFound();
-    return toRental(rental);
-  }
-
   private emitUpdated(ev: HandoverUpdatedEvent): void {
     this.events.emit(EV.HANDOVER_UPDATED, ev);
   }
@@ -501,9 +437,10 @@ export class HandoversService {
 
 /**
  * Fix round 2: o contrato do aceite não tem `402`. Um `402` do `start()` que não é recusa de pagamento (ex.:
- * `deposit-not-held` numa corrida com a liberação da caução) vira `422` com o mesmo slug.
+ * `deposit-not-held` numa corrida com a liberação da caução) vira `422` com o mesmo slug. Exportada para o início do
+ * aluguel no balcão (`counter-checkout`), que traduz os erros do `start()` do mesmo jeito.
  */
-function acceptError(err: ProblemException): ProblemException {
+export function acceptError(err: ProblemException): ProblemException {
   // Task 30 (item 40): o texto do start() de rua ("a caução foi liberada", "escolha outra moto") não vale no aceite:
   // aqui a caução continua retida com a reserva e a entrega continua pendente para um novo aceite.
   if (err.slug === 'vehicle-offline') {

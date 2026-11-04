@@ -5,7 +5,9 @@ import { DeepMockProxy, mockDeep } from 'jest-mock-extended';
 import { EV } from '../../common/events';
 import { loadConfig } from '../../config/env';
 import { MemoryRedisStore } from '../../redis/redis-store';
+import { COUNTER_DEBT_MESSAGE } from '../customers/eligibility';
 import { DepotReservationsService, type DepotReservationInput } from './depot-reservations.service';
+import { ReservationsController } from './reservations.controller';
 import { verifyPickupCode } from './pickup-code';
 import { ReservationsService } from './reservations.service';
 
@@ -22,7 +24,7 @@ const depot = {
   id: DEPOT_ID, name: 'Galpão Teste', timezone: 'America/Sao_Paulo', openingHours: ALL_WEEK, active: true,
   pickupNowWindowMinutes: 120, maxScheduleDays: 7, scheduledGraceMinutes: 30,
 };
-const customer = { id: CUSTOMER_ID, kycStatus: 'approved', status: 'active', delinquent: false, termsAccepted: true, termsVersion: '2026-10', name: 'Maria Silva', cpf: '52998224725' };
+const customer = { id: CUSTOMER_ID, kycStatus: 'approved', status: 'active', delinquent: false, locationConsent: true, termsAccepted: true, termsVersion: '2026-10', name: 'Maria Silva', cpf: '52998224725' };
 const vehicle = { id: VEHICLE_ID, code: 'VLT-0011', model: 'Volti S1', status: 'free', depotId: DEPOT_ID, lat: -23.56, lng: -46.68, batteryPct: 90 };
 const deposit = (over: Record<string, unknown> = {}) => ({
   id: DEPOSIT_ID, rentalId: 'r-1', customerId: CUSTOMER_ID, method: 'card', status: 'held', amountCents: 5000, capturedCents: null, pix: null,
@@ -30,7 +32,7 @@ const deposit = (over: Record<string, unknown> = {}) => ({
 });
 
 const input = (over: Partial<DepotReservationInput> = {}): DepotReservationInput => ({
-  vehicleId: VEHICLE_ID, depotId: DEPOT_ID, pickupMode: 'now', planCode: 'day', coverage: 'basic', depositMethod: 'card', ...over,
+  vehicleId: VEHICLE_ID, depotId: DEPOT_ID, pickupMode: 'now', ...over,
 });
 
 function setup() {
@@ -69,24 +71,62 @@ function setup() {
 }
 
 describe('DepotReservationsService.create', () => {
-  it('retirar agora: bloqueia a caução no cartão, separa a moto do galpão e devolve o código só ao dono', async () => {
+  it('pré-reserva não bloqueia caução e grava sem plano', async () => {
     const { service, prisma, billing, redis } = setup();
     const before = Date.now();
-    const r = await service.create(CUSTOMER_ID, input(), 'chave-idem-1');
+    const r = await service.create(CUSTOMER_ID, input(), 'k1');
 
-    expect(billing.holdDeposit).toHaveBeenCalledWith(expect.objectContaining({ customerId: CUSTOMER_ID, method: 'card', idempotencyKey: expect.stringContaining('chave-idem-1') }));
+    expect(billing.holdDeposit).not.toHaveBeenCalled();
+    expect(prisma.deposit.findUnique).not.toHaveBeenCalled();
     expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'free', depotId: DEPOT_ID }, data: { status: 'reserved' } });
+    expect(prisma.reservation.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ depositId: null, planCode: null, coverage: null, depositMethod: null, cardId: null, couponCode: null }),
+    }));
     const data = (prisma.reservation.create.mock.calls[0][0] as any).data;
-    expect(data).toMatchObject({ customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, depotId: DEPOT_ID, depositId: DEPOSIT_ID, pickupMode: 'now', planCode: 'day', coverage: 'basic', depositMethod: 'card' });
+    expect(data).toMatchObject({ customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, depotId: DEPOT_ID, pickupMode: 'now' });
     // `now`: criação + 120 min (o galpão de teste fecha só às 23:59 — pode ser antes).
     expect(data.expiresAt.getTime()).toBeLessThanOrEqual(before + 120 * 60_000 + 1000);
     expect(data.expiresAt.getTime()).toBeGreaterThan(before);
 
-    expect(r).toMatchObject({ id: RES_ID, status: 'active', depotId: DEPOT_ID, pickupMode: 'now', planCode: 'day', coverage: 'basic', depositMethod: 'card' });
-    expect(r.deposit).toMatchObject({ id: DEPOSIT_ID, status: 'held' });
+    expect(r).toMatchObject({ id: RES_ID, status: 'active', depotId: DEPOT_ID, pickupMode: 'now' });
+    expect(r).not.toHaveProperty('planCode');
+    expect(r).not.toHaveProperty('depositMethod');
+    expect(r.deposit).toBeUndefined();
     expect(verifyPickupCode(r.pickupCode!, new Date(), SECRET)).toEqual({ reservationId: RES_ID });
     expect(r.pickupCode).not.toContain(customer.cpf);
     expect(await redis.exists(`reservation:${RES_ID}`)).toBe(true);
+  });
+
+  it('campos antigos do beta12 são ignorados (controller)', async () => {
+    const depotReservations = { create: jest.fn().mockResolvedValue({}) };
+    const controller = new ReservationsController({ create: jest.fn() } as any, depotReservations as any);
+    const principal = { customerId: CUSTOMER_ID } as any;
+    const CARD = '77777777-7777-4777-8777-777777777777';
+    await controller.create({ vehicleId: VEHICLE_ID, depotId: DEPOT_ID, pickupMode: 'now', planCode: 'day', coverage: 'full', depositMethod: 'card', cardId: CARD, couponCode: 'BEMVINDO' } as any, principal, 'k');
+    expect(depotReservations.create).toHaveBeenCalledWith(CUSTOMER_ID, { vehicleId: VEHICLE_ID, depotId: DEPOT_ID, pickupMode: 'now', pickupAt: undefined }, 'k');
+  });
+
+  it('controller: com depotId só pickupMode e Idempotency-Key são obrigatórios', async () => {
+    const depotReservations = { create: jest.fn().mockResolvedValue({}) };
+    const controller = new ReservationsController({ create: jest.fn() } as any, depotReservations as any);
+    const principal = { customerId: CUSTOMER_ID } as any;
+    expect(() => controller.create({ vehicleId: VEHICLE_ID, depotId: DEPOT_ID } as any, principal, undefined)).toThrow(
+      expect.objectContaining({
+        status: 400,
+        errors: [
+          { field: 'Idempotency-Key', message: 'obrigatório na reserva de galpão' },
+          { field: 'pickupMode', message: 'obrigatório na reserva de galpão' },
+        ],
+      }),
+    );
+    expect(depotReservations.create).not.toHaveBeenCalled();
+  });
+
+  it('sem consentimento de localização → 403 location-consent-required, nada separado', async () => {
+    const { service, prisma } = setup();
+    prisma.customer.findUnique.mockResolvedValue({ ...customer, locationConsent: false } as any);
+    await expect(service.create(CUSTOMER_ID, input(), 'k')).rejects.toMatchObject({ status: 403, slug: 'location-consent-required' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
   });
 
   it('agendado fora do horário → 422 pickup-outside-hours sem caução criada', async () => {
@@ -113,29 +153,12 @@ describe('DepotReservationsService.create', () => {
     expect(billing.holdDeposit).not.toHaveBeenCalled();
   });
 
-  it('Task 16 (R2-01): dívida em aberto → 409 payment-pending ("Pague o valor pendente para alugar de novo."), sem caução nem moto separada', async () => {
+  it('débito em aberto → 409 payment-pending com o texto do balcão, sem moto separada', async () => {
     const { service, billing, prisma } = setup();
     billing.isDelinquent.mockResolvedValue(true);
-    await expect(service.create(CUSTOMER_ID, input(), 'k-debt')).rejects.toMatchObject({ status: 409, slug: 'payment-pending', detail: 'Pague o valor pendente para alugar de novo.' });
-    expect(billing.holdDeposit).not.toHaveBeenCalled();
+    await expect(service.create(CUSTOMER_ID, input(), 'k-debt')).rejects.toMatchObject({ status: 409, slug: 'payment-pending', detail: COUNTER_DEBT_MESSAGE });
+    expect(COUNTER_DEBT_MESSAGE).toBe('Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.');
     expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
-  });
-
-  it('Task 30: caução no cartão sem nenhum cartão ativo → 422 card-required (antes de criar caução); Pix segue sem cartão', async () => {
-    const { service, billing, prisma } = setup();
-    prisma.paymentCard.findFirst.mockResolvedValue(null);
-    await expect(service.create(CUSTOMER_ID, input(), 'k-nocard')).rejects.toMatchObject({ status: 422, slug: 'card-required', detail: 'Cadastre um cartão ou pague a caução com Pix.' });
-    expect(billing.holdDeposit).not.toHaveBeenCalled();
-    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
-    await service.create(CUSTOMER_ID, input({ depositMethod: 'pix' }), 'k-pix');
-    expect(billing.holdDeposit).toHaveBeenCalledTimes(1);
-  });
-
-  it('Task 30: cardId que não é do cliente (ou removido) → 422 card-not-found, sem caução', async () => {
-    const { service, billing, prisma } = setup();
-    prisma.paymentCard.findFirst.mockResolvedValue(null);
-    await expect(service.create(CUSTOMER_ID, input({ cardId: '77777777-7777-4777-8777-777777777777' }), 'k-badcard')).rejects.toMatchObject({ status: 422, slug: 'card-not-found' });
-    expect(billing.holdDeposit).not.toHaveBeenCalled();
   });
 
   it('galpão inativo → 422 depot-inactive; inexistente → 404', async () => {
@@ -188,15 +211,7 @@ describe('DepotReservationsService.create', () => {
     await expect(s.service.create(CUSTOMER_ID, input(), 'k-fixed-own')).resolves.toMatchObject({ status: 'active' });
   });
 
-  it('cartão recusado → 422 payment-declined e a moto não é separada', async () => {
-    const { service, prisma, billing } = setup();
-    billing.holdDeposit.mockResolvedValue({ depositId: DEPOSIT_ID, status: 'failed' });
-    prisma.deposit.findUnique.mockResolvedValue(deposit({ status: 'failed' }) as any);
-    await expect(service.create(CUSTOMER_ID, input(), 'k-declined')).rejects.toMatchObject({ status: 422, slug: 'payment-declined' });
-    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
-  });
-
-  it('corrida: duas create simultâneas para a mesma moto → uma 201 e uma 409, e a caução da perdedora é liberada', async () => {
+  it('corrida: duas create simultâneas para a mesma moto → uma 201 e uma 409, sem caução para liberar', async () => {
     const { service, prisma, billing, released } = setup();
     let claimed = false;
     prisma.vehicle.updateMany.mockImplementation((async () => {
@@ -205,10 +220,6 @@ describe('DepotReservationsService.create', () => {
       claimed = true;
       return { count: 1 };
     }) as any);
-    billing.holdDeposit
-      .mockResolvedValueOnce({ depositId: DEPOSIT_ID, status: 'held' })
-      .mockResolvedValueOnce({ depositId: 'dep-perdedora', status: 'held' });
-    prisma.deposit.findUnique.mockImplementation((async (args: any) => deposit({ id: args.where.id, customerId: args.where.id === DEPOSIT_ID ? CUSTOMER_ID : OTHER_ID })) as any);
 
     const results = await Promise.allSettled([
       service.create(CUSTOMER_ID, input(), 'k-race-a'),
@@ -219,28 +230,18 @@ describe('DepotReservationsService.create', () => {
     expect(ok).toHaveLength(1);
     expect(failed).toHaveLength(1);
     expect(failed[0].reason).toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
-    expect(released).toEqual([expect.objectContaining({ depositId: 'dep-perdedora', customerId: OTHER_ID })]);
+    expect(billing.holdDeposit).not.toHaveBeenCalled();
+    expect(released).toEqual([]);
     expect(prisma.reservation.create).toHaveBeenCalledTimes(1);
   });
 
-  it('violação do índice único (reserva aberta concorrente do mesmo cliente) → 409 reservation-open e caução liberada', async () => {
+  it('violação do índice único (reserva aberta concorrente do mesmo cliente) → 409 reservation-open, nenhuma liberação', async () => {
     const { service, prisma, released } = setup();
     prisma.reservation.create.mockRejectedValue(
       new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: '5.22.0', meta: { target: ['customerId'] } }),
     );
     await expect(service.create(CUSTOMER_ID, input(), 'k-unique')).rejects.toMatchObject({ status: 409, slug: 'reservation-open' });
-    expect(released).toEqual([expect.objectContaining({ depositId: DEPOSIT_ID })]);
-  });
-
-  it('Pix → resposta com o QR e reserva active', async () => {
-    const { service, prisma, billing } = setup();
-    const pix = { chargeId: 'ch-1', qrCodeBase64: 'iVBORw0KGgo=', copyPaste: '00020126...', expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
-    billing.holdDeposit.mockResolvedValue({ depositId: DEPOSIT_ID, status: 'awaiting_pix', pix });
-    prisma.deposit.findUnique.mockResolvedValue(deposit({ method: 'pix', status: 'awaiting_pix', pix }) as any);
-    const r = await service.create(CUSTOMER_ID, input({ depositMethod: 'pix' }), 'k-pix');
-    expect(r.status).toBe('active');
-    expect(r.deposit).toMatchObject({ method: 'pix', status: 'awaiting_pix', pix: { copyPaste: '00020126...', qrCodeBase64: 'iVBORw0KGgo=' } });
-    expect(billing.holdDeposit).toHaveBeenCalledWith(expect.objectContaining({ method: 'pix' }));
+    expect(released).toEqual([]);
   });
 });
 
@@ -250,7 +251,7 @@ describe('DepotReservationsService — cancelamento, expiração e lembrete', ()
     expiresAt: new Date(Date.now() + 60 * 60_000), reminderSentAt: null, createdAt: new Date(0), ...over,
   });
 
-  it('cancel libera a caução e a moto volta a free', async () => {
+  it('reserva antiga (beta12) com caução: cancel libera a caução e a moto volta a free', async () => {
     const { service, prisma, released } = setup();
     prisma.reservation.findUnique.mockResolvedValue(row() as any);
     prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
@@ -258,6 +259,20 @@ describe('DepotReservationsService — cancelamento, expiração e lembrete', ()
     expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active' }, data: expect.objectContaining({ status: 'canceled' }) });
     expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'reserved' }, data: { status: 'free' } });
     expect(released).toEqual([expect.objectContaining({ depositId: DEPOSIT_ID, reason: 'reservation_canceled' })]);
+  });
+
+  it('cancelar/expirar pré-reserva sem caução não pede liberação', async () => {
+    const { service, reservations, prisma, released } = setup();
+    prisma.reservation.findUnique.mockResolvedValue(row({ depositId: null }) as any);
+    prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+    await service.cancel(CUSTOMER_ID, RES_ID);
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'reserved' }, data: { status: 'free' } });
+
+    prisma.reservation.findMany.mockResolvedValue([{ id: RES_ID, expiresAt: new Date(Date.now() - 1000) }] as any);
+    prisma.reservation.findUnique.mockResolvedValue(row({ depositId: null, expiresAt: new Date(Date.now() - 1000) }) as any);
+    await reservations.sweep();
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active', expiresAt: { lte: expect.any(Date) } }, data: expect.objectContaining({ status: 'expired' }) });
+    expect(released).toEqual([]);
   });
 
   it('cancel com entrega aberta (handover) → 409 reservation-in-handover, nada muda', async () => {
@@ -268,7 +283,7 @@ describe('DepotReservationsService — cancelamento, expiração e lembrete', ()
     expect(released).toEqual([]);
   });
 
-  it('sweep expira reservas de galpão vencidas, libera a caução e a moto', async () => {
+  it('sweep expira reservas de galpão vencidas (antigas com caução: liberada) e solta a moto', async () => {
     const { reservations, prisma, released } = setup();
     prisma.reservation.findMany.mockResolvedValue([{ id: RES_ID, expiresAt: new Date(Date.now() - 1000) }] as any);
     prisma.reservation.findUnique.mockResolvedValue(row({ expiresAt: new Date(Date.now() - 1000) }) as any);
@@ -438,20 +453,6 @@ describe('DepotReservationsService — cancelamento, expiração e lembrete', ()
     (service as any).cfg = { ...(service as any).cfg, jobsEnabled: false };
     await service.orphanDepositsJob();
     expect(prisma.deposit.findMany).not.toHaveBeenCalled();
-  });
-
-  it('fix 5: cardId só é gravado (e usado na caução) com depositMethod card', async () => {
-    const CARD = '77777777-7777-4777-8777-777777777777';
-    const a = setup();
-    a.billing.holdDeposit.mockResolvedValue({ depositId: DEPOSIT_ID, status: 'awaiting_pix', pix: {} });
-    a.prisma.deposit.findUnique.mockResolvedValue(deposit({ method: 'pix', status: 'awaiting_pix' }) as any);
-    await a.service.create(CUSTOMER_ID, input({ depositMethod: 'pix', cardId: CARD }), 'k-pix-card');
-    expect((a.prisma.reservation.create.mock.calls[0][0] as any).data.cardId).toBeNull();
-    expect(a.billing.holdDeposit.mock.calls[0][0]).not.toHaveProperty('cardId');
-    const b = setup();
-    await b.service.create(CUSTOMER_ID, input({ cardId: CARD }), 'k-card');
-    expect((b.prisma.reservation.create.mock.calls[0][0] as any).data.cardId).toBe(CARD);
-    expect(b.billing.holdDeposit.mock.calls[0][0]).toMatchObject({ cardId: CARD });
   });
 
   it('fix 6: sem lembrete quando a reserva inteira dura 30 min ou menos', async () => {
