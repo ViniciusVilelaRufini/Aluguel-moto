@@ -88,6 +88,8 @@ export type Action =
   | 'payment.view'
   | 'finance.reports'
   | 'counter.checkout'
+  | 'handover.create'
+  | 'handover.createWithoutCode'
   | 'counter.settle';
 
 const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
@@ -136,6 +138,10 @@ const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'finance.reports': ['admin', 'financeiro'], // GET /reports/finance|revenue|occupancy…; abas Visão geral e Aluguéis
   // Balcão do galpão (pré-reserva 2026-11-04, interpretação 18): contrato admin, operacao, campo; `campo` não usa o painel.
   'counter.checkout': ['admin', 'operacao'], // GET /handovers/{id}/counter-quote, POST /handovers/{id}/counter-checkout, POST /handovers/uploads
+  // Entrega de saída pelo painel (2026-11-04): POST /handovers (contrato: admin, operacao, campo; `campo` não usa o painel).
+  'handover.create': ['admin', 'operacao'],
+  // Sem o QR do cliente (reservationId + noCodeReason): só admin (a API responde 403 aos outros).
+  'handover.createWithoutCode': ['admin'],
   'counter.settle': ['admin', 'operacao'], // GET /rentals/{id}/counter-balance, POST /payments/{id}/counter-settle, POST /payments/deposits/{id}/counter-refund
 };
 

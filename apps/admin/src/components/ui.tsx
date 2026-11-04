@@ -175,7 +175,7 @@ export function Initials({ name, size = 32 }: { name: string; size?: number }) {
 
 /* ---------- Fields ---------- */
 
-const fieldBox: CSSProperties = {
+export const fieldBox: CSSProperties = {
   width: '100%', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)', border: '1.5px solid transparent',
   padding: '0 16px', fontFamily: 'var(--font-sans)', fontSize: 15, fontWeight: 500, color: 'var(--text-primary)', outline: 'none',
 };

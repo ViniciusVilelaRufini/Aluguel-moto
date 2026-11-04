@@ -101,7 +101,8 @@ export default function PickupsPage() {
       {!depotsQ.isLoading && depots.length === 0 ? (
         <Empty icon="Warehouse" hint="Cadastre um galpão em Galpões para ver a agenda.">Nenhum galpão cadastrado</Empty>
       ) : (
-        <PickupTable items={items} mode={mode} loading={pickupsQ.isLoading || depotsQ.isLoading} canCheckout={can(groups, 'counter.checkout')} />
+        <PickupTable items={items} mode={mode} loading={pickupsQ.isLoading || depotsQ.isLoading} canCheckout={can(groups, 'counter.checkout')}
+          canDeliver={can(groups, 'handover.create')} canDeliverWithoutCode={can(groups, 'handover.createWithoutCode')} />
       )}
     </Page>
   );

@@ -311,6 +311,23 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
     return ok({ uploadUrl: `${API_HOST}/uploads/${key}`, method: 'PUT', headers: { 'Content-Type': String(b.contentType) }, objectKey: key, expiresAt: now }, 201);
   }
   if (method === 'PUT' && p.startsWith('/uploads/')) return ok({});
+  // Entrega de saída pelo painel (2026-11-04): QR (`v1.<reservationId>.…`) ou, só admin, reservationId + noCodeReason.
+  if (method === 'POST' && p === '/handovers' && b.type === 'pickup') {
+    const noCode = b.reservationId !== undefined || b.noCodeReason !== undefined;
+    if (noCode && b.pickupCode !== undefined) return { status: 400, json: problem(400, 'Envie o código do QR ou a reserva com o motivo, não os dois.', 'validation-error') };
+    if (noCode && !db.me.groups.includes('admin')) return { status: 403, json: problem(403, 'Só o admin pode entregar a moto sem o QR do cliente.', 'pickup-without-code-requires-admin') };
+    const resId = noCode ? String(b.reservationId) : String(b.pickupCode ?? '').split('.')[1];
+    const r = db.reservations.find((x) => x.id === resId && (!b.depotId || x.depotId === b.depotId));
+    if (!r) return notFound();
+    if (r.status !== 'active') return { status: 409, json: problem(409, 'Esta reserva não está mais ativa.', 'conflict') };
+    const h = {
+      id: `ho-${db.handovers.length + 1}`, type: 'pickup', depotId: r.depotId!, reservationId: r.id, vehicleId: r.vehicleId, vehicleCode: r.vehicle?.code,
+      operatorId: db.me.id, operatorFirstName: 'Equipe Volti', checklist: b.checklist, photoKeys: b.photoKeys, batteryPct: b.batteryPct, status: 'pending_customer', createdAt: now,
+    };
+    db.handovers.push(h as never);
+    Object.assign(r, { status: 'handover', handoverId: h.id });
+    return ok(h, 201);
+  }
   if (method === 'GET' && match(/^\/handovers\/[^/]+\/counter-quote$/)) {
     if (!find(db.handovers)) return notFound();
     return ok(F.makeCounterQuote((q.get('planCode') ?? 'day') as never, (q.get('coverage') ?? 'basic') as never, Number(q.get('quantity') ?? 1)));

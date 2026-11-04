@@ -16,6 +16,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   'deposit.counter_refund': 'Caução devolvida no balcão',
   'dispute.resolve': 'Contestação resolvida',
   'handover.cancel': 'Entrega cancelada',
+  'handover.pickup_without_code': 'Entrega sem QR do cliente',
   'insurance.coverage.update': 'Cobertura do seguro atualizada',
   'maintenance.customer_request': 'Pedido de manutenção do cliente',
   'payment.counter_settle': 'Acerto no balcão',

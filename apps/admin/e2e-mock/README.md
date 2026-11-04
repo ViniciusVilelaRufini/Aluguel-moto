@@ -12,5 +12,5 @@ Rodar (em `apps/admin`): `pnpm exec playwright test -c playwright.mock.config.ts
 - `mock-api.ts`: `installMockApi(page, { group, socket: 'on'|'off', latencyMs, failPaths })` devolve `{ calls, unmocked, emit, db }` (cada chamada guarda `headers`, ex.: `idempotency-key`). Endpoint sem handler responde 404 e entra em `unmocked`.
 - `login.ts`: `loginMocked` (token dev na sessionStorage, sem credencial) e `loginViaUi`.
 - `helpers.ts`: coletor de problemas (`collect`), `overflowReport`, `focusReport`, `shot`.
-- Specs: `sweep.spec.ts` (todas as rotas, desktop 1440x900 e celular 390x844), `states.spec.ts` (carregando/erro/401), `balcao.spec.ts` (contrato e pagamento, acerto no balcão), `known-bugs.spec.ts` (regressoes `[BUG P1-xx]` que falham ate o bug ser corrigido).
+- Specs: `sweep.spec.ts` (todas as rotas, desktop 1440x900 e celular 390x844), `states.spec.ts` (carregando/erro/401), `balcao.spec.ts` (contrato e pagamento, acerto no balcão), `entrega.spec.ts` (Retiradas: Entregar moto com código do leitor, QR de outra reserva, sem QR do admin), `known-bugs.spec.ts` (regressoes `[BUG P1-xx]` que falham ate o bug ser corrigido).
 - `__shots__/` e `__results__/` nao sao versionados.
