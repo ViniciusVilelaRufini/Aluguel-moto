@@ -1339,3 +1339,12 @@ Contexto: com a pré-reserva no app, o painel não tinha como entregar a moto. "
    - A "Receita do dia" conta só aluguéis encerrados. Falta um "recebido hoje no balcão" por forma de pagamento.
    - O "Reportar problema" do app vira Ocorrência no Suporte, sem alerta nem tarefa para a operação, mesmo em "Freio".
 4. **J16 (bancada).** Com a ignição desligada, o GPS liga por ~5 min e desliga por 10 a 70 min (modo de economia `Slp:1`). Por isso a trava falhava parada. Enviado `SZCS#GPS_DISSLP=1`, e o aparelho respondeu `SETOK: GPS_DISSLP=1, SZCS`. Falta confirmar com a ignição desligada por mais de 5 min. `SZCS#SLPDISCONNECT` não foi enviado, porque desligaria o heartbeat com a ignição desligada.
+
+## 2026-11-04 · "Recebida no galpão": recolhimento concluído pelo painel (branch `fix/painel-recolhimento`) · status: aplicada (sem mudança de contrato)
+
+Moto devolvida fora do galpão fica `awaiting_pickup` com uma tarefa `collect`. Antes, só o app do operador concluía o recolhimento; agora o painel também conclui, para `admin` e `operacao`. A ação aparece em três lugares:
+- ficha da moto no mapa;
+- detalhe da moto em Motos;
+- cartão da tarefa em Operação.
+
+Com a tarefa `open`, o painel chama `POST /field-tasks/{id}/start`, que atribui a tarefa ao próprio usuário, e depois `/complete` com `depotId` e a nota. A moto volta a `free` no galpão. Sem tarefa `collect` aberta, o painel só mostra um aviso. Os erros 409 e 422 aparecem com o texto da API. No cartão de Operação, o galpão só vem pré-selecionado quando há um único galpão ativo, porque `FieldTask` não traz `depotId`.
