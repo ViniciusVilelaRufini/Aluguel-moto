@@ -199,6 +199,22 @@ describe('HandoversService — saída sem QR (só admin)', () => {
     expect(audit.record).not.toHaveBeenCalled();
   });
 
+  it('reserva active já vencida (expirador atrasado) → 404 not-found como o QR vencido; nada criado', async () => {
+    const { prisma, svc, audit } = setup();
+    prisma.reservation.findUnique.mockResolvedValue({ ...activeReservation(), expiresAt: new Date(Date.now() - 1000) });
+    await expect(svc.createPickup(admin, noCodeBody())).rejects.toMatchObject({ status: 404, slug: 'not-found' });
+    prisma.reservation.findUnique.mockResolvedValue({ ...activeReservation(), expiresAt: new Date() });
+    await expect(svc.createPickup(admin, noCodeBody())).rejects.toMatchObject({ status: 404, slug: 'not-found' });
+    expect(prisma.handover.create).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('sem QR exige depotId → 400 sem ler o banco', async () => {
+    const { prisma, svc } = setup();
+    await expect(svc.createPickup(admin, noCodeBody({ depotId: undefined }))).rejects.toMatchObject({ status: 400, slug: 'validation-error' });
+    expect(prisma.reservation.findUnique).not.toHaveBeenCalled();
+  });
+
   it('reservationId/noCodeReason numa chegada (return_depot) → 400', async () => {
     const { svc, prisma } = setup();
     await expect(svc.create(admin, { ...noCodeBody(), type: 'return_depot', rentalId: RENTAL_ID })).rejects.toMatchObject({ status: 400 });

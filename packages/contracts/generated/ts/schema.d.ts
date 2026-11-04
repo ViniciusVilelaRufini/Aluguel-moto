@@ -956,11 +956,11 @@ export interface paths {
          * @description - `pickup`: o operador lê o `pickupCode` da reserva (precisa estar `active`, no galpão, com a moto `reserved`),
          *       envia checklist de saída, fotos (`POST /handovers/uploads`) e bateria. Cria a entrega `pending_customer`, a
          *       reserva passa a `handover` e o cliente recebe o evento `handover.pending`. Código adulterado ou vencido → `404`.
-         *     - `pickup` sem QR (só `admin`): no lugar do `pickupCode`, `reservationId` + `noCodeReason` (ex.: celular do
-         *       cliente sem bateria; o atendente confere o documento). Mesmas regras de reserva/galpão/moto do caminho com
-         *       código, mas reserva inexistente, sem galpão ou de outro galpão (`depotId` enviado) → `404`. Sem ser admin →
-         *       `403` `pickup-without-code-requires-admin`; `pickupCode` junto com `reservationId`/`noCodeReason`, ou só um
-         *       dos dois → `400`. Grava a auditoria `handover.pickup_without_code` (ator, reserva, motivo) na mesma transação.
+         *     - `pickup` sem QR (só `admin`): no lugar do `pickupCode`, `reservationId` + `noCodeReason` + `depotId`
+         *       (obrigatório aqui; ex.: celular do cliente sem bateria; o atendente confere o documento). Mesmas regras de
+         *       reserva/galpão/moto do caminho com código, mas reserva inexistente, sem galpão, de outro galpão ou já vencida
+         *       (`expiresAt` passado, como o QR vencido) → `404`. Sem ser admin → `403` `pickup-without-code-requires-admin`;
+         *       `pickupCode` junto com `reservationId`/`noCodeReason`, só um dos dois ou sem `depotId` → `400`. Grava a auditoria `handover.pickup_without_code` (ator, reserva, motivo) na mesma transação.
          *     - `return_depot`: chegada do aluguel `rentalId` no galpão. A entrega já nasce `accepted`, o aluguel é encerrado
          *       pelo fechamento normal e a moto volta a `free` com o `depotId` do galpão, ou vai para `maintenance` se algum
          *       item do checklist vier com `ok: false`. O `depotId` precisa ser um galpão ativo (senão `404`) e a posição ao
@@ -6946,7 +6946,7 @@ export interface components {
             type: components["schemas"]["HandoverType"];
             /**
              * Format: uuid
-             * @description Galpão onde a entrega acontece. Obrigatório em `return_depot` (`400`); em `pickup` precisa ser o da reserva, quando enviado.
+             * @description Galpão onde a entrega acontece. Obrigatório em `return_depot` e no `pickup` sem QR (`400`); em `pickup` precisa ser o da reserva, quando enviado.
              */
             depotId?: string;
             /** @description Só em `pickup` (obrigatório, salvo na entrega sem QR): conteúdo do QR da reserva. */

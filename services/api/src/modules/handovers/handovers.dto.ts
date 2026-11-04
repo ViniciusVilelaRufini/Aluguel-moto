@@ -30,8 +30,8 @@ const isNoCodePickup = (o: { reservationId?: unknown; noCodeReason?: unknown }) 
 export class HandoverCreateDto {
   @IsIn(HANDOVER_TYPES) type: HandoverTypeValue;
 
-  /** Obrigatório em `return_depot`; em `pickup`, quando enviado, precisa ser o galpão da reserva. */
-  @ValidateIf((o: HandoverCreateDto) => o.type === 'return_depot' || o.depotId !== undefined)
+  /** Obrigatório em `return_depot` e na saída sem QR; em `pickup`, quando enviado, precisa ser o galpão da reserva. */
+  @ValidateIf((o: HandoverCreateDto) => o.type === 'return_depot' || o.depotId !== undefined || isNoCodePickup(o))
   @IsUUID()
   depotId?: string;
 

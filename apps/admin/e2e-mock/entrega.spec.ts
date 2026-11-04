@@ -76,13 +76,14 @@ test('Retiradas: admin entrega sem QR com motivo', async ({ page }) => {
   await openDeliver(page);
   await page.getByRole('button', { name: 'Sem QR (admin)', exact: true }).click();
   await expect(page.getByTestId('pickup-no-code')).toContainText('Confira o documento do cliente');
+  await expect(page.getByTestId('pickup-no-code')).toContainText('Não digite números de documento.');
   await fillInspection(page);
   await page.getByTestId('pickup-no-code-reason').fill('curto');
   await expect(page.getByTestId('pickup-handover-submit')).toBeDisabled();
-  await page.getByTestId('pickup-no-code-reason').fill('Celular do cliente sem bateria; RG conferido.');
+  await page.getByTestId('pickup-no-code-reason').fill('Celular do cliente sem bateria; documento conferido no balcão.');
   await page.getByTestId('pickup-handover-submit').click();
   await expect(page.getByTestId('counter-checkout-dialog')).toBeVisible();
   const post = calls.find((c) => c.method === 'POST' && c.path === '/handovers')!;
-  expect(post.body).toMatchObject({ type: 'pickup', depotId: 'dep-1', reservationId: 'res-2', noCodeReason: 'Celular do cliente sem bateria; RG conferido.', batteryPct: 95 });
+  expect(post.body).toMatchObject({ type: 'pickup', depotId: 'dep-1', reservationId: 'res-2', noCodeReason: 'Celular do cliente sem bateria; documento conferido no balcão.', batteryPct: 95 });
   expect(post.body).not.toHaveProperty('pickupCode');
 });

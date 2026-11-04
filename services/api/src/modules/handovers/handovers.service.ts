@@ -100,8 +100,9 @@ export class HandoversService {
    * Código válido → reserva de galpão `active` (ou `handover` sem saída aberta, depois de uma disputa) com a moto
    * `reserved` → entrega `pending_customer` e reserva `handover`, numa transação. Código adulterado ou vencido → 404.
    *
-   * Sem QR (só admin): `reservationId` + `noCodeReason` no lugar do `pickupCode` (os dois caminhos juntos ou pela metade →
-   * 400; sem ser admin → 403). Reserva inexistente, sem galpão ou de outro galpão → 404; o resto é igual ao caminho com
+   * Sem QR (só admin): `reservationId` + `noCodeReason` + `depotId` no lugar do `pickupCode` (os dois caminhos juntos, pela
+   * metade ou sem `depotId` → 400; sem ser admin → 403). Reserva inexistente, sem galpão, de outro galpão ou já vencida
+   * (`expiresAt` passado, como o QR vencido) → 404; o resto é igual ao caminho com
    * código. Grava o AuditLog `handover.pickup_without_code` (ator, reserva, galpão e motivo) na transação da entrega.
    */
   async createPickup(operator: Principal, dto: HandoverCreateDto): Promise<CreateResult> {
@@ -111,6 +112,7 @@ export class HandoversService {
     let noCodeReason: string | undefined;
     if (noCode) {
       if (!isAdmin(operator)) throw noCodeRequiresAdmin();
+      if (!dto.depotId) throw badRequest('Informe o galpão da entrega sem QR.');
       noCodeReason = dto.noCodeReason?.trim() ?? '';
       if (!dto.reservationId || noCodeReason.length < NO_CODE_REASON_MIN || noCodeReason.length > NO_CODE_REASON_MAX) {
         throw badRequest(`Informe a reserva e o motivo da entrega sem QR (${NO_CODE_REASON_MIN} a ${NO_CODE_REASON_MAX} caracteres).`);
@@ -123,7 +125,9 @@ export class HandoversService {
     }
     const r = await this.prisma.reservation.findUnique({ where: { id: reservationId }, include: { vehicle: true } });
     if (noCode) {
-      if (!r || !r.depotId || (dto.depotId && dto.depotId !== r.depotId)) throw notFound('Reserva não encontrada neste galpão.');
+      if (!r || !r.depotId || dto.depotId !== r.depotId) throw notFound('Reserva não encontrada neste galpão.');
+      // Como o QR vencido (exp = expiresAt): reserva ainda `active` mas no fim do prazo (expirador atrasado) → 404.
+      if (r.expiresAt.getTime() <= Date.now()) throw notFound('Reserva vencida.');
     } else {
       if (!r || !r.depotId) throw notFound('Código de retirada inválido ou vencido.');
       if (dto.depotId && dto.depotId !== r.depotId) throw unprocessable('validation-error', 'Este código é de uma retirada em outro galpão.');

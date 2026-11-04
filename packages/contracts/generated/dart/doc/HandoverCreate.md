@@ -9,7 +9,7 @@ import 'package:volti_api/api.dart';
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **type** | [**HandoverType**](HandoverType.md) |  | 
-**depotId** | **String** | Galpão onde a entrega acontece. Obrigatório em `return_depot` (`400`); em `pickup` precisa ser o da reserva, quando enviado. | [optional] 
+**depotId** | **String** | Galpão onde a entrega acontece. Obrigatório em `return_depot` e no `pickup` sem QR (`400`); em `pickup` precisa ser o da reserva, quando enviado. | [optional] 
 **pickupCode** | **String** | Só em `pickup` (obrigatório, salvo na entrega sem QR): conteúdo do QR da reserva. | [optional] 
 **reservationId** | **String** | Só em `pickup` sem QR (só `admin`), com `noCodeReason` e sem `pickupCode`: reserva entregue. | [optional] 
 **noCodeReason** | **String** | Só em `pickup` sem QR (só `admin`), com `reservationId`: por que a entrega foi feita sem ler o QR. Vai para a auditoria. | [optional] 

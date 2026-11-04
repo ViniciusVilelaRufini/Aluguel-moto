@@ -158,7 +158,7 @@ export function PickupHandoverDialog({ reservation, canWithoutCode, cameraSuppor
       ) : (
         <div data-testid="pickup-no-code" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Alert tone="warning">Confira o documento do cliente antes de entregar. A entrega sem QR fica registrada na auditoria com o motivo.</Alert>
-          <Field label="Motivo da entrega sem QR" hint={`${reason.trim().length} de ${NO_CODE_REASON_MIN} a ${NO_CODE_REASON_MAX} caracteres. Ex.: celular do cliente sem bateria; documento conferido.`}>
+          <Field label="Motivo da entrega sem QR" hint={`${reason.trim().length} de ${NO_CODE_REASON_MIN} a ${NO_CODE_REASON_MAX} caracteres. Ex.: celular do cliente sem bateria; documento conferido no balcão. Não digite números de documento.`}>
             <TextArea testId="pickup-no-code-reason" value={reason} onChange={(v) => setReason(v.slice(0, NO_CODE_REASON_MAX))} />
           </Field>
         </div>

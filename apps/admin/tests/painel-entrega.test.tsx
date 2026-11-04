@@ -64,8 +64,8 @@ describe('Entregar moto: regras', () => {
   });
 
   it('corpo sem QR: reservationId + motivo aparado, sem pickupCode', () => {
-    const body = buildPickupBody(draft({ id: { kind: 'noCode', reason: '  Celular sem bateria; RG conferido.  ' } }))!;
-    expect(body).toMatchObject({ reservationId: RES_ID, noCodeReason: 'Celular sem bateria; RG conferido.' });
+    const body = buildPickupBody(draft({ id: { kind: 'noCode', reason: '  Celular sem bateria; documento conferido no balcão.  ' } }))!;
+    expect(body).toMatchObject({ reservationId: RES_ID, noCodeReason: 'Celular sem bateria; documento conferido no balcão.' });
     expect(body).not.toHaveProperty('pickupCode');
   });
 
@@ -107,6 +107,13 @@ describe('Entregar moto: diálogo', () => {
   it('admin vê "Sem QR (admin)"; operacao não', () => {
     expect(render({ canWithoutCode: true })).toContain('Sem QR (admin)');
     expect(render({ canWithoutCode: false })).not.toContain('Sem QR');
+  });
+
+  it('LGPD: o exemplo do motivo pede para não digitar números de documento (o modo Sem QR abre por clique; ver e2e)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../src/components/depots/PickupHandoverDialog.tsx', import.meta.url), 'utf8');
+    expect(src).toContain('documento conferido no balcão. Não digite números de documento.');
+    expect(src).not.toMatch(/\b(RG|CPF)\b/);
   });
 
   it('bateria pré-preenchida; sem leitura pede ao atendente; checklist com os 6 itens; nunca mostra o código', () => {

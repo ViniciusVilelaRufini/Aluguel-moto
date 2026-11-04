@@ -315,6 +315,7 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
   if (method === 'POST' && p === '/handovers' && b.type === 'pickup') {
     const noCode = b.reservationId !== undefined || b.noCodeReason !== undefined;
     if (noCode && b.pickupCode !== undefined) return { status: 400, json: problem(400, 'Envie o código do QR ou a reserva com o motivo, não os dois.', 'validation-error') };
+    if (noCode && !b.depotId) return { status: 400, json: problem(400, 'Informe o galpão da entrega sem QR.', 'validation-error') };
     if (noCode && !db.me.groups.includes('admin')) return { status: 403, json: problem(403, 'Só o admin pode entregar a moto sem o QR do cliente.', 'pickup-without-code-requires-admin') };
     const resId = noCode ? String(b.reservationId) : String(b.pickupCode ?? '').split('.')[1];
     const r = db.reservations.find((x) => x.id === resId && (!b.depotId || x.depotId === b.depotId));

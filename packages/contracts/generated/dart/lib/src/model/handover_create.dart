@@ -15,7 +15,7 @@ part 'handover_create.g.dart';
 ///
 /// Properties:
 /// * [type]
-/// * [depotId] - Galpão onde a entrega acontece. Obrigatório em `return_depot` (`400`); em `pickup` precisa ser o da reserva, quando enviado.
+/// * [depotId] - Galpão onde a entrega acontece. Obrigatório em `return_depot` e no `pickup` sem QR (`400`); em `pickup` precisa ser o da reserva, quando enviado.
 /// * [pickupCode] - Só em `pickup` (obrigatório, salvo na entrega sem QR): conteúdo do QR da reserva.
 /// * [reservationId] - Só em `pickup` sem QR (só `admin`), com `noCodeReason` e sem `pickupCode`: reserva entregue.
 /// * [noCodeReason] - Só em `pickup` sem QR (só `admin`), com `reservationId`: por que a entrega foi feita sem ler o QR. Vai para a auditoria.
@@ -31,7 +31,7 @@ abstract class HandoverCreate
   HandoverType get type;
   // enum typeEnum {  pickup,  return_depot,  };
 
-  /// Galpão onde a entrega acontece. Obrigatório em `return_depot` (`400`); em `pickup` precisa ser o da reserva, quando enviado.
+  /// Galpão onde a entrega acontece. Obrigatório em `return_depot` e no `pickup` sem QR (`400`); em `pickup` precisa ser o da reserva, quando enviado.
   @BuiltValueField(wireName: r'depotId')
   String? get depotId;
 
