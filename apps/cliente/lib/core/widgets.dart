@@ -102,17 +102,7 @@ class VoltiScaffold extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
-        leading: canPop
-            ? Padding(
-                padding: const EdgeInsets.all(6),
-                child: VoltiIconButton(
-                  icon: LucideIcons.arrowLeft,
-                  variant: VoltiIconButtonVariant.soft,
-                  label: context.l.back,
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
-              )
-            : null,
+        leading: canPop ? const VoltiBackLeading() : null,
         title: Text(title, style: VoltiTypography.heading),
         actions: actions,
       ),
@@ -128,6 +118,22 @@ class VoltiScaffold extends StatelessWidget {
             ),
     );
   }
+}
+
+/// Voltar redondo do app bar (o mesmo de [VoltiScaffold]).
+class VoltiBackLeading extends StatelessWidget {
+  const VoltiBackLeading({super.key});
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.all(6),
+        child: VoltiIconButton(
+          icon: LucideIcons.arrowLeft,
+          variant: VoltiIconButtonVariant.soft,
+          label: context.l.back,
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      );
 }
 
 /// Texto de secao dentro de listas.

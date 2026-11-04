@@ -56,7 +56,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     final reason = await VoltiDialog.show<String>(
       context,
       title: l.disputeTitle,
-      message: TextField(controller: ctrl, maxLines: 3, decoration: InputDecoration(hintText: l.disputeHint)),
+      message: TextField(
+        controller: ctrl,
+        maxLines: 3,
+        decoration: InputDecoration(hintText: l.disputeHint),
+      ),
       actions: [
         VoltiButton(label: l.send, fullWidth: true, onPressed: () => Navigator.of(context).pop(ctrl.text.trim())),
         VoltiButton(label: l.cancel, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: () => Navigator.of(context).pop()),
@@ -132,12 +136,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     final l = context.l;
     if (!_isPaid(r)) return '${l.receiptAwaitingPayment} · ${l.receiptNumber(r.number)}';
     final parts = <String>[
-      if (r.cardLast4 != null)
-        l.paidWithCard(r.cardLast4!)
-      else if (r.paymentMethod == PaymentMethod.pix)
-        l.paidWithPix
-      else if (r.paymentMethod == PaymentMethod.wallet)
-        l.paidWithWallet,
+      if (r.cardLast4 != null) l.paidWithCard(r.cardLast4!) else if (r.paymentMethod == PaymentMethod.pix) l.paidWithPix else if (r.paymentMethod == PaymentMethod.wallet) l.paidWithWallet,
       r.invoiceNumber != null ? l.invoiceNumberLabel(r.invoiceNumber!) : l.receiptNumber(r.number),
     ];
     return parts.join(' · ');
@@ -152,7 +151,12 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       if (prev?.hasValue != true && next.hasValue) VoltiHaptics.success();
     });
     return Scaffold(
-      appBar: AppBar(automaticallyImplyLeading: false, title: Text(l.summaryTitle, style: VoltiTypography.heading)),
+      // Aberto pelo historico (ha tela atras): voltar redondo. No fim da corrida (go) so "Concluir".
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leading: Navigator.of(context).canPop() ? const VoltiBackLeading() : null,
+        title: Text(l.summaryTitle, style: VoltiTypography.heading),
+      ),
       // Concluir fixo no rodape: os toasts (SnackBar) ficam acima dele, nunca sobre o botao.
       bottomNavigationBar: receipt.hasValue
           ? SafeArea(
@@ -173,169 +177,198 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
             )
           : null,
       body: SafeArea(
-        child: AsyncView<Receipt>(
-          value: receipt,
-          onRetry: () => ref.invalidate(receiptProvider(widget.rentalId)),
-          data: (r) {
-            final pts = [for (final p in r.track ?? const <TrackPoint>[]) LatLng(p.lat, p.lng)];
-            final mapOn = ref.watch(mapEnabledProvider);
-            return ListView(
-              padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-              children: VoltiStagger.wrap([
-                Row(children: [
-                  const VoltiSuccessCheck(size: 56),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Semantics(header: true, child: Text(l.rideFinished, style: VoltiTypography.title)),
-                      Text(_finishedText(r),
-                          key: const Key('receipt-finished-text'),
-                          style: VoltiTypography.body.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                    ]),
-                  ),
-                ]),
-                const SizedBox(height: VoltiSpacing.s16),
-                if (mapOn && pts.isNotEmpty)
-                  Builder(builder: (context) {
-                    // Trajeto enquadrado, com pins de inicio e fim; moto parada (< 20 m)
-                    // mostra so o pin, em zoom de rua.
-                    final cam = trackCamera(pts);
-                    return ClipRRect(
-                      borderRadius: VoltiRadii.rLg,
-                      child: SizedBox(
-                        key: const Key('receipt-map'),
-                        height: 200,
-                        child: VoltiMap(
-                          center: cam.center,
-                          zoom: cam.zoom,
-                          interactive: false,
-                          embedded: true,
-                          layers: [
-                            if (cam.path) DrawnPolyline(points: pts, color: VoltiColors.brand),
-                            MarkerLayer(markers: [
-                              if (cam.path) Marker(key: const Key('receipt-start'), point: pts.first, width: 20, height: 20, child: const _TrackPin(VoltiColors.brand)),
-                              Marker(key: const Key('receipt-end'), point: pts.last, width: 24, height: 24, child: const _TrackPin(VoltiColors.ink900)),
-                            ]),
+        child: receipt.error is AppFailure && (receipt.error! as AppFailure).slug == 'rental-not-active'
+            // Corrida ainda aberta: aviso neutro (nao e erro, tentar de novo nao muda nada).
+            ? VoltiEmptyState(
+                icon: LucideIcons.receipt,
+                title: l.rentalInProgress,
+                message: l.receiptAfterRideEnds,
+                actionLabel: l.backToRide,
+                actionIcon: LucideIcons.motorbike,
+                onAction: () => context.go('/ride'),
+              )
+            : AsyncView<Receipt>(
+                value: receipt,
+                onRetry: () => ref.invalidate(receiptProvider(widget.rentalId)),
+                data: (r) {
+                  final pts = [for (final p in r.track ?? const <TrackPoint>[]) LatLng(p.lat, p.lng)];
+                  final mapOn = ref.watch(mapEnabledProvider);
+                  return ListView(
+                    padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
+                    children: VoltiStagger.wrap([
+                      Row(
+                        children: [
+                          const VoltiSuccessCheck(size: 56),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Semantics(header: true, child: Text(l.rideFinished, style: VoltiTypography.title)),
+                                Text(
+                                  _finishedText(r),
+                                  key: const Key('receipt-finished-text'),
+                                  style: VoltiTypography.body.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: VoltiSpacing.s16),
+                      if (mapOn && pts.isNotEmpty)
+                        Builder(
+                          builder: (context) {
+                            // Trajeto enquadrado, com pins de inicio e fim; moto parada (< 20 m)
+                            // mostra so o pin, em zoom de rua.
+                            final cam = trackCamera(pts);
+                            return ClipRRect(
+                              borderRadius: VoltiRadii.rLg,
+                              child: SizedBox(
+                                key: const Key('receipt-map'),
+                                height: 200,
+                                child: VoltiMap(
+                                  center: cam.center,
+                                  zoom: cam.zoom,
+                                  interactive: false,
+                                  embedded: true,
+                                  layers: [
+                                    if (cam.path) DrawnPolyline(points: pts, color: VoltiColors.brand),
+                                    MarkerLayer(
+                                      markers: [
+                                        if (cam.path) Marker(key: const Key('receipt-start'), point: pts.first, width: 20, height: 20, child: const _TrackPin(VoltiColors.brand)),
+                                        Marker(key: const Key('receipt-end'), point: pts.last, width: 24, height: 24, child: const _TrackPin(VoltiColors.ink900)),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      const SizedBox(height: VoltiSpacing.s16),
+                      Container(
+                        padding: const EdgeInsets.all(VoltiSpacing.s16),
+                        decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
+                        child: Column(
+                          children: [
+                            _Line(l.duration, durationLabel(r.durationSeconds)),
+                            for (final row in breakdownRows(
+                              r.breakdown,
+                              insuranceLabel: r.coverage == InsuranceCoverage.full ? l.coverageFullLong : l.coverageBasicLong,
+                              feesLabel: l.fees,
+                              discountLabel: l.coupon,
+                            ))
+                              _Line(row.label, money(row.cents)),
+                            const Divider(),
+                            // O total conta depois do check (300 ms + 600 ms de pop).
+                            _Line(
+                              l.total,
+                              money(r.breakdown.totalCents),
+                              strong: true,
+                              value: VoltiCountUp(
+                                key: const Key('receipt-total'),
+                                value: r.breakdown.totalCents,
+                                format: money,
+                                delay: const Duration(milliseconds: 700),
+                                style: VoltiTypography.bodyStrong,
+                              ),
+                            ),
+                            // R2-01: como o total foi pago (caucao usada/devolvida, saldo a pagar e situacao).
+                            if ((r.depositUsedCents ?? 0) > 0) _Line(l.receiptDepositUsed, money(r.depositUsedCents!)),
+                            if (r.paymentStatus != null && r.paymentStatus != ReceiptPaymentStatus.pending && (r.depositReleasedCents ?? 0) > 0)
+                              _Line(l.receiptDepositReleased, money(r.depositReleasedCents!)),
+                            if (r.paymentStatus == ReceiptPaymentStatus.pending && r.amountDueCents != null) _Line(l.receiptAmountDue, money(r.amountDueCents!), strong: true),
+                            if (_statusBadge(r) case final badge?) _Line(l.receiptPaymentLabel, '', value: badge),
                           ],
                         ),
                       ),
-                    );
-                  }),
-                const SizedBox(height: VoltiSpacing.s16),
-                Container(
-                  padding: const EdgeInsets.all(VoltiSpacing.s16),
-                  decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
-                  child: Column(children: [
-                    _Line(l.duration, durationLabel(r.durationSeconds)),
-                    for (final row in breakdownRows(
-                      r.breakdown,
-                      insuranceLabel: r.coverage == InsuranceCoverage.full ? l.coverageFullLong : l.coverageBasicLong,
-                      feesLabel: l.fees,
-                      discountLabel: l.coupon,
-                    ))
-                      _Line(row.label, money(row.cents)),
-                    const Divider(),
-                    // O total conta depois do check (300 ms + 600 ms de pop).
-                    _Line(l.total, money(r.breakdown.totalCents),
-                        strong: true,
-                        value: VoltiCountUp(
-                          key: const Key('receipt-total'),
-                          value: r.breakdown.totalCents,
-                          format: money,
-                          delay: const Duration(milliseconds: 700),
-                          style: VoltiTypography.bodyStrong,
-                        )),
-                    // R2-01: como o total foi pago (caucao usada/devolvida, saldo a pagar e situacao).
-                    if ((r.depositUsedCents ?? 0) > 0) _Line(l.receiptDepositUsed, money(r.depositUsedCents!)),
-                    if (r.paymentStatus != null && r.paymentStatus != ReceiptPaymentStatus.pending && (r.depositReleasedCents ?? 0) > 0)
-                      _Line(l.receiptDepositReleased, money(r.depositReleasedCents!)),
-                    if (r.paymentStatus == ReceiptPaymentStatus.pending && r.amountDueCents != null)
-                      _Line(l.receiptAmountDue, money(r.amountDueCents!), strong: true),
-                    if (_statusBadge(r) case final badge?)
-                      _Line(l.receiptPaymentLabel, '', value: badge),
-                  ]),
-                ),
-                if (r.paymentStatus == ReceiptPaymentStatus.pending) ...[
-                  const SizedBox(height: VoltiSpacing.s10),
-                  NoticeBanner(danger: true, icon: LucideIcons.circleAlert, title: l.paymentPendingTitle, message: l.receiptPendingText(money(r.amountDueCents ?? 0))),
-                  const SizedBox(height: VoltiSpacing.s8),
-                  VoltiButton(
-                    key: const Key('receipt-pay-now'),
-                    label: l.payNow,
-                    icon: LucideIcons.qrCode,
-                    size: VoltiButtonSize.lg,
-                    fullWidth: true,
-                    onPressed: r.paymentId == null ? null : () => _payNow(r),
-                  ),
-                ] else if (r.paymentStatus == ReceiptPaymentStatus.processing) ...[
-                  const SizedBox(height: VoltiSpacing.s10),
-                  NoticeBanner(icon: LucideIcons.clock, message: l.receiptProcessingText),
-                ],
-                const SizedBox(height: VoltiSpacing.s10),
-                Container(
-                  decoration: BoxDecoration(borderRadius: VoltiRadii.rMd, boxShadow: VoltiShadows.shadow1),
-                  child: ListRow(
-                    key: const Key('receipt-invoice'),
-                    icon: LucideIcons.receipt,
-                    iconTone: ListRowTone.brand,
-                    title: l.receiptAndInvoice,
-                    subtitle: _paymentLine(r),
-                    trailing: ListRowTrailing.chevron,
-                    onTap: () => _openPdf(r),
-                  ),
-                ),
-                SectionTitle(l.rateRideTrip),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    for (var i = 1; i <= 5; i++)
-                      IconButton(
-                        tooltip: l.starsLabel(i),
-                        onPressed: _rated
-                            ? null
-                            : () {
-                                VoltiHaptics.selection();
-                                setState(() => _stars = i);
-                              },
-                        icon: i <= _stars
-                            // Estrelas marcadas fazem pop em cascata (50 ms entre elas).
-                            ? VoltiCheckPop(
-                                key: ValueKey('star-$i'),
-                                delay: Duration(milliseconds: (i - 1) * 50),
-                                duration: const Duration(milliseconds: 380),
-                                child: const Icon(Icons.star_rounded, size: 36, color: VoltiColors.sun400),
-                              )
-                            : const Icon(Icons.star_outline_rounded, size: 36, color: VoltiColors.ink300),
+                      if (r.paymentStatus == ReceiptPaymentStatus.pending) ...[
+                        const SizedBox(height: VoltiSpacing.s10),
+                        NoticeBanner(danger: true, icon: LucideIcons.circleAlert, title: l.paymentPendingTitle, message: l.receiptPendingText(money(r.amountDueCents ?? 0))),
+                        const SizedBox(height: VoltiSpacing.s8),
+                        VoltiButton(
+                          key: const Key('receipt-pay-now'),
+                          label: l.payNow,
+                          icon: LucideIcons.qrCode,
+                          size: VoltiButtonSize.lg,
+                          fullWidth: true,
+                          onPressed: r.paymentId == null ? null : () => _payNow(r),
+                        ),
+                      ] else if (r.paymentStatus == ReceiptPaymentStatus.processing) ...[
+                        const SizedBox(height: VoltiSpacing.s10),
+                        NoticeBanner(icon: LucideIcons.clock, message: l.receiptProcessingText),
+                      ],
+                      const SizedBox(height: VoltiSpacing.s10),
+                      Container(
+                        decoration: BoxDecoration(borderRadius: VoltiRadii.rMd, boxShadow: VoltiShadows.shadow1),
+                        child: ListRow(
+                          key: const Key('receipt-invoice'),
+                          icon: LucideIcons.receipt,
+                          iconTone: ListRowTone.brand,
+                          title: l.receiptAndInvoice,
+                          subtitle: _paymentLine(r),
+                          trailing: ListRowTrailing.chevron,
+                          onTap: () => _openPdf(r),
+                        ),
                       ),
-                  ],
-                ),
-                if (_stars > 0 && !_rated) ...[
-                  TextField(
-                    controller: _comment,
-                    maxLength: 500,
-                    maxLines: 2,
-                    minLines: 1,
-                    decoration: InputDecoration(hintText: l.ratingCommentHint, counterText: ''),
-                  ),
-                  const SizedBox(height: VoltiSpacing.s8),
-                  VoltiButton(label: l.sendRating, variant: VoltiButtonVariant.secondary, fullWidth: true, onPressed: _rate),
-                ],
-                if (_rated)
-                  Center(
-                    child: VoltiEnter.pop(
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(LucideIcons.circleCheck, size: 18, color: context.palette.successInk),
-                        const SizedBox(width: 6),
-                        Flexible(child: Text(l.thanksRating, style: VoltiTypography.bodyStrong.copyWith(color: context.palette.successInk))),
-                      ]),
-                    ),
-                  ),
-                const SizedBox(height: VoltiSpacing.s16),
-                VoltiButton(label: l.disputeCharge, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: _dispute),
-              ]),
-            );
-          },
-        ),
+                      SectionTitle(l.rateRideTrip),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          for (var i = 1; i <= 5; i++)
+                            IconButton(
+                              tooltip: l.starsLabel(i),
+                              onPressed: _rated
+                                  ? null
+                                  : () {
+                                      VoltiHaptics.selection();
+                                      setState(() => _stars = i);
+                                    },
+                              icon: i <= _stars
+                                  // Estrelas marcadas fazem pop em cascata (50 ms entre elas).
+                                  ? VoltiCheckPop(
+                                      key: ValueKey('star-$i'),
+                                      delay: Duration(milliseconds: (i - 1) * 50),
+                                      duration: const Duration(milliseconds: 380),
+                                      child: const Icon(Icons.star_rounded, size: 36, color: VoltiColors.sun400),
+                                    )
+                                  : const Icon(Icons.star_outline_rounded, size: 36, color: VoltiColors.ink300),
+                            ),
+                        ],
+                      ),
+                      if (_stars > 0 && !_rated) ...[
+                        TextField(
+                          controller: _comment,
+                          maxLength: 500,
+                          maxLines: 2,
+                          minLines: 1,
+                          decoration: InputDecoration(hintText: l.ratingCommentHint, counterText: ''),
+                        ),
+                        const SizedBox(height: VoltiSpacing.s8),
+                        VoltiButton(label: l.sendRating, variant: VoltiButtonVariant.secondary, fullWidth: true, onPressed: _rate),
+                      ],
+                      if (_rated)
+                        Center(
+                          child: VoltiEnter.pop(
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(LucideIcons.circleCheck, size: 18, color: context.palette.successInk),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(l.thanksRating, style: VoltiTypography.bodyStrong.copyWith(color: context.palette.successInk)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: VoltiSpacing.s16),
+                      VoltiButton(label: l.disputeCharge, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: _dispute),
+                    ]),
+                  );
+                },
+              ),
       ),
     );
   }
@@ -350,13 +383,16 @@ class _Line extends StatelessWidget {
   final Widget? value;
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: Text(a, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body)),
-          const SizedBox(width: VoltiSpacing.s12),
-          value ?? Text(b, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body),
-        ]),
-      );
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: Text(a, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body)),
+        const SizedBox(width: VoltiSpacing.s12),
+        value ?? Text(b, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body),
+      ],
+    ),
+  );
 }
 
 /// Pino redondo de inicio/fim do trajeto no recibo.
@@ -365,6 +401,11 @@ class _TrackPin extends StatelessWidget {
   final Color color;
   @override
   Widget build(BuildContext context) => Container(
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), boxShadow: VoltiShadows.shadow2),
-      );
+    decoration: BoxDecoration(
+      color: color,
+      shape: BoxShape.circle,
+      border: Border.all(color: Colors.white, width: 3),
+      boxShadow: VoltiShadows.shadow2,
+    ),
+  );
 }
