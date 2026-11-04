@@ -22,7 +22,7 @@ import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
-import '../account/account_common.dart' show formatTimeSp;
+import '../account/account_common.dart' show formatTimeOrDateTimeSp, isSameDaySp;
 import '../handover/handover_watch.dart';
 import '../home/depot_providers.dart' show swapStationsProvider;
 import '../station_swap/swap_logic.dart';
@@ -1031,7 +1031,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                     ]),
                   const SizedBox(height: 12),
                   if (phase != null && prepaidUntil != null) ...[
-                    _PrepaidStrip(phase: phase, until: formatTimeSp(prepaidUntil), dueCents: _cost),
+                    _PrepaidStrip(phase: phase, until: prepaidUntil, now: ref.read(clockProvider)(), dueCents: _cost),
                     const SizedBox(height: 12),
                   ],
                   Container(
@@ -1106,25 +1106,28 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
   }
 }
 
-/// Faixa do periodo pre-pago do balcao: "Periodo ate HH:MM"; na ultima hora, o aviso do fim
+/// Faixa do periodo pre-pago do balcao: "Periodo ate HH:MM" (com data se o fim e em outro dia); na ultima hora, o aviso do fim
 /// (mesmo texto do push); depois do fim, o valor a acertar no galpao.
 class _PrepaidStrip extends StatelessWidget {
-  const _PrepaidStrip({required this.phase, required this.until, required this.dueCents});
+  const _PrepaidStrip({required this.phase, required this.until, required this.now, required this.dueCents});
   final PrepaidPhase phase;
-  final String until;
+  final DateTime until, now;
   final int dueCents;
 
   @override
   Widget build(BuildContext context) {
     final l = context.l;
+    // Fim em outro dia (ex.: plano semanal): data + hora, para nao parecer vencido hoje.
+    final sameDay = isSameDaySp(until, now);
+    final label = formatTimeOrDateTimeSp(until, now);
     return switch (phase) {
-      PrepaidPhase.running => NoticeBanner(key: const Key('ride-prepaid-until'), info: true, icon: LucideIcons.calendarClock, message: l.ridePrepaidUntil(until)),
-      PrepaidPhase.ending => NoticeBanner(key: const Key('ride-prepaid-ending'), icon: LucideIcons.clock, message: l.ridePrepaidEnding(until)),
+      PrepaidPhase.running => NoticeBanner(key: const Key('ride-prepaid-until'), info: true, icon: LucideIcons.calendarClock, message: l.ridePrepaidUntil(label)),
+      PrepaidPhase.ending => NoticeBanner(key: const Key('ride-prepaid-ending'), icon: LucideIcons.clock, message: sameDay ? l.ridePrepaidEnding(label) : l.ridePrepaidEndingOn(label)),
       PrepaidPhase.over => NoticeBanner(
           key: const Key('ride-prepaid-over'),
           icon: LucideIcons.warehouse,
           title: l.rideCounterDue(money(dueCents)),
-          message: l.ridePrepaidOver(until),
+          message: sameDay ? l.ridePrepaidOver(label) : l.ridePrepaidOverOn(label),
         ),
     };
   }

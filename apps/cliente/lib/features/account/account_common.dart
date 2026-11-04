@@ -46,6 +46,15 @@ String formatTimeSp(DateTime d) {
   return '${two(x.hour)}:${two(x.minute)}';
 }
 
+/// Dia civil de Sao Paulo de [d] == o de [now]?
+bool isSameDaySp(DateTime d, DateTime now) {
+  final a = toSaoPaulo(d), b = toSaoPaulo(now);
+  return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
+/// "13:46" se [d] cai no mesmo dia (Sao Paulo) de [now]; senao "11/11 13:46".
+String formatTimeOrDateTimeSp(DateTime d, DateTime now) => isSameDaySp(d, now) ? formatTimeSp(d) : formatShortDateTimeSp(d, now);
+
 /// Iniciais do nome para o avatar ("Ana Lima" -> "AL").
 String initialsOf(String? name) {
   final parts = (name ?? '').trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
