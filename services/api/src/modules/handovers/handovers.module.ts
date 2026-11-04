@@ -12,7 +12,7 @@ import { HandoversService } from './handovers.service';
   imports: [PricingModule, RentalsModule, ReservationsModule, SupportModule],
   controllers: [HandoversController],
   providers: [HandoversService, CounterCheckoutService],
-  // Usado pela entrega simulada (`TestHandoverModule`, só com ALLOW_TEST_HANDOVER=true).
-  exports: [HandoversService],
+  // Usados pela entrega simulada (`TestHandoverModule`, só com ALLOW_TEST_HANDOVER=true).
+  exports: [HandoversService, CounterCheckoutService],
 })
 export class HandoversModule {}

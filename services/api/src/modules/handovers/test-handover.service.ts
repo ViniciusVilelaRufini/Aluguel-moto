@@ -3,6 +3,7 @@ import { conflict, notFound } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { Principal } from '../auth/principal';
 import { PICKUP_CODE_SECRET, signPickupCode } from '../reservations/pickup-code';
+import { CounterCheckoutService } from './counter-checkout.service';
 import { HandoversService } from './handovers.service';
 
 /**
@@ -23,9 +24,11 @@ const TEST_HANDOVER_ACTOR: Principal = {
 const reservationNotFound = () => notFound('Reserva não encontrada.');
 
 /**
- * Entrega simulada para o app de teste (`ALLOW_TEST_HANDOVER=true`): faz o papel do operador do galpão na saída. Assina o
- * código de retirada da própria reserva e delega ao `HandoversService.createPickup` (mesmas verificações: código, status da
- * reserva e da moto, uma entrega aberta por reserva). O aceite do cliente segue o caminho normal. Logs só com ids.
+ * Entrega simulada para o app de teste (`ALLOW_TEST_HANDOVER=true`): faz o papel do operador do galpão na saída e do
+ * atendente no balcão. Assina o código de retirada da própria reserva e delega ao `HandoversService.createPickup` (mesmas
+ * verificações: código, status da reserva e da moto, uma entrega aberta por reserva); depois simula o balcão pelo
+ * `CounterCheckoutService.checkout` (diária, seguro básico, dinheiro com referência `teste`, sem fotos do contrato), que
+ * inicia o aluguel pelo caminho único. Logs só com ids.
  */
 @Injectable()
 export class TestHandoverService {
@@ -34,6 +37,7 @@ export class TestHandoverService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly handovers: HandoversService,
+    private readonly counter: CounterCheckoutService,
     @Inject(PICKUP_CODE_SECRET) private readonly pickupSecret: string,
   ) {}
 
@@ -52,7 +56,16 @@ export class TestHandoverService {
       photoKeys: [],
       batteryPct: r.vehicle?.batteryPct ?? 100,
     });
-    this.logger.log({ msg: 'handover_test_created', handoverId: result.body.id, reservationId: r.id, depotId: r.depotId, testHandover: true });
-    return result.body;
+    const handoverId = result.body.id;
+    this.logger.log({ msg: 'handover_test_created', handoverId, reservationId: r.id, depotId: r.depotId, testHandover: true });
+
+    const quote = await this.counter.quote(handoverId, { planCode: 'day', coverage: 'basic', quantity: 1 });
+    await this.counter.checkout(
+      TEST_HANDOVER_ACTOR,
+      handoverId,
+      { planCode: 'day', quantity: 1, coverage: 'basic', contractPhotoKeys: [], payment: { method: 'cash', amountCents: quote.totalCents, reference: 'teste' } },
+      { test: true },
+    );
+    return this.handovers.get(customer, handoverId);
   }
 }

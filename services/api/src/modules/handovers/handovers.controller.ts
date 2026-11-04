@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Res
 import type { Response } from 'express';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, CustomerOnly, CustomerOrStaff, Principal, StaffOnly } from '../auth/principal';
-import { CounterQuoteQuery } from './counter-checkout.dto';
+import { CounterCheckoutDto, CounterQuoteQuery } from './counter-checkout.dto';
 import { CounterCheckoutService } from './counter-checkout.service';
 import { HandoverCancelDto, HandoverCreateDto, HandoverDisputeDto, HandoverUploadDto, ListHandoversQuery } from './handovers.dto';
 import { HandoversService } from './handovers.service';
@@ -47,6 +47,14 @@ export class HandoversController {
   @StaffOnly('admin', 'operacao', 'campo')
   counterQuote(@Param('id', ParseUUIDPipe) id: string, @Query() q: CounterQuoteQuery) {
     return this.counter.quote(id, q);
+  }
+
+  /** counterCheckoutHandover — contrato e pagamento no balcão: inicia o aluguel (201; entrega já aceita → o mesmo aluguel). */
+  @Post(':id/counter-checkout')
+  @StaffOnly('admin', 'operacao', 'campo')
+  @Idempotent({ required: true })
+  counterCheckout(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CounterCheckoutDto, @CurrentUser() user: Principal) {
+    return this.counter.checkout(user, id, dto);
   }
 
   /** acceptHandover — apps beta12: sempre `409 handover-counter-checkout` (o aluguel começa no balcão); outro cliente → 404. */

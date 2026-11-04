@@ -29,7 +29,7 @@ const PHOTO_URL_TTL_SECONDS = 24 * 60 * 60;
  * Trava do aceite por entrega (o cancelamento pela operação a respeita). Fica para o início do aluguel no balcão
  * (`counter-checkout`), que usa a mesma trava.
  */
-const ACCEPT_LOCK_SCOPE = 'handover-accept';
+export const ACCEPT_LOCK_SCOPE = 'handover-accept';
 
 type HandoverRow = Handover & { vehicle?: Pick<Vehicle, 'code'> | null };
 
@@ -369,7 +369,6 @@ export class HandoversService {
     return false;
   }
 
-  /** start() desta entrega ainda no meio (moto reivindicada com a caução da reserva, marcador `RentalStart` presente). */
   // ───────────────────────── leitura ─────────────────────────
 
   /** Cliente: só a entrega da própria reserva ou do próprio aluguel (senão 404). Staff: qualquer uma. */
