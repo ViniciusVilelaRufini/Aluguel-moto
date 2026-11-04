@@ -195,3 +195,26 @@ test('Acertar no balcão: suporte não vê a ação', async ({ page }) => {
   await expect(page.getByTestId('force-end')).toHaveCount(0); // rent-002 encerrado
   await expect(page.getByTestId('rental-counter-settle')).toHaveCount(0);
 });
+
+test('Acertar no balcão: o botão só aparece quando há algo a acertar', async ({ page }) => {
+  const mock = await loginMocked(page, { group: 'admin' });
+  mock.db.counter.debts = [];
+  mock.db.counter.deposits = [];
+  await page.goto('/customers?tab=rentals&rental=rent-002');
+  await expect(page.getByTestId('rental-detail')).toBeVisible();
+  await expect.poll(() => mock.calls.filter((c) => c.path.endsWith('/counter-balance')).length).toBeGreaterThan(0);
+  await expect(page.getByTestId('rental-counter-settle')).toHaveCount(0);
+});
+
+test('Acertar no balcão: resposta perdida com o débito quitado por inteiro avisa "Acerto registrado"', async ({ page }) => {
+  const mock = await loginMocked(page, { group: 'admin' });
+  mock.db.counter.failAfterApplyOnce = true;
+  await page.goto('/customers?tab=rentals&rental=rent-002');
+  await page.getByTestId('rental-counter-settle').click();
+  await page.getByTestId('counter-debt-receive').click();
+  await expect(page.getByTestId('counter-action-amount')).toHaveValue('60,00');
+  await page.getByTestId('counter-action-confirm').click();
+  await expect(page.getByTestId('counter-settle-notice')).toContainText('Acerto registrado');
+  await expect(page.getByTestId('counter-settle-error')).toHaveCount(0);
+  await expect(page.getByTestId('counter-settle-dialog')).toContainText('Nenhum valor a acertar');
+});

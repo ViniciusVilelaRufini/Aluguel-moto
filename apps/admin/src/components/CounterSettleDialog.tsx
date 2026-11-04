@@ -7,7 +7,7 @@ import { formatBRL } from '@/lib/format';
 import { toReais } from '@/lib/money';
 import { DEPOSIT_METHOD, PAYMENT_KIND, PAYMENT_METHOD } from '@/lib/labels';
 import { useSubmitGuard } from '@/lib/submit-guard';
-import { COUNTER_METHODS, COUNTER_METHOD_LABEL, isRentalOpen, reaisToCents, type CounterMethod } from '@/lib/counter';
+import { COUNTER_METHODS, COUNTER_METHOD_LABEL, counterKeys, isRentalOpen, reaisToCents, type CounterMethod } from '@/lib/counter';
 import type { S } from '@/lib/types';
 import { ErrorNote, Field, Modal, PanelSkeleton, SectionTitle, Select, TextInput, useToast } from './ui';
 import { Alert } from '@/ds/Alert';
@@ -22,14 +22,29 @@ type Action = { kind: 'receive' | 'deduct'; paymentId: string } | { kind: 'refun
 /**
  * `Idempotency-Key` estável pelos dados da ação (tipo, alvo, valor, método/caução, referência), e não por abertura:
  * resposta perdida (timeout/5xx depois do registro) seguida de cancelar e reabrir com os mesmos dados reusa a chave,
- * e a API devolve o que já registrou em vez de quitar de novo. Sai do mapa só quando a ação dá certo. Fica no módulo
- * para sobreviver a fechar e reabrir o diálogo.
+ * e a API devolve o que já registrou em vez de quitar de novo. Sai do mapa só quando a ação dá certo ou expira
+ * (24 h, em `counterKeys`).
  */
-const ACTION_KEYS = new Map<string, string>();
-function actionKey(signature: string): string {
-  let k = ACTION_KEYS.get(signature);
-  if (!k) { k = crypto.randomUUID(); ACTION_KEYS.set(signature, k); }
-  return k;
+const actionKey = (signature: string) => counterKeys.keyFor(signature);
+
+/** Consulta do saldo, compartilhada entre o botão "Acertar no balcão" e o diálogo (mesma chave de cache). */
+function counterBalanceQuery(rentalId: string) {
+  return {
+    queryKey: ['counter-balance', rentalId],
+    queryFn: () => unwrap(api.GET('/rentals/{id}/counter-balance', { params: { path: { id: rentalId } } })),
+  };
+}
+
+/**
+ * Botão "Acertar no balcão": o contrato não diz quais alugueis podem ter débito de balcão (as dívidas e cauções são do
+ * cliente), então busca o saldo e só aparece quando há algo a acertar (dívida ou caução a devolver). Carregando ou
+ * com erro, não aparece.
+ */
+export function CounterSettleButton({ rentalId, testId, onClick }: { rentalId: string; testId: string; onClick: () => void }) {
+  const q = useQuery(counterBalanceQuery(rentalId));
+  const d = q.data;
+  if (!d || (d.debtTotalCents <= 0 && d.deposits.length === 0)) return null;
+  return <Button size="sm" variant="secondary" icon="Wallet" testId={testId} style={{ alignSelf: 'flex-start' }} onClick={onClick}>Acertar no balcão</Button>;
 }
 
 const row = { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' as const, padding: '10px 0', borderBottom: '1px solid var(--ink-100)' };
@@ -50,11 +65,11 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
   const [reference, setReference] = useState('');
   const [fieldError, setFieldError] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   // Sempre do servidor ao abrir (sem o staleTime padrão): o valor sugerido nunca vem de um saldo antigo.
   const balance = useQuery({
-    queryKey: ['counter-balance', rentalId],
-    queryFn: () => unwrap(api.GET('/rentals/{id}/counter-balance', { params: { path: { id: rentalId } } })),
+    ...counterBalanceQuery(rentalId),
     staleTime: 0,
     refetchOnMount: 'always',
   });
@@ -82,6 +97,7 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
     setReference('');
     setFieldError(undefined);
     setError(null);
+    setNotice(null);
   };
 
   const limit = (): { cents: number; text: string } => {
@@ -115,10 +131,21 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
         toast(action.kind === 'deduct' ? 'Valor abatido da caução' : 'Pagamento registrado');
         qc.invalidateQueries({ queryKey: ['payments'] });
       }
-      ACTION_KEYS.delete(signature);
+      counterKeys.clear(signature);
       setAction(null);
     } catch (e) {
-      setError(errorText(e));
+      // Resposta perdida: lê o saldo do servidor. Se o alvo da ação já não está lá, o acerto foi registrado por inteiro.
+      const fresh = await balance.refetch().then((r) => r.data, () => undefined);
+      const settled = fresh && (action.kind === 'refund'
+        ? !fresh.deposits.some((d) => d.depositId === action.depositId)
+        : !fresh.debts.some((d) => d.paymentId === action.paymentId));
+      if (settled) {
+        counterKeys.clear(signature);
+        setAction(null);
+        setNotice(action.kind === 'refund' ? 'Devolução registrada. A caução já estava devolvida por inteiro; confira o saldo.' : 'Acerto registrado. O valor já estava quitado por inteiro; confira o saldo.');
+      } else {
+        setError(errorText(e));
+      }
     } finally {
       // Também no erro: a resposta pode ter se perdido depois do registro; o saldo mostrado tem de ser o do servidor.
       reload();
@@ -138,6 +165,7 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
           <Button size="sm" variant="secondary" icon="RefreshCw" testId="counter-settle-refresh" disabled={balance.isFetching} onClick={() => balance.refetch()}>Atualizar</Button>
         </div>
       )}
+      {notice && <Alert tone="success" testId="counter-settle-notice">{notice}</Alert>}
       {b && !waiting && (
         <>
           {b.customerFirstName && <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Cliente: <strong style={{ color: 'var(--text-primary)' }}>{b.customerFirstName}</strong></div>}

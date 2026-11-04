@@ -10,8 +10,7 @@ import { HANDOVER_STATUS, HANDOVER_STATUSES, HANDOVER_TYPE_LABEL, supportHref, t
 import type { S } from '@/lib/types';
 import { HandoverDetail, HandoverTable } from '@/components/depots/HandoverViews';
 import { CancelHandoverDialog } from '@/components/CancelHandoverDialog';
-import { CounterSettleDialog } from '@/components/CounterSettleDialog';
-import { Button } from '@/ds/Button';
+import { CounterSettleButton, CounterSettleDialog } from '@/components/CounterSettleDialog';
 import { ErrorNote, Page, PageHeader, PanelSkeleton, Select, SidePanel, usePagedQuery } from '@/components/ui';
 import { SegmentedControl } from '@/ds/SegmentedControl';
 
@@ -84,7 +83,7 @@ export default function HandoversPage() {
               <HandoverDetail handover={shown} photosLoading={detail.isLoading} supportHref={supportHref(groups)} rentalHref={shown.rentalId ? rentalHref(groups, shown.rentalId) : null}
                 onCancel={can(groups, 'handover.cancel') && canCancelHandover(shown) ? () => setCanceling(shown) : undefined} />
               {shown.rentalId && can(groups, 'counter.settle') && (
-                <Button size="sm" variant="secondary" icon="Wallet" testId="handover-counter-settle" style={{ alignSelf: 'flex-start' }} onClick={() => setSettling(shown.rentalId!)}>Acertar no balcão</Button>
+                <CounterSettleButton rentalId={shown.rentalId} testId="handover-counter-settle" onClick={() => setSettling(shown.rentalId!)} />
               )}
             </>
           ) : (

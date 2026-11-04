@@ -7,7 +7,7 @@ import { formatBRL } from '@/lib/format';
 import { useSubmitGuard } from '@/lib/submit-guard';
 import {
   COUNTER_METHODS, COUNTER_METHOD_LABEL, COUNTER_PLANS, COUNTER_PLAN_LABEL, COUNTER_QUANTITY_MAX, MAX_CONTRACT_PHOTOS,
-  checkoutErrorMessage, clampQuantity, reaisToCents, uploadContractPhoto, type CounterMethod, type CounterPlan,
+  checkoutErrorMessage, clampQuantity, counterKeys, reaisToCents, uploadContractPhoto, type CounterMethod, type CounterPlan,
 } from '@/lib/counter';
 import type { S } from '@/lib/types';
 import { Field, KV, Modal, Select, Skeleton, TextInput, useToast } from './ui';
@@ -58,13 +58,9 @@ export function CounterCheckoutDialog({ handoverId, onClose }: { handoverId: str
     payment: { method, amountCents: q.totalCents, ...(reference.trim() ? { reference: reference.trim() } : {}) },
     ...(depositCents > 0 ? { deposit: { method: depositMethod, amountCents: depositCents } } : {}),
   } : null;
-  // Uma Idempotency-Key por tentativa: a mesma enquanto os dados não mudam (toque duplo, nova tentativa), nova depois.
-  const signature = body ? JSON.stringify(body) : '';
-  const keyRef = useRef<{ signature: string; key: string } | null>(null);
-  const keyFor = (sig: string) => {
-    if (keyRef.current?.signature !== sig) keyRef.current = { signature: sig, key: crypto.randomUUID() };
-    return keyRef.current.key;
-  };
+  // Idempotency-Key por (entrega, conteúdo), no módulo: nova tentativa ou fechar e reabrir o diálogo depois de uma
+  // falha de rede reusa a chave (a API devolve o já registrado). Sai só quando dá certo ou passa de 24 h.
+  const signature = body ? JSON.stringify([handoverId, body]) : '';
 
   const max = COUNTER_QUANTITY_MAX[plan];
   const changePlan = (p: CounterPlan) => { setPlan(p); setQuantity((n) => clampQuantity(p, n)); setError(null); };
@@ -91,7 +87,8 @@ export function CounterCheckoutDialog({ handoverId, onClose }: { handoverId: str
     if (!body) return;
     setError(null);
     try {
-      await unwrap(api.POST('/handovers/{id}/counter-checkout', { params: { path: { id: handoverId }, header: { 'Idempotency-Key': keyFor(signature) } }, body }));
+      await unwrap(api.POST('/handovers/{id}/counter-checkout', { params: { path: { id: handoverId }, header: { 'Idempotency-Key': counterKeys.keyFor(signature) } }, body }));
+      counterKeys.clear(signature);
       toast('Aluguel iniciado — moto liberada');
       qc.invalidateQueries({ queryKey: ['depot-pickups'] });
       qc.invalidateQueries({ queryKey: ['handovers'] });
