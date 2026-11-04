@@ -3312,8 +3312,9 @@ export interface paths {
         /**
          * Arquivos da verificação (documento e selfie)
          * @description Links de leitura pré-assinados (curtos, 5 minutos) dos arquivos que o cliente enviou na verificação, para a revisão manual.
-         *     Cada consulta grava AuditLog (`customer.kyc_files_view`). As chaves dos objetos nunca são devolvidas nem registradas em
-         *     log (LGPD). Arquivo não enviado → campo ausente.
+         *     Cada consulta grava AuditLog (`customer.kyc_files_view`) com quais arquivos, sem as chaves e sem os links; nada disso vai
+         *     para log (LGPD). O link pré-assinado contém o caminho do objeto (`kyc/{customerId}/...`: só o UUID do cliente, sem dado
+         *     pessoal). Arquivo não enviado → campo ausente.
          */
         get: operations["getCustomerKycFiles"];
         put?: never;

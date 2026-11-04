@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Map as MlMap, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
@@ -42,6 +42,8 @@ export function MapView({ onReady, onDestroy, center = SP_CENTER, zoom = 13.5, c
 }) {
   const el = useRef<HTMLDivElement>(null);
   const cb = useRef({ onReady, onDestroy });
+  // Revisão (item 6): os tiles levam alguns segundos; até o 'load', um aviso no lugar do mapa em branco.
+  const [loaded, setLoaded] = useState(false);
   cb.current = { onReady, onDestroy };
 
   useEffect(() => {
@@ -53,7 +55,11 @@ export function MapView({ onReady, onDestroy, center = SP_CENTER, zoom = 13.5, c
       map = new ml.Map({ container: el.current, style: baseStyle(), center, zoom, attributionControl: { compact: true } });
       map.addControl(new ml.NavigationControl({ showCompass: false }), 'bottom-right');
       window.__voltiMap = map;
-      map.on('load', () => map && !cancelled && cb.current.onReady(map));
+      map.on('load', () => {
+        if (!map || cancelled) return;
+        setLoaded(true);
+        cb.current.onReady(map);
+      });
     })();
     return () => {
       cancelled = true;
@@ -65,5 +71,16 @@ export function MapView({ onReady, onDestroy, center = SP_CENTER, zoom = 13.5, c
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <div ref={el} className={className} style={{ position: 'absolute', inset: 0 }} data-testid="map" />;
+  return (
+    <>
+      <div ref={el} className={className} style={{ position: 'absolute', inset: 0 }} data-testid="map" />
+      {!loaded && (
+        // Só visual: os KPIs e filtros por cima continuam clicáveis (pointer-events: none).
+        <div data-testid="map-loading" role="status" aria-live="polite" className="skeleton"
+          style={{ position: 'absolute', inset: 0, pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 0, background: 'var(--surface-sunken)', color: 'var(--text-secondary)', font: 'var(--type-caption)', fontWeight: 600 }}>
+          Carregando mapa…
+        </div>
+      )}
+    </>
+  );
 }

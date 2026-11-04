@@ -79,3 +79,13 @@ describe('StatTile (P2-4)', () => {
     expect(renderToStaticMarkup(<StatTile label="Alertas pendentes" numeric={null} />)).toContain('—');
   });
 });
+
+describe('MapView (revisão, item 6)', () => {
+  it('até o "load" do mapa mostra "Carregando mapa…" sem bloquear cliques', async () => {
+    const { MapView } = await import('@/components/MapView');
+    const html = renderToStaticMarkup(<MapView onReady={() => {}} />);
+    expect(html).toContain('data-testid="map-loading"');
+    expect(html).toContain('Carregando mapa…');
+    expect(html).toMatch(/data-testid="map-loading"[^>]*pointer-events:none|pointer-events:none[^>]*data-testid="map-loading"/);
+  });
+});

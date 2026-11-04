@@ -127,7 +127,7 @@ class KycApi {
   }
 
   /// Arquivos da verificação (documento e selfie)
-  /// Links de leitura pré-assinados (curtos, 5 minutos) dos arquivos que o cliente enviou na verificação, para a revisão manual. Cada consulta grava AuditLog (&#x60;customer.kyc_files_view&#x60;). As chaves dos objetos nunca são devolvidas nem registradas em log (LGPD). Arquivo não enviado → campo ausente.
+  /// Links de leitura pré-assinados (curtos, 5 minutos) dos arquivos que o cliente enviou na verificação, para a revisão manual. Cada consulta grava AuditLog (&#x60;customer.kyc_files_view&#x60;) com quais arquivos, sem as chaves e sem os links; nada disso vai para log (LGPD). O link pré-assinado contém o caminho do objeto (&#x60;kyc/{customerId}/...&#x60;: só o UUID do cliente, sem dado pessoal). Arquivo não enviado → campo ausente.
   ///
   /// Parameters:
   /// * [id]
