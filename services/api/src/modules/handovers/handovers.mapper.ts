@@ -23,7 +23,7 @@ export interface HandoverCancelInfo {
 /** Prisma → `Handover` do contrato. `photoUrls` (assinados) na mesma ordem de `photoKeys`. */
 export function toHandover(
   h: Handover & { vehicle?: Pick<Vehicle, 'code'> | null },
-  extras: { operatorFirstName?: string; photoUrls?: string[]; cancel?: HandoverCancelInfo } = {},
+  extras: { operatorFirstName?: string; photoUrls?: string[]; cancel?: HandoverCancelInfo; staff?: boolean } = {},
 ) {
   return compact({
     id: h.id,
@@ -38,6 +38,8 @@ export function toHandover(
     checklist: ((h.checklist ?? []) as unknown as ChecklistItem[]).map((i) => compact({ code: i.code, ok: i.ok, note: i.note })),
     photoKeys: h.photoKeys,
     photoUrls: extras.photoUrls,
+    // Fotos do contrato assinado: só a equipe vê (dado pessoal do cliente).
+    contractPhotoKeys: extras.staff && h.contractPhotoKeys?.length ? h.contractPhotoKeys : undefined,
     batteryPct: h.batteryPct,
     batterySerial: h.batterySerial ?? undefined,
     status: h.status,

@@ -74,8 +74,9 @@ export class HandoversService {
     }
   }
 
-  uploadUrl(contentType: string) {
-    return presignedUpload(this.storage, this.cfg.buckets.returnPhotos, 'handovers', contentType);
+  /** `contract`: foto do contrato assinado no balcão (prefixo `contracts/`, mesmo bucket das fotos da entrega). */
+  uploadUrl(contentType: string, purpose: 'photo' | 'contract' = 'photo') {
+    return presignedUpload(this.storage, this.cfg.buckets.returnPhotos, purpose === 'contract' ? 'contracts' : 'handovers', contentType);
   }
 
   create(operator: Principal, dto: HandoverCreateDto): Promise<CreateResult> {
@@ -126,7 +127,7 @@ export class HandoversService {
     }
     this.events.emit(EV.HANDOVER_PENDING, { handoverId: created.id, reservationId: r.id, customerId: r.customerId, depotId: r.depotId } satisfies HandoverPendingEvent);
     this.logger.log({ msg: 'handover_created', handoverId: created.id, type: 'pickup', reservationId: r.id, depotId: r.depotId });
-    return { status: 201, body: await this.view(created) };
+    return { status: 201, body: await this.view(created, undefined, undefined, true) };
   }
 
   /**
@@ -156,7 +157,7 @@ export class HandoversService {
           vehicleId: h.vehicleId,
           planCode: r.planCode!,
           coverage: r.coverage!,
-          depositMethod: r.depositMethod ?? deposit.method,
+          depositMethod: (r.depositMethod ?? deposit.method) === 'pix' ? 'pix' : 'card',
           cardId: r.cardId ?? undefined,
           couponCode: r.couponCode ?? undefined,
           depositId: deposit.id,
@@ -317,7 +318,7 @@ export class HandoversService {
       completed = true;
     }
     if (completed) this.emitUpdated({ handoverId: h.id, status: 'accepted', customerId: rental?.customerId, depotId: h.depotId });
-    return this.view(h);
+    return this.view(h, undefined, undefined, true);
   }
 
   /** Repetição/offline: `free` (ou `maintenance` com item problemático) + `depotId`, sem passar por `free` sem galpão. */
@@ -404,7 +405,7 @@ export class HandoversService {
       await this.locks.abort(ACCEPT_LOCK_SCOPE, id).catch(() => undefined);
     }
     const updated = await this.prisma.handover.findUniqueOrThrow({ where: { id }, include: { vehicle: { select: { code: true } } } });
-    return this.view(updated, undefined, await this.cancelInfo([updated]));
+    return this.view(updated, undefined, await this.cancelInfo([updated]), true);
   }
 
   /** Conversa de suporte da disputa: uma nova tentativa; o log leva só o nome/código do erro (sem a mensagem). */
@@ -438,7 +439,7 @@ export class HandoversService {
       if (!owner && h.rentalId) owner = (await this.prisma.rental.findUnique({ where: { id: h.rentalId }, select: { customerId: true } }))?.customerId;
       if (!owner || owner !== user.customerId) throw handoverNotFound();
     }
-    return this.view(h, undefined, isStaff(user) ? await this.cancelInfo([h]) : undefined);
+    return this.view(h, undefined, isStaff(user) ? await this.cancelInfo([h]) : undefined, isStaff(user));
   }
 
   /** QA-23: entregas canceladas → motivo e autor gravados no AuditLog do cancelamento (só staff). */
@@ -468,7 +469,7 @@ export class HandoversService {
     const page = toPage(rows, q, (r) => r);
     const names = await this.operatorNames(page.items.map((r) => r.operatorId));
     const canceled = await this.cancelInfo(page.items);
-    return { ...page, items: await Promise.all(page.items.map((r) => this.view(r, names, canceled))) };
+    return { ...page, items: await Promise.all(page.items.map((r) => this.view(r, names, canceled, true))) };
   }
 
   private async operatorNames(ids: string[]): Promise<Map<string, string | undefined>> {
@@ -478,13 +479,13 @@ export class HandoversService {
     return new Map(staff.map((s) => [s.id, staffFirstName(s.name)]));
   }
 
-  private async view(h: HandoverRow, names?: Map<string, string | undefined>, canceled?: Map<string, HandoverCancelInfo>) {
+  private async view(h: HandoverRow, names?: Map<string, string | undefined>, canceled?: Map<string, HandoverCancelInfo>, staff = false) {
     // Task 30 (item 38): primeiro nome cadastrado ou "Equipe Volti" (nunca o e-mail).
     const operatorFirstName = (names ? names.get(h.operatorId) : (await this.operatorNames([h.operatorId])).get(h.operatorId)) ?? STAFF_FALLBACK_NAME;
     const photoUrls = await Promise.all(
       h.photoKeys.map(async (key) => (await this.storage.presignGet({ bucket: this.cfg.buckets.returnPhotos, key, expiresInSeconds: PHOTO_URL_TTL_SECONDS })).url),
     );
-    return toHandover(h, { operatorFirstName, photoUrls, cancel: canceled?.get(h.id) });
+    return toHandover(h, { operatorFirstName, photoUrls, cancel: canceled?.get(h.id), staff });
   }
 
   private async rentalOf(rentalId: string) {

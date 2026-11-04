@@ -7,6 +7,8 @@ import { nextCharge, pausePolicy, pausesRemaining } from './subscription-rules';
 export interface PaymentExtras {
   customerName?: string;
   outstandingCents?: number;
+  /** Leitor é da equipe: libera `recordedBy` (atendente do balcão). */
+  staff?: boolean;
 }
 
 /** `receiptUrl`: link assinado gerado na leitura (QA-11); o valor gravado em `Payment.receiptUrl` é legado e ignorado. */
@@ -25,6 +27,8 @@ export function toPayment(p: Payment, receiptUrl?: string, extras: PaymentExtras
     cardLast4: p.cardLast4 ?? undefined,
     failureReason: p.failureReason ?? undefined,
     providerPaymentId: p.providerPaymentId ?? undefined,
+    reference: p.reference ?? undefined,
+    recordedBy: extras.staff ? (p.recordedById ?? undefined) : undefined,
     receiptUrl,
     customerName: extras.customerName,
     outstandingCents: extras.outstandingCents,

@@ -133,6 +133,9 @@ enum ReservationStatus {
 enum DepositMethod {
   card
   pix
+  counter_card
+  counter_pix
+  cash
 }
 
 enum DepositStatus {
@@ -204,6 +207,9 @@ enum PaymentMethod {
   card
   pix
   wallet
+  counter_card
+  counter_pix
+  cash
 }
 
 enum TopUpStatus {
@@ -845,6 +851,10 @@ model Rental {
   startLat               Float?
   startLng               Float?
   wellbeingCheckDueAt    DateTime?
+  /// Balcão: fim do período pré-pago (startedAt + quantidade × unidade); null fora do balcão.
+  prepaidUntil           DateTime?
+  /// Balcão: aviso de 1 h antes do fim do período já enviado.
+  prepaidReminderSentAt  DateTime?
   createdAt              DateTime          @default(now())
   updatedAt              DateTime          @updatedAt
 
@@ -857,6 +867,7 @@ model Rental {
   @@index([depositId])
   @@index([endedAt])
   @@index([startedAt])
+  @@index([prepaidUntil])
 }
 
 model RentalEvent {
@@ -908,6 +919,10 @@ model Deposit {
   status            DepositStatus
   amountCents       Int
   capturedCents     Int?
+  /// Balcão: parte da caução já devolvida em dinheiro/maquininha/Pix (disponível = amountCents − capturedCents − refundedCents).
+  refundedCents     Int           @default(0)
+  /// Balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix).
+  reference         String?
   cardId            String?       @db.Uuid
   idempotencyKey    String?       @unique
   providerReference String?
@@ -936,6 +951,10 @@ model Payment {
   cardLast4         String?
   failureReason     String?
   providerPaymentId String?
+  /// Balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix).
+  reference         String?
+  /// Balcão: StaffUser.id do atendente que registrou o pagamento (sem FK, como `Handover.operatorId`).
+  recordedById      String?       @db.Uuid
   receiptUrl        String?
   idempotencyKey    String?       @unique
   /// Dívida (pagamento `failed` de aluguel/assinatura) quitada: pelo cliente (`payment`) ou pelo financeiro (`manual`).
@@ -1650,6 +1669,8 @@ model Handover {
   checklist     Json
   /// Chaves S3 com prefixo `handovers/`.
   photoKeys     String[]
+  /// Balcão: fotos do contrato assinado, prefixo `contracts/` (só staff vê).
+  contractPhotoKeys String[] @default([])
   batteryPct    Int
   batterySerial String?
   disputeReason String?

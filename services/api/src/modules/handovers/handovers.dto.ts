@@ -4,6 +4,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { PageQuery } from '../../common/pagination';
+import { UPLOAD_CONTENT_TYPES, type UploadContentType } from '../rentals/rentals.dto';
 
 export const HANDOVER_TYPES = ['pickup', 'return_depot'] as const;
 export type HandoverTypeValue = (typeof HANDOVER_TYPES)[number];
@@ -12,6 +13,10 @@ export type HandoverStatusValue = (typeof HANDOVER_STATUSES)[number];
 
 /** Chave devolvida por `POST /handovers/uploads` (`handovers/<uuid>.<ext>`); sem `..`. */
 export const HANDOVER_PHOTO_KEY = /^handovers\/(?!.*\.\.)[\w./-]+$/;
+/** Chave das fotos do contrato do balcão devolvida por `POST /handovers/uploads` com `purpose: contract` (`contracts/<uuid>.<ext>`); sem `..`. */
+export const HANDOVER_CONTRACT_KEY = /^contracts\/(?!.*\.\.)[\w./-]+$/;
+export const HANDOVER_UPLOAD_PURPOSES = ['photo', 'contract'] as const;
+export type HandoverUploadPurpose = (typeof HANDOVER_UPLOAD_PURPOSES)[number];
 
 export class HandoverChecklistItemDto {
   @IsString() @MinLength(1) @MaxLength(40) code: string;
@@ -54,6 +59,11 @@ export class HandoverCreateDto {
   @IsInt() @Min(0) @Max(100) batteryPct: number;
 
   @IsOptional() @IsString() @MaxLength(64) batterySerial?: string;
+}
+
+export class HandoverUploadDto {
+  @IsIn(UPLOAD_CONTENT_TYPES) contentType: UploadContentType;
+  @IsOptional() @IsIn(HANDOVER_UPLOAD_PURPOSES) purpose?: HandoverUploadPurpose;
 }
 
 export class HandoverDisputeDto {

@@ -67,6 +67,22 @@ function setup() {
 const pickupBody = (code: string, over: Record<string, unknown> = {}) =>
   ({ type: 'pickup', pickupCode: code, checklist: [{ code: 'freios', ok: true }], photoKeys: ['handovers/a.jpg'], batteryPct: 98, ...over }) as any;
 
+describe('HandoversService — upload', () => {
+  it('upload de contrato usa o prefixo contracts/', async () => {
+    const { svc, storage } = setup();
+    storage.presignPut.mockResolvedValue({ key: 'contracts/x.jpg', url: 'https://s3/put', expiresAt: '' });
+    await svc.uploadUrl('image/jpeg', 'contract');
+    expect(storage.presignPut).toHaveBeenCalledWith(expect.objectContaining({ bucket: 'fotos-devolucao', key: expect.stringMatching(/^contracts\//) }));
+  });
+
+  it('upload padrão continua em handovers/', async () => {
+    const { svc, storage } = setup();
+    storage.presignPut.mockResolvedValue({ key: 'handovers/x.jpg', url: 'https://s3/put', expiresAt: '' });
+    await svc.uploadUrl('image/jpeg');
+    expect(storage.presignPut).toHaveBeenCalledWith(expect.objectContaining({ key: expect.stringMatching(/^handovers\//) }));
+  });
+});
+
 describe('HandoversService — saída (pickup)', () => {
   const validCode = () => signPickupCode(RES_ID, new Date(Date.now() + 3600_000), SECRET);
 

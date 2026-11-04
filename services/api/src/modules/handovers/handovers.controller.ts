@@ -2,8 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Res
 import type { Response } from 'express';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, CustomerOnly, CustomerOrStaff, Principal, StaffOnly } from '../auth/principal';
-import { UploadRequestDto } from '../rentals/rentals.dto';
-import { HandoverCancelDto, HandoverCreateDto, HandoverDisputeDto, ListHandoversQuery } from './handovers.dto';
+import { HandoverCancelDto, HandoverCreateDto, HandoverDisputeDto, HandoverUploadDto, ListHandoversQuery } from './handovers.dto';
 import { HandoversService } from './handovers.service';
 
 /** Entrega formal no galpão (saída com aceite do cliente e chegada). Rotas literais antes de `/:id`. */
@@ -28,8 +27,8 @@ export class HandoversController {
 
   @Post('uploads')
   @StaffOnly('admin', 'operacao', 'campo')
-  upload(@Body() dto: UploadRequestDto) {
-    return this.handovers.uploadUrl(dto.contentType);
+  upload(@Body() dto: HandoverUploadDto) {
+    return this.handovers.uploadUrl(dto.contentType, dto.purpose);
   }
 
   @Get(':id')

@@ -59,7 +59,7 @@ export class PaymentsService {
       const customers = await this.prisma.customer.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.customerId))] } }, select: { id: true, name: true } });
       for (const c of customers) if (c.name) names.set(c.id, c.name);
     }
-    return new Map(rows.map((r) => [r.id, { customerName: names.get(r.customerId), outstandingCents: outstanding.get(r.id) }]));
+    return new Map(rows.map((r) => [r.id, { customerName: names.get(r.customerId), outstandingCents: outstanding.get(r.id), staff: isStaff(user) }]));
   }
 
   // ── cartões (só token do gateway) ──

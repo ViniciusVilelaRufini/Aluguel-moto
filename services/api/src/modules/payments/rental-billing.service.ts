@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
-import type { Deposit, Payment, Prisma, SettlementProgress } from '@prisma/client';
+import type { Deposit, Payment, PaymentMethod, Prisma, SettlementProgress } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { DepositReleaseRequestedEvent, EV } from '../../common/events';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
@@ -59,7 +59,7 @@ const PARKED_SCAN_LIMIT = 1000;
 /** Conversões tentadas por execução do job. */
 const PARKED_CLAIMS_PER_RUN = 50;
 
-type PaidBy = { method: 'card' | 'pix' | 'wallet'; providerPaymentId?: string | null; cardLast4?: string | null };
+type PaidBy = { method: PaymentMethod; providerPaymentId?: string | null; cardLast4?: string | null };
 type SettlementPlan = 'zero' | 'card_capture' | 'card_charge' | 'pix_keep' | 'pix_keep_charge' | 'charge_only';
 interface SettlementSteps {
   captureStarted?: boolean;
