@@ -3,6 +3,7 @@ import { cpfHash } from '../../common/fraud-hash';
 import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { SubscriptionsService } from '../payments/subscriptions.service';
 import { blocksAccountDeletion } from '../payments/open-debt';
+import { COUNTER_METHODS, depositAvailableCents } from '../payments/counter-methods';
 import { Cron, Interval } from '@nestjs/schedule';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EV, type CustomerConsentChangedEvent, type LgpdIdentityDeletionFailedEvent, type PrincipalRevokedEvent } from '../../common/events';
@@ -182,7 +183,7 @@ export class LgpdService {
       handovers: handovers.map((h) =>
         compact({
           id: h.id, type: h.type, status: h.status, depotId: h.depotId, reservationId: h.reservationId ?? undefined, rentalId: h.rentalId ?? undefined,
-          vehicleId: h.vehicleId, vehicleCode: h.vehicle?.code, operatorId: h.operatorId, checklist: h.checklist, photoKeys: h.photoKeys,
+          vehicleId: h.vehicleId, vehicleCode: h.vehicle?.code, operatorId: h.operatorId, checklist: h.checklist, photoKeys: h.photoKeys, contractPhotoKeys: h.contractPhotoKeys ?? [],
           batteryPct: h.batteryPct, batterySerial: h.batterySerial ?? undefined, disputeReason: h.disputeReason ?? undefined,
           createdAt: h.createdAt.toISOString(), respondedAt: iso(h.respondedAt),
         }),
@@ -238,6 +239,11 @@ export class LgpdService {
           ? 'Você tem uma retirada de moto em andamento. Fale com o operador ou com o suporte para cancelar a entrega antes de excluir a conta.'
           : 'Você tem uma reserva de moto em aberto. Cancele a reserva no app antes de excluir a conta.',
       );
+    }
+    // Balcão: a caução em dinheiro/maquininha/Pix com saldo disponível só sai no galpão.
+    const counterDeposits = (await this.prisma.deposit.findMany({ where: { customerId, status: 'held', method: { in: [...COUNTER_METHODS] } } })) ?? [];
+    if (counterDeposits.some((d) => depositAvailableCents(d) > 0)) {
+      throw conflict('account-deletion-blocked', 'Retire sua caução no galpão antes de excluir a conta.');
     }
     const deposit = await this.prisma.deposit.findFirst({ where: { customerId, status: { in: ['held', 'awaiting_pix'] } }, select: { id: true } });
     if (deposit) {
@@ -350,14 +356,15 @@ export class LgpdService {
     if (rentalIds.length) handoverWhere.push({ rentalId: { in: rentalIds } });
     const [messages, handovers, incidents, claims] = await Promise.all([
       this.prisma.supportMessage.findMany({ where: { conversation: { customerId } }, select: { authorType: true, authorId: true, attachmentObjectKeys: true } }),
-      this.prisma.handover.findMany({ where: { OR: handoverWhere }, select: { id: true, photoKeys: true } }),
+      this.prisma.handover.findMany({ where: { OR: handoverWhere }, select: { id: true, photoKeys: true, contractPhotoKeys: true } }),
       this.prisma.incident.findMany({ where: { customerId }, select: { createdByType: true, createdById: true, photoObjectKeys: true } }),
       this.prisma.claim.findMany({ where: { customerId, status: { in: [...CLOSED_CLAIM_STATUSES] } }, select: { photoObjectKeys: true } }),
     ]);
     const all = <T>(rows: T[] | undefined | null): T[] => rows ?? [];
     return {
       handoverIds: all(handovers).map((h) => h.id),
-      handoverPhotoKeys: [...new Set(all(handovers).flatMap((h) => h.photoKeys ?? []))],
+      // Fotos da vistoria e do contrato ficam no mesmo bucket de fotos (`returnPhotos`).
+      handoverPhotoKeys: [...new Set(all(handovers).flatMap((h) => [...(h.photoKeys ?? []), ...(h.contractPhotoKeys ?? [])]))],
       attachmentKeys: [
         ...new Set([
           // Auditoria run-4: só chaves do titular ou do atendente autor do próprio registro (`support/<autor>/`).
@@ -372,7 +379,7 @@ export class LgpdService {
   private async anonymizeCustomerContent(tx: Prisma.TransactionClient, customerId: string, files: { handoverIds: string[] }): Promise<void> {
     await tx.supportMessage.updateMany({ where: { conversation: { customerId } }, data: { body: REMOVED_TEXT, attachmentObjectKeys: [] } });
     await tx.supportConversation.updateMany({ where: { customerId }, data: { subject: 'Conversa removida' } });
-    if (files.handoverIds.length) await tx.handover.updateMany({ where: { id: { in: files.handoverIds } }, data: { photoKeys: [], disputeReason: null } });
+    if (files.handoverIds.length) await tx.handover.updateMany({ where: { id: { in: files.handoverIds } }, data: { photoKeys: [], contractPhotoKeys: [], disputeReason: null } });
     await tx.incident.updateMany({ where: { customerId }, data: { description: REMOVED_TEXT, photoObjectKeys: [], lat: null, lng: null } });
     await tx.claim.updateMany({ where: { customerId, status: { in: [...CLOSED_CLAIM_STATUSES] } }, data: { description: REMOVED_TEXT, photoObjectKeys: [], lat: null, lng: null } });
   }

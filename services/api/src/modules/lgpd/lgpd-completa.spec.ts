@@ -39,7 +39,7 @@ describe('LgpdService — exclusão completa (Task 14)', () => {
 
     expect(prisma.supportMessage.updateMany).toHaveBeenCalledWith({ where: { conversation: { customerId: ME } }, data: { body: expect.stringContaining('LGPD'), attachmentObjectKeys: [] } });
     expect(prisma.supportConversation.updateMany).toHaveBeenCalledWith({ where: { customerId: ME }, data: { subject: 'Conversa removida' } });
-    expect(prisma.handover.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['h1'] } }, data: { photoKeys: [], disputeReason: null } });
+    expect(prisma.handover.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['h1'] } }, data: { photoKeys: [], contractPhotoKeys: [], disputeReason: null } });
     expect(prisma.incident.updateMany).toHaveBeenCalledWith({ where: { customerId: ME }, data: expect.objectContaining({ photoObjectKeys: [], lat: null, lng: null }) });
     // Sinistro em andamento fica (contrato de seguro); só os encerrados são apagados.
     expect(prisma.claim.updateMany).toHaveBeenCalledWith({ where: { customerId: ME, status: { in: ['rejected', 'paid'] } }, data: expect.objectContaining({ photoObjectKeys: [], lat: null, lng: null }) });

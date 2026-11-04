@@ -115,7 +115,7 @@ describe('LgpdService', () => {
     expect(out.handovers).toEqual([
       {
         id: 'h1', type: 'pickup', status: 'accepted', depotId: DEPOT, reservationId: 'res1', rentalId: 'r1', vehicleId: 'v1', vehicleCode: 'VLT-0001', operatorId: 'op-1',
-        checklist: [{ code: 'freios', ok: true }], photoKeys: ['handovers/h1/1.jpg'], batteryPct: 90, batterySerial: 'BAT-1', createdAt: now.toISOString(), respondedAt: now.toISOString(),
+        checklist: [{ code: 'freios', ok: true }], photoKeys: ['handovers/h1/1.jpg'], contractPhotoKeys: [], batteryPct: 90, batterySerial: 'BAT-1', createdAt: now.toISOString(), respondedAt: now.toISOString(),
       },
     ]);
     const json = JSON.stringify(out);
@@ -253,6 +253,46 @@ describe('LgpdService', () => {
     await expect(service.deleteAccount(ME)).rejects.toMatchObject({ status: 409, slug: 'account-deletion-blocked', detail: expect.stringContaining('caução') });
     expect((prisma.deposit.findFirst.mock.calls[0][0] as any).where).toEqual({ customerId: ME, status: { in: ['held', 'awaiting_pix'] } });
     expect(prisma.customer.update).not.toHaveBeenCalled();
+  });
+
+  it('Task 8: export traz as chaves do contrato (só chaves) e a referência do pagamento sem recordedById', async () => {
+    const { service, prisma } = setup();
+    prisma.handover.findMany.mockResolvedValue([
+      { id: 'h1', type: 'pickup', status: 'accepted', depotId: 'dp', reservationId: 'res', rentalId: null, vehicleId: 'v1', vehicle: { code: 'VLT-1' }, operatorId: 'op', checklist: {}, photoKeys: [], contractPhotoKeys: ['contracts/a.jpg'], batteryPct: 90, batterySerial: null, disputeReason: null, createdAt: now, respondedAt: null },
+    ] as any);
+    prisma.payment.findMany.mockResolvedValue([
+      { id: 'p1', customerId: ME, kind: 'rental', method: 'cash', status: 'paid', amountCents: 1000, refundedCents: 0, walletCents: 0, reference: 'NSU123', recordedById: 'staff-1', createdAt: now, updatedAt: now },
+    ] as any);
+    const out = await service.export(ME);
+    expect(out.handovers[0].contractPhotoKeys).toEqual(['contracts/a.jpg']);
+    expect(out.payments[0]).toMatchObject({ reference: 'NSU123' });
+    expect(JSON.stringify(out.payments)).not.toContain('staff-1');
+  });
+
+  it('Task 8: exclusão apaga as fotos do contrato do bucket e zera as chaves', async () => {
+    const { service, prisma, storage } = setup();
+    prisma.handover.findMany.mockResolvedValue([{ id: 'h1', photoKeys: ['handover/x.jpg'], contractPhotoKeys: ['contracts/a.jpg', 'contracts/b.jpg'] }] as any);
+    await service.deleteAccount(ME);
+    for (const key of ['contracts/a.jpg', 'contracts/b.jpg', 'handover/x.jpg']) {
+      expect(storage.deleteObject).toHaveBeenCalledWith(expect.objectContaining({ key }));
+    }
+    expect(prisma.handover.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['h1'] } }, data: expect.objectContaining({ photoKeys: [], contractPhotoKeys: [] }) });
+  });
+
+  it('Task 8: caução de balcão com saldo bloqueia a exclusão (antes da mensagem genérica)', async () => {
+    const { service, prisma, subscriptions } = setup();
+    prisma.reservation.findFirst.mockResolvedValue(null);
+    prisma.deposit.findMany.mockResolvedValue([{ id: 'd', method: 'cash', status: 'held', amountCents: 5000, capturedCents: 1000, refundedCents: 500 }] as any);
+    prisma.deposit.findFirst.mockResolvedValue({ id: 'd', status: 'held' } as any);
+    await expect(service.deleteAccount(ME)).rejects.toMatchObject({ status: 409, slug: 'account-deletion-blocked', detail: 'Retire sua caução no galpão antes de excluir a conta.' });
+    expect((prisma.deposit.findMany.mock.calls[0][0] as any).where).toMatchObject({ customerId: ME, status: 'held', method: { in: ['counter_card', 'counter_pix', 'cash'] } });
+    expect(subscriptions.closeForAccountDeletion).not.toHaveBeenCalled();
+  });
+
+  it('Task 8: caução de balcão já totalmente devolvida/abatida não bloqueia', async () => {
+    const { service, prisma } = setup();
+    prisma.deposit.findMany.mockResolvedValue([{ id: 'd', method: 'cash', status: 'held', amountCents: 5000, capturedCents: 4000, refundedCents: 1000 }] as any);
+    await expect(service.deleteAccount(ME)).resolves.toMatchObject({ status: 'completed' });
   });
 
   it('exclusão bloqueada com débito pendente → 409', async () => {
