@@ -9,6 +9,7 @@ import { TASK_PRIORITY, TASK_TYPE } from '@/lib/labels';
 import { formatDate } from '@/lib/format';
 import type { S } from '@/lib/types';
 import { Empty, ErrorNote, Field, Modal, Page, PageHeader, Select, Skeleton, TabPanel, TextArea, TextInput, useToast } from '@/components/ui';
+import { CollectArrivalDialog } from '@/components/depots/CollectArrival';
 import { MaintenancePanel, NewMaintenanceModal } from '@/components/MaintenancePanel';
 import { BatteriesPanel } from '@/components/BatteriesPanel';
 import { shortAddress } from '@/lib/fleet-search';
@@ -79,6 +80,8 @@ function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void 
     refetchInterval: 60_000,
   });
   const [assign, setAssign] = useState<Task | null>(null);
+  const [arrive, setArrive] = useState<Task | null>(null);
+  const canArrive = can(useAuth().groups, 'collect.arrive');
   const items = [...(open.data?.items ?? []), ...(done.data?.items ?? [])];
   const queryOf = (key: string) => (key === 'done' ? done : open);
   return (
@@ -121,6 +124,9 @@ function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void 
                     {t.assigneeName ? <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t.assigneeName}</span>
                       : canEdit && c.key === 'pending' && <Button size="sm" variant="ghost" icon="UserPlus" style={{ height: 28, padding: '0 8px' }} onClick={() => setAssign(t)}>Atribuir</Button>}
                   </div>
+                  {canArrive && t.type === 'collect' && t.status !== 'done' && (
+                    <Button size="sm" variant="secondary" icon="PackageCheck" testId="task-collect-arrive" onClick={() => setArrive(t)}>Concluir no galpão</Button>
+                  )}
                 </Card>
               ))}
               {q.isLoading && [0, 1].map((i) => <Skeleton key={i} h={96} r={20} />)}
@@ -135,6 +141,7 @@ function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void 
         })}
       </div>
       {assign && <AssignModal task={assign} onClose={() => setAssign(null)} />}
+      {arrive && <CollectArrivalDialog task={arrive} vehicle={{ id: arrive.vehicleId, code: arrive.vehicleCode }} onClose={() => setArrive(null)} />}
     </>
   );
 }

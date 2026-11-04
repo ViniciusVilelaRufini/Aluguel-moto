@@ -28,6 +28,7 @@ import { SERVICE_STATUS, formatHours, formatKm, maintenanceOrigin, nextServiceLa
 import { ForceEndRentalDialog } from './ForceEndRentalDialog';
 import { CounterSettleDialog } from './CounterSettleDialog';
 import { ReturnHandoverDialog } from './depots/ReturnHandoverDialog';
+import { CollectArrival } from './depots/CollectArrival';
 import { canReceiveAtDepot } from '@/lib/return-handover';
 import { SubscriptionVehicleDialog } from './SubscriptionVehicleDialog';
 import { VehicleFormModal } from './VehicleFormModal';
@@ -264,6 +265,9 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
           )}
         </div>
       )}
+
+      {/* Cliente devolveu fora do galpão: a equipe trouxe a moto e o atendente conclui o recolhimento aqui. */}
+      <CollectArrival vehicle={v} />
 
       {(can(groups, 'vehicle.command') || groups.includes('suporte')) && (
         <div style={{ display: 'flex', gap: 8 }}>
