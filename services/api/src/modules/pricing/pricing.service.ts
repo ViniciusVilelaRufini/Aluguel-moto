@@ -32,6 +32,12 @@ export interface PriceSnapshot {
    */
   subscriptionCoveredUntil?: string;
   coupon?: CouponSnapshot;
+  /**
+   * Aluguel do balcão (pré-reserva/balcão): período pré-pago de `quantity` unidades, `prepaidCents` recebido no balcão
+   * (plano + seguro) e `excessDayCents` = diária do plano `day` congelada no checkout, cobrada por dia iniciado depois do
+   * período. Sem desbloqueio, cupom, pacote ou carteira.
+   */
+  counter?: { quantity: number; prepaidCents: number; excessDayCents: number };
 }
 
 export interface PriceLine {
@@ -58,11 +64,12 @@ export interface FeeCharge {
   amountCents: number;
 }
 
-const UNIT_SECONDS: Record<PlanUnit, number> = { minute: 60, hour: 3600, day: 86400, week: 7 * 86400, month: 30 * 86400 };
+export const UNIT_SECONDS: Record<PlanUnit, number> = { minute: 60, hour: 3600, day: 86400, week: 7 * 86400, month: 30 * 86400 };
 const UNIT_LABEL: Record<PlanUnit, string> = { minute: 'minuto', hour: 'hora', day: 'dia', week: 'semana', month: 'mês' };
 /** Dias por unidade para o excedente pro rata da assinatura (auditoria run-4). */
 const PRO_RATA_DAYS: Partial<Record<PlanUnit, number>> = { week: 7, month: 30 };
 const COVERAGE_LABEL: Record<InsuranceCoverage, string> = { basic: 'Seguro básico', full: 'Seguro completo' };
+const COUNTER_PLAN_LABEL: Partial<Record<PlanUnit, string>> = { day: 'diário', week: 'semanal', month: 'mensal' };
 
 /** Unidades iniciadas (parcial arredonda para cima). */
 const startedUnits = (seconds: number, unitSeconds: number) => (seconds <= 0 ? 0 : Math.ceil(seconds / unitSeconds));
@@ -106,6 +113,7 @@ export class PricingService {
     const s = input.snapshot;
     const elapsed = Math.max(0, Math.floor(input.elapsedSeconds));
     const paused = Math.min(elapsed, Math.max(0, Math.floor(input.pausedSeconds)));
+    if (s.counter) return this.calculateCounter(s, s.counter, elapsed, input.fees);
     const lines: PriceLine[] = [];
 
     if (!s.subscriptionCovered) {
@@ -176,6 +184,40 @@ export class PricingService {
       breakdown.totalCents = totalCents;
     }
     return breakdown;
+  }
+
+  /**
+   * Aluguel do balcão: plano × quantidade (pré-pago) + diária por dia iniciado depois de `quantity` unidades contadas do
+   * início (pausa não estende) + seguro + taxas − "Pago no balcão". Total nunca negativo.
+   */
+  private calculateCounter(s: PriceSnapshot, c: NonNullable<PriceSnapshot['counter']>, elapsed: number, fees: FeeCharge[] = []): PriceBreakdown {
+    const lines: PriceLine[] = [];
+    const planCents = c.quantity * s.unitPriceCents;
+    lines.push({
+      code: 'counter_plan',
+      description: `Plano ${COUNTER_PLAN_LABEL[s.unit] ?? UNIT_LABEL[s.unit]} (balcão)`,
+      quantity: c.quantity,
+      unitCents: s.unitPriceCents,
+      amountCents: planCents,
+    });
+    const excessDays = startedUnits(elapsed - UNIT_SECONDS[s.unit] * c.quantity, UNIT_SECONDS.day);
+    if (excessDays > 0) {
+      lines.push({ code: 'excess_day', description: 'Excedente (por dia iniciado)', quantity: excessDays, unitCents: c.excessDayCents, amountCents: excessDays * c.excessDayCents });
+    }
+    const subtotalCents = planCents + excessDays * c.excessDayCents;
+    const insuranceCents = s.insurancePremiumCents;
+    if (insuranceCents > 0) {
+      const coverage = s.coverage ?? 'basic';
+      lines.push({ code: `insurance_${coverage}`, description: COVERAGE_LABEL[coverage], quantity: 1, unitCents: insuranceCents, amountCents: insuranceCents });
+    }
+    let feesCents = 0;
+    for (const f of fees) {
+      feesCents += f.amountCents;
+      lines.push({ code: f.code, description: f.description, quantity: 1, unitCents: f.amountCents, amountCents: f.amountCents });
+    }
+    lines.push({ code: 'counter_prepaid', description: 'Pago no balcão', amountCents: -c.prepaidCents });
+    const totalCents = Math.max(0, subtotalCents + insuranceCents + feesCents - c.prepaidCents);
+    return { lines, subtotalCents, discountCents: 0, insuranceCents, feesCents, totalCents };
   }
 
   // ───────────── consultas usadas pelo aluguel e pela cotação ─────────────

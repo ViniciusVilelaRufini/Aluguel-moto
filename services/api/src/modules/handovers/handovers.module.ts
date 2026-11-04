@@ -1,15 +1,17 @@
 import { Module } from '@nestjs/common';
+import { PricingModule } from '../pricing/pricing.module';
 import { RentalsModule } from '../rentals/rentals.module';
 import { ReservationsModule } from '../reservations/reservations.module';
 import { SupportModule } from '../support/support.module';
+import { CounterCheckoutService } from './counter-checkout.service';
 import { HandoversController } from './handovers.controller';
 import { HandoversService } from './handovers.service';
 
 /** Retirada em galpão (Task 6): entrega de saída com aceite do cliente e chegada no galpão. */
 @Module({
-  imports: [RentalsModule, ReservationsModule, SupportModule],
+  imports: [PricingModule, RentalsModule, ReservationsModule, SupportModule],
   controllers: [HandoversController],
-  providers: [HandoversService],
+  providers: [HandoversService, CounterCheckoutService],
   // Usado pela entrega simulada (`TestHandoverModule`, só com ALLOW_TEST_HANDOVER=true).
   exports: [HandoversService],
 })

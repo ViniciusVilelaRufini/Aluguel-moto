@@ -2,13 +2,18 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Res
 import type { Response } from 'express';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, CustomerOnly, CustomerOrStaff, Principal, StaffOnly } from '../auth/principal';
+import { CounterQuoteQuery } from './counter-checkout.dto';
+import { CounterCheckoutService } from './counter-checkout.service';
 import { HandoverCancelDto, HandoverCreateDto, HandoverDisputeDto, HandoverUploadDto, ListHandoversQuery } from './handovers.dto';
 import { HandoversService } from './handovers.service';
 
 /** Entrega formal no galpão (saída com aceite do cliente e chegada). Rotas literais antes de `/:id`. */
 @Controller('handovers')
 export class HandoversController {
-  constructor(private readonly handovers: HandoversService) {}
+  constructor(
+    private readonly handovers: HandoversService,
+    private readonly counter: CounterCheckoutService,
+  ) {}
 
   /** createHandover — 201; chegada repetida do mesmo aluguel (fila offline) → 200 com a entrega existente. */
   @Post()
@@ -35,6 +40,13 @@ export class HandoversController {
   @CustomerOrStaff('admin', 'operacao', 'campo', 'suporte')
   get(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: Principal) {
     return this.handovers.get(user, id);
+  }
+
+  /** getHandoverCounterQuote — prévia do valor do balcão (plano × quantidade + seguro) para a entrega de saída. */
+  @Get(':id/counter-quote')
+  @StaffOnly('admin', 'operacao', 'campo')
+  counterQuote(@Param('id', ParseUUIDPipe) id: string, @Query() q: CounterQuoteQuery) {
+    return this.counter.quote(id, q);
   }
 
   /** acceptHandover — apps beta12: sempre `409 handover-counter-checkout` (o aluguel começa no balcão); outro cliente → 404. */
