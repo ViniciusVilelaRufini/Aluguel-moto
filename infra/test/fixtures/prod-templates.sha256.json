@@ -5,7 +5,7 @@
   "volti-prod-data": "f088dbf2ba3d87c444c1dd11c88f68b25e64f6d47deaa5d9c2ddd73f0921d267",
   "volti-prod-auth": "0d5cbc207115d5f5f08c710cd48c887e7a225b84e77d5c9afd2c2dea6560777e",
   "volti-prod-messaging": "14a965b51d6442a855680874229aa2064ccc2440d0bb2665d3611091aee835ac",
-  "volti-prod-iot": "d3db464387ecc11786d9aebba4994a75b9195515c8bb0bce9b05645b9e363d19",
+  "volti-prod-iot": "6ae59df93fddbf21283f851f0d2f79fcffe93e489a5ef438a2e3481954f9a8db",
   "volti-prod-api": "05dc46f21e20c0892e2d700f4dba94a92c5b4bff5b916c5857d701358741a255",
   "volti-prod-observability": "cbc54d923a495f2344abb40ced44906a96e17caed890ac6df0af1bee8245f2c0"
 }

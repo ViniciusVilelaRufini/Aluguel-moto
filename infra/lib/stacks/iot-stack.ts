@@ -241,8 +241,9 @@ export class IotStack extends Stack {
     const projection = (fields: string[]) => `{${fields.map((f) => `'${f}': ${f}`).join(', ')}}`;
     const ruleSql = (leaf: string, fields: string[]) =>
       `SELECT topic(2) AS thingName, topic(3) AS channel, timestamp() AS ingestedAt, ${projection(fields)} AS payload FROM 'motos/+/${leaf}'`;
-    // `bateria_conhecida` é opcional (ausente = true): atributo ausente não entra no objeto projetado pelo IoT SQL.
-    const telemetryFields = ['lat', 'lng', 'velocidade_kmh', 'bateria_pct', 'bateria_conhecida', 'travada', 'ignicao', 'sinal', 'timestamp'];
+    // `bateria_conhecida` e `satelites` são opcionais (ausente = true / desconhecido): atributo ausente não entra no objeto
+    // projetado pelo IoT SQL (a API trata `null` como ausente).
+    const telemetryFields = ['lat', 'lng', 'velocidade_kmh', 'bateria_pct', 'bateria_conhecida', 'travada', 'ignicao', 'sinal', 'timestamp', 'satelites'];
     const eventFields = ['tipo', 'timestamp'];
     const toTelemetryQueue = [{ sqs: { queueUrl: messaging.telemetry.queue.queueUrl, roleArn: sqsRole.roleArn, useBase64: false } }];
     new iot.CfnTopicRule(this, 'TelemetryRule', {
