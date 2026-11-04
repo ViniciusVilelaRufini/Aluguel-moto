@@ -16,7 +16,7 @@
     "ignicao": { "type": "boolean" },
     "sinal": { "type": "integer", "minimum": 0, "maximum": 5, "description": "Qualidade do sinal celular (0 a 5)" },
     "timestamp": { "type": "string", "format": "date-time", "description": "Hora da medição em UTC (ISO 8601)" },
-    "satelites": { "type": "integer", "minimum": 0, "maximum": 255, "description": "Opcional (ausente = desconhecido). Satélites usados no fix desta posição. Abaixo de 5 = posição fraca: a API não a conta como amostra parada para a trava só relé, não muda cerca/limite de zona com ela e a ponte não a usa no alerta movimento_sem_aluguel." }
+    "satelites": { "type": "integer", "minimum": 0, "maximum": 255, "description": "Opcional (ausente = desconhecido). Satélites usados no fix desta posição. Abaixo de 5 = posição fraca: a API não a conta como amostra parada para a trava só relé, nas cercas só pode baixar o limite de zona (entrada/permanência em zona reduzida; nunca sobe nem sai dela) e não muda as demais cercas e a ponte não a usa no alerta movimento_sem_aluguel." }
   },
   "examples": [
     { "lat": -23.5614, "lng": -46.6914, "velocidade_kmh": 18.4, "bateria_pct": 76, "travada": false, "ignicao": true, "sinal": 4, "timestamp": "2026-10-21T15:00:00.000Z" }

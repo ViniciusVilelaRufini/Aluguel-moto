@@ -192,8 +192,8 @@ export class TelemetryService implements InboundHandler {
           },
         });
       }
-      // Posição fraca não dispara ENTER/EXIT nem muda o limite de zona: o motor de cercas mantém o último estado.
-      if (!weak) await this.geofence.onPosition({ vehicleId, thingName, lat: msg.lat, lng: msg.lng, ts });
+      // Posição fraca: o motor de cercas só pode baixar o limite (ENTER/permanência em zona reduzida); o resto mantém o último estado.
+      await this.geofence.onPosition({ vehicleId, thingName, lat: msg.lat, lng: msg.lng, ts, ...(weak ? { weak } : {}) });
       if (this.zoneSpeed && applied.newest) {
         await this.zoneSpeed
           .onSample({ vehicleId, thingName, speedKmh: msg.velocidade_kmh, measuredAt: Math.min(deviceTs, now), locked: msg.travada })

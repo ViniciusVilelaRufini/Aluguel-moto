@@ -17,7 +17,7 @@ export const FIXED_LIMIT_KMH = 32;
 /**
  * Posição fraca: satélites conhecidos (`satelites`) abaixo disto. Continua no mapa e no trajeto, mas não é amostra parada da
  * segunda guarda do corte nem entra no alerta `movimento_sem_aluguel` (a API também não a conta como parada para a trava só
- * relé nem muda cerca/limite de zona com ela). Mesmo valor de MIN_GPS_SATELLITES em services/api/src/modules/iot/mqtt-contract.ts
+ * relé e, nas cercas, ela só pode baixar o limite de zona). Mesmo valor de MIN_GPS_SATELLITES em services/api/src/modules/iot/mqtt-contract.ts
  * (copiado, não importado entre pacotes; contrato: packages/contracts/mqtt.md).
  */
 export const MIN_GPS_SATELLITES = 5;

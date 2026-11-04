@@ -448,3 +448,93 @@ describe('GeofenceService relay_only — revisão da Task 6', () => {
     expect(await fresh.storedLimit('moto-0001')).toBeNull();
   });
 });
+
+/**
+ * Bancada 2026-11-04 (fix round): posição fraca (< 5 satélites) é assimétrica. Pode baixar o limite (entrar numa zona de
+ * velocidade reduzida, ou continuar nela) e nunca sobe nem sai da zona restrita; cercas sem efeito de velocidade não mudam.
+ */
+describe('GeofenceService — posição fraca (weak)', () => {
+  const weak = (ts: string) => ({ ...pos(ts), weak: true });
+
+  it('speed_control: posição fraca dentro da zona de pedestres → ENTER e limite cai para 6', async () => {
+    const { svc, engine, transitions, commander } = setup();
+    engine.zones = [OPERATION];
+    await svc.onPosition(pos());
+    commander.setSpeedLimit.mockClear();
+    engine.zones = [OPERATION, PEDESTRIAN];
+    await svc.onPosition(weak('2026-10-21T15:00:05.000Z'));
+    expect(commander.setSpeedLimit).toHaveBeenCalledWith('veh-1', 6, expect.objectContaining({ purpose: 'zone_speed_limit' }));
+    expect(transitions.at(-1)).toMatchObject({ zoneId: 'z-ped', transition: 'ENTER' });
+    expect(await svc.effectiveLimit('moto-0001')).toBe(6);
+  });
+
+  it('dentro da zona de pedestres, posição fraca fora → limite continua 6 (sem EXIT) até uma posição boa fora', async () => {
+    const { svc, engine, transitions, commander } = setup();
+    engine.zones = [OPERATION, PEDESTRIAN];
+    await svc.onPosition(pos());
+    expect(commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 6, expect.anything());
+    commander.setSpeedLimit.mockClear();
+    const before = transitions.length;
+    engine.zones = [OPERATION];
+    await svc.onPosition(weak('2026-10-21T15:00:05.000Z'));
+    await svc.onPosition(weak('2026-10-21T15:00:10.000Z'));
+    expect(commander.setSpeedLimit).not.toHaveBeenCalled();
+    expect(transitions.length).toBe(before);
+    expect(await svc.effectiveLimit('moto-0001')).toBe(6);
+    expect(await svc.storedLimit('moto-0001')).toBe(6);
+    await svc.onPosition(pos('2026-10-21T15:00:15.000Z')); // boa, fora
+    expect(commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 32, expect.anything());
+    expect(transitions.at(-1)).toMatchObject({ zoneId: 'z-ped', transition: 'EXIT' });
+  });
+
+  it('ciclovia (20) e posição fraca na de pedestres (6) → cai para 6; fraca só na ciclovia depois → continua 6', async () => {
+    const { svc, engine, commander } = setup();
+    engine.zones = [OPERATION, BIKE_LANE];
+    await svc.onPosition(pos());
+    expect(commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 20, expect.anything());
+    engine.zones = [OPERATION, BIKE_LANE, PEDESTRIAN];
+    await svc.onPosition(weak('2026-10-21T15:00:05.000Z'));
+    expect(commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 6, expect.anything());
+    commander.setSpeedLimit.mockClear();
+    engine.zones = [OPERATION, BIKE_LANE];
+    await svc.onPosition(weak('2026-10-21T15:00:10.000Z'));
+    expect(commander.setSpeedLimit).not.toHaveBeenCalled();
+    expect(await svc.effectiveLimit('moto-0001')).toBe(6);
+  });
+
+  it('posição fraca não muda cercas sem efeito de velocidade: sem EXIT de operation nem bloqueio de fora da área', async () => {
+    const { svc, engine, transitions, commander, clock } = setup();
+    engine.zones = [OPERATION];
+    await svc.onPosition(pos());
+    const before = transitions.length;
+    engine.zones = [];
+    await svc.onPosition(weak('2026-10-21T15:00:05.000Z'));
+    expect(transitions.length).toBe(before);
+    await clock.advance(6 * 60_000);
+    expect(commander.safeLock).not.toHaveBeenCalled();
+    // ENTER de operation com posição fraca também não.
+    const s2 = setup();
+    s2.engine.zones = [];
+    await s2.svc.onPosition(pos());
+    const n = s2.transitions.length;
+    s2.engine.zones = [OPERATION];
+    await s2.svc.onPosition(weak('2026-10-21T15:00:05.000Z'));
+    expect(s2.transitions.length).toBe(n);
+  });
+
+  it('primeira posição sem estado e fraca: não arma o bloqueio de fora da área nem sobe um limite gravado', async () => {
+    const { svc, engine, commander, clock } = setup();
+    engine.zones = [];
+    await svc.onPosition(weak('2026-10-21T15:00:05.000Z'));
+    await clock.advance(6 * 60_000);
+    expect(commander.safeLock).not.toHaveBeenCalled();
+    expect(commander.setSpeedLimit).not.toHaveBeenCalled();
+  });
+
+  it('posição fraca não vai ao tracker do motor (Amazon Location) nem vira a última posição das reavaliações', async () => {
+    const { svc, engine } = setup();
+    engine.zones = [OPERATION];
+    await svc.onPosition(weak('2026-10-21T15:00:05.000Z'));
+    expect(engine.positions).toEqual([]);
+  });
+});

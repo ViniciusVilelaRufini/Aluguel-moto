@@ -8,6 +8,7 @@ import type { LiveStateStore } from './live-state.store';
 import { SafeLockService, type SafeLockVehicleState } from './safe-lock.service';
 import { assertSpeedLimit, SAFE_LOCK_MIN_START_KMH } from './speed-limit';
 import { MemorySafeLockStore, type SafeLockStore } from './safe-lock.store';
+import { isWeakFix } from './mqtt-contract';
 import { RELAY_UNLOCK_TIMEOUT_MS, RelayLockService, type RelaySample } from './relay-lock.service';
 import type { RelayLockStore } from './relay-lock.store';
 import type { DesiredState, IotTransport, ReportedMeta, ReportedState } from './shadow-transport';
@@ -192,6 +193,9 @@ export abstract class BaseIotGateway implements IotGateway {
   /** Posição conhecida da moto (estado ao vivo), para reavaliar a zona antes de subir limite. */
   private async positionOf(thingName: string): Promise<{ lat: number; lng: number } | undefined> {
     const s = await this.live.load(thingName);
+    // Posição fraca (bancada 2026-11-04) não serve para subir o limite: sem posição, o resolver usa o limite gravado pelas zonas.
+    const satellites = this.live.gpsSatellitesOf(thingName);
+    if (satellites !== undefined && isWeakFix({ satelites: satellites })) return undefined;
     return s && !(s.lat === 0 && s.lng === 0) ? { lat: s.lat, lng: s.lng } : undefined;
   }
 

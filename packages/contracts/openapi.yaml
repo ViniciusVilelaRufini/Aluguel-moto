@@ -6283,8 +6283,8 @@ components:
           readOnly: true
           description: |
             Satélites da última posição (`lat`/`lng`) recebida do rastreador. Ausente = desconhecido (rastreador que não
-            informa, ou sem estado ao vivo). Abaixo de 5 = posição fraca: não confirma parada para a trava só relé nem muda
-            cerca/limite de zona. Para cliente, vem só junto com a posição visível (mesma regra de `positionAt`; nunca com
+            informa, ou sem estado ao vivo). Abaixo de 5 = posição fraca: não confirma parada para a trava só relé; nas cercas
+            só pode baixar o limite de zona (nunca sobe nem sai de zona restrita). Para cliente, vem só junto com a posição visível (mesma regra de `positionAt`; nunca com
             `locationHidden`).
         gpsSleep:
           type: boolean

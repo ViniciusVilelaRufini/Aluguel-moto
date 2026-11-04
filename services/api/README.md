@@ -88,8 +88,11 @@ uma moto cortada cujo status só atrasou). `speed_limit` e `horn` → `unsupport
 `speed_control` (`SafeLockService`) não muda. Spec: `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`.
 **Qualidade do GPS (bancada 2026-11-04).** Telemetria com `satelites` conhecido abaixo de 5 (`MIN_GPS_SATELLITES`,
 `mqtt-contract.ts`) é **posição fraca**: fica no mapa e no trajeto, mas parada não conta para a trava só relé (`RelaySample.weak`:
-a sequência recomeça; só dificulta o corte) e o motor de cercas não é chamado (sem ENTER/EXIT nem mudança de limite de zona; vale
-o último estado). Sem o campo, como antes. `reported.gps_economia` (ponte GT06: GPS desligado com a ACC desligada, do byte de
+a sequência recomeça; só dificulta o corte). Nas cercas é **assimétrica** (`PositionInput.weak`): pode baixar o limite (ENTER numa
+zona `reduced_speed`, ou continuar nela; nunca acima do `geofence:limit` gravado) e nunca o sobe nem sai de zona restrita (EXIT só
+com posição boa); operation/devolução/alertas e o bloqueio de fora da área mantêm o último estado; não vai ao tracker do Amazon
+Location nem vira a última posição das reavaliações; e o gateway não a passa ao resolver do limite (unlock e teto dos comandos
+manuais usam o limite gravado). Sem o campo, como antes. `reported.gps_economia` (ponte GT06: GPS desligado com a ACC desligada, do byte de
 status do heartbeat) vai para o hash `iot:live:*` (`gpsSleep`/`gpsSleepAt`; MQTT = hora de chegada, polling = metadata) e os
 satélites da posição exibida em `gpsSatellites` (vazio = desconhecido). O GET (`withLiveState`) expõe `Vehicle.gpsSatellites` e
 `Vehicle.gpsSleep` (este só com reporte de até 3 min, `GPS_SLEEP_FRESH_MS`); não há coluna no banco. Para cliente, só junto com a

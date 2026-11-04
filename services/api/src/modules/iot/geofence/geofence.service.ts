@@ -37,6 +37,13 @@ export interface PositionInput {
   lat: number;
   lng: number;
   ts: string;
+  /**
+   * Posição fraca (`satelites` < `MIN_GPS_SATELLITES`, bancada 2026-11-04), assimétrica: pode **baixar** o limite (ENTER numa zona
+   * de velocidade reduzida, ou continuar nela) e nunca o sobe nem sai de zona restrita (EXIT só com posição boa); cercas sem efeito
+   * de velocidade (operation, devolução, alertas) e o bloqueio de fora da área não mudam. Não vai ao tracker do motor nem vira a
+   * última posição das reavaliações.
+   */
+  weak?: boolean;
 }
 
 interface VehicleZones {
@@ -290,7 +297,7 @@ export class GeofenceService {
 
   /** `fromDevice`: posição nova do rastreador (vai ao tracker); `false` = reavaliação da última posição conhecida. */
   private async evaluate(p: PositionInput, fromDevice: boolean): Promise<void> {
-    if (fromDevice) {
+    if (fromDevice && !p.weak) {
       await this.engine.updatePosition(p.thingName, p.lat, p.lng, p.ts).catch((err) =>
         this.logger.warn({ msg: 'geofence_tracker_update_failed', vehicleId: p.vehicleId, error: (err as Error).message }),
       );
@@ -324,11 +331,13 @@ export class GeofenceService {
   }
 
   private async evaluateLocked(p: PositionInput): Promise<void> {
-    this.lastPosition.set(p.vehicleId, { vehicleId: p.vehicleId, thingName: p.thingName, lat: p.lat, lng: p.lng });
-    const zones = await this.engine.containing(p.lat, p.lng);
+    if (!p.weak) this.lastPosition.set(p.vehicleId, { vehicleId: p.vehicleId, thingName: p.thingName, lat: p.lat, lng: p.lng });
+    const found = await this.engine.containing(p.lat, p.lng);
     const prev = await this.load(p.vehicleId);
     const prevZones = prev?.zones ?? [];
     const prevIds = new Set(prevZones.map((z) => z.id));
+    // Posição fraca: as zonas de antes continuam (nenhum EXIT) e só entram zonas de velocidade reduzida novas (o limite só cai).
+    const zones = p.weak ? [...prevZones, ...found.filter((z) => z.type === 'reduced_speed' && !prevIds.has(z.id))] : found;
     const nowIds = new Set(zones.map((z) => z.id));
     const opBefore = prevZones.some((z) => z.type === 'operation');
     const opNow = zones.some((z) => z.type === 'operation');
@@ -337,7 +346,12 @@ export class GeofenceService {
     const exits = onlyOneOperation(prevZones.filter((z) => !nowIds.has(z.id) && (z.type !== 'operation' || (opBefore && !opNow))));
     const enters = onlyOneOperation(zones.filter((z) => !prevIds.has(z.id) && (z.type !== 'operation' || (!opBefore && opNow))));
 
-    const limit = zoneLimitOf(zones);
+    let limit = zoneLimitOf(zones);
+    if (p.weak) {
+      // Nunca acima do limite já gravado (outra instância, estado perdido): posição fraca não sobe o teto do unlock/comandos.
+      const stored = await this.storedLimit(p.thingName);
+      if (stored !== null) limit = Math.min(limit, stored);
+    }
     // Rastreador só relé: o limite da zona continua gravado (unlock, monitor de velocidade), mas não vira comando. Erro de leitura
     // = speed_control (aplicar o limite nunca falha aberto).
     const relayOnly = (await this.modes?.byVehicle(p.vehicleId).catch(() => 'speed_control' as const)) === 'relay_only';
@@ -365,13 +379,18 @@ export class GeofenceService {
     const desiredAbove = desired !== undefined && desired !== null && desired > limit;
     // Depois de um limite de falha fechada (motor fora, nesta ou noutra instância): manda o limite real. Noutra instância isso
     // aparece como primeira avaliação (sem estado) com um desired conhecido diferente da zona; sem desired conhecido não força.
-    const forced = this.forceResend.delete(p.thingName) || (!prev && desired !== undefined && desired !== null && desired !== limit);
+    const forcePending = this.forceResend.has(p.thingName);
+    const forced = forcePending || (!prev && desired !== undefined && desired !== null && desired !== limit);
     // Rastreador só relé: nada a impor nem a registrar. `appliedLimit` fica indefinido, para que, depois de um reprovisionamento
     // para speed_control, a próxima avaliação sempre mande o limite da zona.
     if (relayOnly) state.appliedLimit = undefined;
-    const limitChanged = !relayOnly && (applied !== limit || desiredAbove || forced);
+    // Posição fraca só manda limite que baixa o aplicado/desired conhecido.
+    const lowers = limit < Math.min(prev?.appliedLimit ?? MAX_SPEED_KMH, desired ?? MAX_SPEED_KMH) || desiredAbove;
+    const limitChanged = !relayOnly && (!p.weak || lowers) && (applied !== limit || desiredAbove || forced);
+    if (!p.weak || limitChanged) this.forceResend.delete(p.thingName);
     if (!exits.length && !enters.length && !limitChanged) {
-      const areaChanged = await this.evaluateOutOfArea(p.vehicleId, state, opNow);
+      // Posição fraca não arma nem desarma o bloqueio de fora da área (mantém o último estado).
+      const areaChanged = p.weak ? false : await this.evaluateOutOfArea(p.vehicleId, state, opNow);
       if (!prev || zonesChanged || areaChanged) await this.save(p.vehicleId, state);
       return;
     }
@@ -389,7 +408,7 @@ export class GeofenceService {
         .setSpeedLimit(p.vehicleId, limit, { rentalId, purpose: 'zone_speed_limit' })
         .catch((err) => this.logger.error({ msg: 'zone_speed_limit_failed', vehicleId: p.vehicleId, error: (err as Error).message }));
     }
-    await this.evaluateOutOfArea(p.vehicleId, state, opNow, rentalId);
+    if (!p.weak) await this.evaluateOutOfArea(p.vehicleId, state, opNow, rentalId);
     await this.save(p.vehicleId, state);
   }
 

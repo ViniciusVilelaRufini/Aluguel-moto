@@ -39,7 +39,7 @@ part 'vehicle.g.dart';
 /// * [firmwareVersion] - staff. Versão do firmware do rastreador vinculado (`Tracker.firmwareVersion`); sem ela, a gravada na moto. Ausente = desconhecida.
 /// * [lastSeenAt] - staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s.
 /// * [positionAt] - Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a posição atual e a velocidade dela não é a atual. Para cliente, vem só junto com a posição visível (moto livre ou da própria reserva/aluguel; nunca com `locationHidden`): a devolução do app avisa que a moto está sem GPS e por isso não trava (a trava só relé espera a parada confirmada pelo GPS).
-/// * [gpsSatellites] - Satélites da última posição (`lat`/`lng`) recebida do rastreador. Ausente = desconhecido (rastreador que não informa, ou sem estado ao vivo). Abaixo de 5 = posição fraca: não confirma parada para a trava só relé nem muda cerca/limite de zona. Para cliente, vem só junto com a posição visível (mesma regra de `positionAt`; nunca com `locationHidden`).
+/// * [gpsSatellites] - Satélites da última posição (`lat`/`lng`) recebida do rastreador. Ausente = desconhecido (rastreador que não informa, ou sem estado ao vivo). Abaixo de 5 = posição fraca: não confirma parada para a trava só relé; nas cercas só pode baixar o limite de zona (nunca sobe nem sai de zona restrita). Para cliente, vem só junto com a posição visível (mesma regra de `positionAt`; nunca com `locationHidden`).
 /// * [gpsSleep] - `true` = o rastreador reportou o rastreamento GPS desligado com a ignição desligada (modo de economia: sem posição nova até o GPS voltar, então a trava só relé não confirma a parada). `false` = GPS ligado ou ignição ligada. Ausente = desconhecido (sem status nos últimos 3 min, ou rastreador que não informa). Para cliente, vem só junto com a posição visível (mesma regra de `positionAt`; nunca com `locationHidden`).
 /// * [currentRentalId] - staff.
 /// * [vehicleModelId]
@@ -150,7 +150,7 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   @BuiltValueField(wireName: r'positionAt')
   DateTime? get positionAt;
 
-  /// Satélites da última posição (`lat`/`lng`) recebida do rastreador. Ausente = desconhecido (rastreador que não informa, ou sem estado ao vivo). Abaixo de 5 = posição fraca: não confirma parada para a trava só relé nem muda cerca/limite de zona. Para cliente, vem só junto com a posição visível (mesma regra de `positionAt`; nunca com `locationHidden`).
+  /// Satélites da última posição (`lat`/`lng`) recebida do rastreador. Ausente = desconhecido (rastreador que não informa, ou sem estado ao vivo). Abaixo de 5 = posição fraca: não confirma parada para a trava só relé; nas cercas só pode baixar o limite de zona (nunca sobe nem sai de zona restrita). Para cliente, vem só junto com a posição visível (mesma regra de `positionAt`; nunca com `locationHidden`).
   @BuiltValueField(wireName: r'gpsSatellites')
   int? get gpsSatellites;
 

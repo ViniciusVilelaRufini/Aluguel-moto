@@ -64,19 +64,19 @@ describe('TelemetryService', () => {
     expect(geofence.onPosition).toHaveBeenCalledWith({ vehicleId: VEHICLE_ID, thingName: T, lat: -23.5614, lng: -46.6914, ts: '2026-10-21T15:00:00.000Z' });
   });
 
-  it('posição fraca (satelites < 5): trava só relé recebe weak e o motor de cercas não é chamado (mantém o último estado)', async () => {
+  it('posição fraca (satelites < 5): trava só relé e motor de cercas recebem weak (cercas: só pode baixar o limite)', async () => {
     const { svc, gateway, geofence, clock } = setup();
     const samples = jest.spyOn(gateway, 'onTelemetrySample');
     await svc.telemetry(T, msg({ satelites: 4 }));
-    expect(geofence.onPosition).not.toHaveBeenCalled();
+    expect(geofence.onPosition).toHaveBeenLastCalledWith(expect.objectContaining({ weak: true }));
     expect(samples.mock.calls.at(-1)?.[1]).toMatchObject({ weak: true });
     await clock.advance(1_000);
     await svc.telemetry(T, msg({ satelites: 5, timestamp: '2026-10-21T15:00:01.000Z' }));
-    expect(geofence.onPosition).toHaveBeenCalledTimes(1);
+    expect(geofence.onPosition).toHaveBeenLastCalledWith(expect.not.objectContaining({ weak: true }));
     expect(samples.mock.calls.at(-1)?.[1]).toMatchObject({ weak: false });
     await clock.advance(1_000);
     await svc.telemetry(T, msg({ timestamp: '2026-10-21T15:00:02.000Z' })); // sem o campo: como antes
-    expect(geofence.onPosition).toHaveBeenCalledTimes(2);
+    expect(geofence.onPosition).toHaveBeenLastCalledWith({ vehicleId: VEHICLE_ID, thingName: T, lat: -23.5614, lng: -46.6914, ts: '2026-10-21T15:00:02.000Z' });
     expect(samples.mock.calls.at(-1)?.[1]).toMatchObject({ weak: false });
   });
 

@@ -40,8 +40,9 @@ export function thingFromTopic(topic: string): string | null {
 
 /**
  * Posição fraca (bancada do J16, 2026-11-04): `satelites` conhecido abaixo disto. Continua no mapa e no trajeto, mas não é
- * amostra parada da trava só relé (a sequência recomeça: só dificulta o corte) nem muda cerca/limite de zona (o motor de cercas
- * mantém o último estado). Sem o campo, nada muda. Mesmo valor de MIN_GPS_SATELLITES em services/traccar-bridge/src/contract.ts
+ * amostra parada da trava só relé (a sequência recomeça: só dificulta o corte); nas cercas é assimétrica (`PositionInput.weak`:
+ * só baixa o limite de zona, nunca sobe nem sai de zona restrita; as demais cercas mantêm o último estado) e não serve de posição
+ * para subir o limite (`positionOf` do gateway). Sem o campo, nada muda. Mesmo valor de MIN_GPS_SATELLITES em services/traccar-bridge/src/contract.ts
  * (copiado, não importado entre pacotes; contrato: packages/contracts/mqtt.md).
  */
 export const MIN_GPS_SATELLITES = 5;

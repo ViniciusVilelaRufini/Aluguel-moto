@@ -173,6 +173,11 @@ export class LiveStateStore {
     return at === undefined ? undefined : new Date(at).toISOString();
   }
 
+  /** Satélites da posição exibida (`telemetria.satelites`), ou `undefined` (desconhecido). Quem decide relê o estado (`load`) antes. */
+  gpsSatellitesOf(thingName: string): number | undefined {
+    return this.gpsSatellites.get(thingName);
+  }
+
   get(thingName: string): VehicleLiveState | null {
     return this.states.get(thingName) ?? null;
   }

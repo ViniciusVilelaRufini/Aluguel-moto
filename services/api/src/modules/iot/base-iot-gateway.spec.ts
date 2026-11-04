@@ -63,6 +63,21 @@ describe('BaseIotGateway', () => {
     expect(await gw.setSpeedLimit({ commandId: 'c4', thingName: T }, 3)).toEqual({ commandId: 'c4', status: 'confirmed' });
   });
 
+  it('bancada 2026-11-04: posição ao vivo fraca (< 5 satélites) não é passada ao resolver do limite (vale o limite gravado)', async () => {
+    const { gw, live, clock } = await setup();
+    const seen: Array<{ lat: number; lng: number } | undefined> = [];
+    gw.setLimitResolver(async (_t, p) => {
+      seen.push(p);
+      return 6;
+    });
+    await gw.setSpeedLimit({ commandId: 'c1', thingName: T }, 32);
+    expect(seen.at(-1)).toEqual({ lat: -23.56, lng: -46.69 });
+    await clock.advance(1_000);
+    await live.applyTelemetry(T, { ...telemetry(0), satelites: 3, timestamp: new Date(clock.now()).toISOString() });
+    await gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 32);
+    expect(seen.at(-1)).toBeUndefined();
+  });
+
   it('online + reported dentro da espera → confirmed (sem evento)', async () => {
     const { gw, transport, updates } = await setup();
     transport.autoReport = (t, d) => void gw.onReported(t, { limite_kmh: d.limite_kmh });
