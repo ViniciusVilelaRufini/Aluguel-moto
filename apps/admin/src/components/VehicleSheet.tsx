@@ -9,7 +9,7 @@ import { can, rentalHref } from '@/lib/permissions';
 import { useRealtime, useRealtimeEvent } from '@/lib/realtime';
 import { commandStateLabel, commandStateTone } from '@/lib/status';
 import { commandSupported, lockDescription, lockMovingWarning, TRACKER_CONTROL_LABEL, unsupportedDescribedBy, unsupportedHint } from '@/lib/tracker';
-import { addressView, batteryView, positionView, sheetVehicle, speedLimitChip } from '@/lib/vehicle-live';
+import { GPS_SLEEP_LOCK_WARNING, addressView, batteryView, gpsView, positionView, sheetVehicle, speedLimitChip } from '@/lib/vehicle-live';
 import { useNow } from '@/lib/use-now';
 import { RelayOnlyNotice } from './vehicles/RelayOnlyNotice';
 import { formatDateTime, timeAgo } from '@/lib/format';
@@ -142,6 +142,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   if (!v) return <SidePanel width={360} onClose={onClose} label="Ficha da moto"><PanelSkeleton rows={7} /></SidePanel>;
 
   const pos = positionView(v, now);
+  const gps = gpsView(v, now);
   // Velocidade de uma posição velha (sem GPS) não é a atual: o aviso de "em movimento" só com posição fresca.
   const moving = !pos.stale && (v.speedKmh ?? 0) >= 3;
   const address = addressView(v);
@@ -186,6 +187,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
       <div>
         <KV k="Último sinal" v={v.lastSeenAt ? timeAgo(v.lastSeenAt, now) : '—'} />
         <KV k="GPS / 4G" v={signalLabel(v.online, v.signal)} />
+        <KV k="GPS" v={<span data-testid="vehicle-gps" data-gps-state={gps.state}>{gps.text}</span>} />
         <KV k="Cliente" v={!v.currentRentalId ? '—' : !canSeeCustomer ? 'Restrito' : (customer.data?.name ?? (rental.isLoading || customer.isLoading ? '...' : '—'))} />
         <KV k="Aluguel" v={v.currentRentalId ? (rentalHref(groups, v.currentRentalId) ? <Link href={rentalHref(groups, v.currentRentalId)!} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Ver aluguel atual</Link> : 'Em andamento') : '—'} />
         <KV k="Endereço" v={v.address ? (
@@ -297,7 +299,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   );
 }
 
-function CommandDialog({ type, vehicle, mode, moving, speedUnknown, onClose, onSend }: {
+export function CommandDialog({ type, vehicle, mode, moving, speedUnknown, onClose, onSend }: {
   type: CommandType; vehicle: S<'Vehicle'>; mode: S<'Vehicle'>['trackerControlMode']; moving: boolean; speedUnknown: boolean; onClose: () => void;
   onSend: (type: CommandType, reason: string, extra: { speedLimitKmh?: number; on?: boolean }) => Promise<void>;
 }) {
@@ -342,6 +344,9 @@ function CommandDialog({ type, vehicle, mode, moving, speedUnknown, onClose, onS
       )}
       {type === 'lock' && speedUnknown && (
         <Alert tone="warning" icon="TriangleAlert">Velocidade desconhecida (sem GPS recente) — a moto só trava parada.</Alert>
+      )}
+      {type === 'lock' && vehicle.gpsSleep === true && (
+        <Alert tone="warning" icon="TriangleAlert" testId="gps-sleep-warning">{GPS_SLEEP_LOCK_WARNING}</Alert>
       )}
       {type === 'lock' && moving && (
         <Alert tone="warning" icon="TriangleAlert">A moto está a {Math.round(vehicle.speedKmh ?? 0)} km/h. {lockMovingWarning(mode)}</Alert>
