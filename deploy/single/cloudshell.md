@@ -431,6 +431,35 @@ aws ssm get-command-invocation --command-id $CMD --instance-id $IID --query Stan
 
 O script precisa do código atualizado na instância: rode o `volti-dev-update` antes.
 
+## Reset do dev para a moto de bancada
+
+**Só no dev.** `services/api/src/cli/dev-reset-bench.ts` apaga os dados de teste e deixa só a moto de bancada (VLT-0059, J16), com um aluguel **ativo** dela na conta do dono. Fica: contas (Cognito e clientes, KYC, cartões), equipe, galpões, estações, zonas, planos, catálogo e configuração. Sai: as outras motos (rastreador GT06 delas fica, desvinculado), aluguéis, reservas, entregas, pagamentos, cauções, carteira, assinaturas, apólices, alertas, tarefas de campo, comandos e manutenções das motos apagadas. Lista por tabela em `services/api/README.md` e `docs/decisoes.md` (2026-11-03, "Reset do dev para a bancada").
+
+O script **não manda comando à moto** (o relé fica como está) e recusa sem `VOLTI_ENV=dev` + `PAYMENT_PROVIDER=fake` (o container `api` do dev single já tem), sem `--i-understand-this-deletes-test-data`, com o cliente sem KYC aprovado/consentimento de localização/termos/cartão, ou com trava em andamento na moto. Precisa da imagem com o script: rode o `volti-dev-update` antes.
+
+Pelo Session Manager, como root, em `/opt/volti/src`. Primeiro só contar (`--dry-run`, nada é gravado), conferir as contagens e os avisos (`reset_warning`), depois aplicar e reiniciar a API (limpa os caches por processo da API):
+
+```bash
+cd /opt/volti/src
+DC="docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env"
+$DC exec -T api node dist/cli/dev-reset-bench.js --keep VLT-0059 --customer-email viniciusrufini17@gmail.com --i-understand-this-deletes-test-data --dry-run
+$DC exec -T api node dist/cli/dev-reset-bench.js --keep VLT-0059 --customer-email viniciusrufini17@gmail.com --i-understand-this-deletes-test-data
+$DC restart api
+```
+
+Pelo CloudShell (Run Command), o mesmo em uma linha por comando:
+
+```bash
+RESET="cd /opt/volti/src && docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env exec -T api node dist/cli/dev-reset-bench.js --keep VLT-0059 --customer-email viniciusrufini17@gmail.com --i-understand-this-deletes-test-data"
+CMD=$(aws ssm send-command --instance-ids $IID --document-name AWS-RunShellScript --parameters "commands=[\"$RESET --dry-run\"]" --query Command.CommandId --output text)
+aws ssm get-command-invocation --command-id $CMD --instance-id $IID --query StandardOutputContent --output text
+# conferido o dry-run:
+CMD=$(aws ssm send-command --instance-ids $IID --document-name AWS-RunShellScript --parameters "commands=[\"$RESET\",\"cd /opt/volti/src && docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env restart api\"]" --query Command.CommandId --output text)
+aws ssm get-command-invocation --command-id $CMD --instance-id $IID --query StandardOutputContent --output text
+```
+
+Opções: `--plan minute|hour|day` (padrão `day`) e `--coverage basic|full` (padrão `basic`). Avisos que não impedem o reset: `outside_operation_area` (a posição da moto está fora de toda zona `operation` ativa: **com o aluguel ativo, a API arma a trava fora da área e trava o relé em `OUT_OF_AREA_LOCK_MINUTES`** — ajuste a zona antes se o relé não puder mudar), `lock_origin_not_customer` (trava da equipe/sistema: o cliente não destrava pelo app), `vehicle_offline`, `bench_commands_open`. Encerrar o aluguel pelo app (ou `POST /rentals/{id}/test-end`) segue o fluxo normal, com a trava do relé.
+
 ## Segredos manuais (opcionais)
 
 ```bash
