@@ -1301,3 +1301,19 @@ Itens que as revisões da pré-reserva com balcão deixaram para depois, mais ac
    - O cabeçalho de localização ganhou desfoque; antes, o rótulo do mapa vazava pela pílula translúcida.
    - "Escolher moto" fixa o galpão que a home mostra. A lista não troca de galpão se a ordem "mais perto primeiro" mudar (localização relida sem resposta, visto no emulador).
 4. **CI (`infra.yml`, "test + synth (dev)").** O teste API→infra lia `CONFIRM_FLAG`, `RENTAL_PLANS` e `VOLTI_ENV`, do CLI do dono `dev-reset-bench`, como variáveis da task. Esses nomes foram para `NOT_VARIABLES`. Falhava desde a entrada desse CLI.
+
+## 2026-11-04 · Entrega de saída pelo painel ("Entregar moto" em Retiradas) (branch `feat/painel-entrega`) · status: aplicada (contrato aditivo)
+
+Contexto: com a pré-reserva no app, o painel não tinha como entregar a moto. "Contrato e pagamento" só aparecia com a reserva em `handover`, e só o app do operador criava a entrega, lendo o QR do cliente. Decisão do dono: as duas formas.
+
+1. **Com QR (padrão).** Reserva "Aguardando" ganha "Entregar moto" para admin e operacao; `campo` não usa o painel. O código vem de duas formas:
+   - câmera do computador, com `BarcodeDetector` quando o navegador tem;
+   - campo mascarado que aceita leitor USB ou o código colado.
+
+   Depois vêm o checklist de saída (mesmos códigos do operador), de 1 a 12 fotos por `POST /handovers/uploads` e a bateria (pré-preenchida; sem leitura, o atendente informa). Criada a entrega, abre o "Contrato e pagamento". O código lido nunca é exibido nem registrado.
+2. **Sem QR, só admin.**
+   - **Campos:** `HandoverCreate` (`pickup`) aceita `reservationId` + `noCodeReason` (10 a 300 caracteres) + `depotId`, todos obrigatórios nesse caminho.
+   - **Recusas:** quem não é admin recebe `403 pickup-without-code-requires-admin`. Os dois caminhos juntos, ou um pela metade, dão `400`. Reserva inexistente, de outro galpão ou já vencida (`expiresAt` passado com o expirador atrasado) dá `404`, como o QR vencido.
+   - **Validações:** são as mesmas do caminho com código.
+   - **Auditoria:** AuditLog `handover.pickup_without_code` na mesma transação, com ator, entrega, motivo e ids, sem dado do cliente. O texto de ajuda do motivo pede para não digitar números de documento.
+3. **Pendente (dono):** autorizar a dependência `jsqr@1.4.0`, que não está no cache local. Sem ela, a câmera não funciona em navegador sem `BarcodeDetector`, como o Chrome no Windows; lá fica só o campo do leitor ou do código colado.
