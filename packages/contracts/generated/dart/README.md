@@ -46,7 +46,7 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `task-type-mismatch`, `battery-swap-already-recorded`, `battery-not-in-van`, `battery-serial-mismatch`,
 `battery-in-other-van`, `battery-at-station`, `staff-not-registered`, `staff-account-relink-required`,
 `staff-directory-unavailable`, `handover-counter-checkout`, `counter-amount-mismatch`,
-`contract-photos-required`.
+`contract-photos-required`, `pickup-without-code-requires-admin`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por

@@ -24,6 +24,9 @@ export class HandoverChecklistItemDto {
   @IsOptional() @IsString() @MaxLength(500) note?: string;
 }
 
+/** Pedido de entrega sem QR: veio `reservationId` ou `noCodeReason` (os dois passam a ser obrigatórios). */
+const isNoCodePickup = (o: { reservationId?: unknown; noCodeReason?: unknown }) => o.reservationId !== undefined || o.noCodeReason !== undefined;
+
 export class HandoverCreateDto {
   @IsIn(HANDOVER_TYPES) type: HandoverTypeValue;
 
@@ -32,11 +35,23 @@ export class HandoverCreateDto {
   @IsUUID()
   depotId?: string;
 
-  @ValidateIf((o: HandoverCreateDto) => o.type === 'pickup')
+  /** Obrigatório em `pickup`, salvo na entrega sem QR (`reservationId` + `noCodeReason`, só admin). */
+  @ValidateIf((o: HandoverCreateDto) => o.type === 'pickup' && (o.pickupCode !== undefined || !isNoCodePickup(o)))
   @IsString()
   @MinLength(8)
   @MaxLength(256)
   pickupCode?: string;
+
+  /** Entrega sem QR (só `pickup`, só admin): os dois juntos; o service recusa com `pickupCode` (400) e sem ser admin (403). */
+  @ValidateIf(isNoCodePickup)
+  @IsUUID()
+  reservationId?: string;
+
+  @ValidateIf(isNoCodePickup)
+  @IsString()
+  @MinLength(10)
+  @MaxLength(300)
+  noCodeReason?: string;
 
   @ValidateIf((o: HandoverCreateDto) => o.type === 'return_depot')
   @IsUUID()

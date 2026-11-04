@@ -133,6 +133,88 @@ describe('HandoversService — saída (pickup)', () => {
   });
 });
 
+describe('HandoversService — saída sem QR (só admin)', () => {
+  const admin = { ...operator, groups: ['admin'] } as any;
+  const operacao = { ...operator, groups: ['operacao'] } as any;
+  const REASON = 'Celular do cliente sem bateria; documento conferido.';
+  const noCodeBody = (over: Record<string, unknown> = {}) =>
+    ({ type: 'pickup', reservationId: RES_ID, noCodeReason: REASON, depotId: DEPOT_ID, checklist: [{ code: 'freios', ok: true }], photoKeys: ['handovers/a.jpg'], batteryPct: 80, ...over }) as any;
+  const activeReservation = () => ({ ...reservation, status: 'active', vehicle: { id: VEHICLE_ID, status: 'reserved' } }) as any;
+
+  it('admin com reservationId + motivo → entrega pending_customer, reserva handover e AuditLog handover.pickup_without_code na transação', async () => {
+    const { prisma, events, svc, audit } = setup();
+    prisma.reservation.findUnique.mockResolvedValue(activeReservation());
+    prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.handover.create.mockResolvedValue(handover as any);
+    const out = await svc.createPickup(admin, noCodeBody());
+    expect(out.status).toBe(201);
+    expect(prisma.reservation.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: RES_ID } }));
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active' }, data: { status: 'handover' } });
+    expect(prisma.handover.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ type: 'pickup', status: 'pending_customer', depotId: DEPOT_ID, reservationId: RES_ID, batteryPct: 80 }),
+    }));
+    expect(audit.record).toHaveBeenCalledWith(
+      { actor: admin, action: 'handover.pickup_without_code', entityType: 'Handover', entityId: HO_ID, reason: REASON, metadata: { reservationId: RES_ID, depotId: DEPOT_ID } },
+      prisma,
+    );
+    // Sem dado pessoal do cliente na auditoria.
+    expect(JSON.stringify(audit.record.mock.calls[0][0])).not.toContain(CUSTOMER_ID);
+    expect(events.emit).toHaveBeenCalledWith(EV.HANDOVER_PENDING, expect.objectContaining({ handoverId: HO_ID, reservationId: RES_ID }));
+  });
+
+  it('sem código e sem ser admin → 403 pickup-without-code-requires-admin, nada lido nem criado', async () => {
+    const { prisma, svc, audit } = setup();
+    for (const who of [operator, operacao]) {
+      await expect(svc.createPickup(who, noCodeBody())).rejects.toMatchObject({ status: 403, slug: 'pickup-without-code-requires-admin' });
+    }
+    expect(prisma.reservation.findUnique).not.toHaveBeenCalled();
+    expect(prisma.handover.create).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('pickupCode junto com reservationId/noCodeReason → 400; só um dos dois → 400; nada criado', async () => {
+    const { prisma, svc } = setup();
+    const code = signPickupCode(RES_ID, new Date(Date.now() + 3600_000), SECRET);
+    await expect(svc.createPickup(admin, noCodeBody({ pickupCode: code }))).rejects.toMatchObject({ status: 400, slug: 'validation-error' });
+    await expect(svc.createPickup(admin, pickupBody(code, { noCodeReason: REASON }))).rejects.toMatchObject({ status: 400 });
+    await expect(svc.createPickup(admin, noCodeBody({ noCodeReason: undefined }))).rejects.toMatchObject({ status: 400 });
+    await expect(svc.createPickup(admin, noCodeBody({ reservationId: undefined }))).rejects.toMatchObject({ status: 400 });
+    await expect(svc.createPickup(admin, noCodeBody({ noCodeReason: '   curto   ' }))).rejects.toMatchObject({ status: 400 });
+    expect(prisma.handover.create).not.toHaveBeenCalled();
+  });
+
+  it('reserva inexistente, sem galpão ou de outro galpão → 404; encerrada → 409; moto não reserved → 409; sem auditoria', async () => {
+    const { prisma, svc, audit } = setup();
+    prisma.reservation.findUnique.mockResolvedValue(null);
+    await expect(svc.createPickup(admin, noCodeBody())).rejects.toMatchObject({ status: 404 });
+    prisma.reservation.findUnique.mockResolvedValue({ ...activeReservation(), depotId: null });
+    await expect(svc.createPickup(admin, noCodeBody())).rejects.toMatchObject({ status: 404 });
+    prisma.reservation.findUnique.mockResolvedValue(activeReservation());
+    await expect(svc.createPickup(admin, noCodeBody({ depotId: OTHER_ID }))).rejects.toMatchObject({ status: 404 });
+    prisma.reservation.findUnique.mockResolvedValue({ ...activeReservation(), status: 'converted' });
+    await expect(svc.createPickup(admin, noCodeBody())).rejects.toMatchObject({ status: 409 });
+    prisma.reservation.findUnique.mockResolvedValue({ ...activeReservation(), vehicle: { status: 'free' } });
+    await expect(svc.createPickup(admin, noCodeBody())).rejects.toMatchObject({ slug: 'vehicle-unavailable' });
+    expect(prisma.handover.create).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('reservationId/noCodeReason numa chegada (return_depot) → 400', async () => {
+    const { svc, prisma } = setup();
+    await expect(svc.create(admin, { ...noCodeBody(), type: 'return_depot', rentalId: RENTAL_ID })).rejects.toMatchObject({ status: 400 });
+    expect(prisma.depot.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('caminho com código não muda: sem auditoria de entrega sem QR', async () => {
+    const { prisma, svc, audit } = setup();
+    prisma.reservation.findUnique.mockResolvedValue(activeReservation());
+    prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.handover.create.mockResolvedValue(handover as any);
+    await svc.createPickup(operator, pickupBody(signPickupCode(RES_ID, new Date(Date.now() + 3600_000), SECRET)));
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+});
+
 describe('HandoversService — aceite (app antigo)', () => {
   it('accept antigo → 409 handover-counter-checkout, nada iniciado', async () => {
     const { svc, starter, prisma, events, locks } = setup();

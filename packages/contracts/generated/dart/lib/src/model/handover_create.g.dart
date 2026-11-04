@@ -14,6 +14,10 @@ class _$HandoverCreate extends HandoverCreate {
   @override
   final String? pickupCode;
   @override
+  final String? reservationId;
+  @override
+  final String? noCodeReason;
+  @override
   final String? rentalId;
   @override
   final BuiltList<HandoverChecklistItem> checklist;
@@ -31,6 +35,8 @@ class _$HandoverCreate extends HandoverCreate {
       {required this.type,
       this.depotId,
       this.pickupCode,
+      this.reservationId,
+      this.noCodeReason,
       this.rentalId,
       required this.checklist,
       required this.photoKeys,
@@ -51,6 +57,8 @@ class _$HandoverCreate extends HandoverCreate {
         type == other.type &&
         depotId == other.depotId &&
         pickupCode == other.pickupCode &&
+        reservationId == other.reservationId &&
+        noCodeReason == other.noCodeReason &&
         rentalId == other.rentalId &&
         checklist == other.checklist &&
         photoKeys == other.photoKeys &&
@@ -64,6 +72,8 @@ class _$HandoverCreate extends HandoverCreate {
     _$hash = $jc(_$hash, type.hashCode);
     _$hash = $jc(_$hash, depotId.hashCode);
     _$hash = $jc(_$hash, pickupCode.hashCode);
+    _$hash = $jc(_$hash, reservationId.hashCode);
+    _$hash = $jc(_$hash, noCodeReason.hashCode);
     _$hash = $jc(_$hash, rentalId.hashCode);
     _$hash = $jc(_$hash, checklist.hashCode);
     _$hash = $jc(_$hash, photoKeys.hashCode);
@@ -79,6 +89,8 @@ class _$HandoverCreate extends HandoverCreate {
           ..add('type', type)
           ..add('depotId', depotId)
           ..add('pickupCode', pickupCode)
+          ..add('reservationId', reservationId)
+          ..add('noCodeReason', noCodeReason)
           ..add('rentalId', rentalId)
           ..add('checklist', checklist)
           ..add('photoKeys', photoKeys)
@@ -103,6 +115,15 @@ class HandoverCreateBuilder
   String? _pickupCode;
   String? get pickupCode => _$this._pickupCode;
   set pickupCode(String? pickupCode) => _$this._pickupCode = pickupCode;
+
+  String? _reservationId;
+  String? get reservationId => _$this._reservationId;
+  set reservationId(String? reservationId) =>
+      _$this._reservationId = reservationId;
+
+  String? _noCodeReason;
+  String? get noCodeReason => _$this._noCodeReason;
+  set noCodeReason(String? noCodeReason) => _$this._noCodeReason = noCodeReason;
 
   String? _rentalId;
   String? get rentalId => _$this._rentalId;
@@ -139,6 +160,8 @@ class HandoverCreateBuilder
       _type = $v.type;
       _depotId = $v.depotId;
       _pickupCode = $v.pickupCode;
+      _reservationId = $v.reservationId;
+      _noCodeReason = $v.noCodeReason;
       _rentalId = $v.rentalId;
       _checklist = $v.checklist.toBuilder();
       _photoKeys = $v.photoKeys.toBuilder();
@@ -171,6 +194,8 @@ class HandoverCreateBuilder
                 type, r'HandoverCreate', 'type'),
             depotId: depotId,
             pickupCode: pickupCode,
+            reservationId: reservationId,
+            noCodeReason: noCodeReason,
             rentalId: rentalId,
             checklist: checklist.build(),
             photoKeys: photoKeys.build(),

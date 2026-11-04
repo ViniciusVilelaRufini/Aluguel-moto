@@ -5,14 +5,14 @@ import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { DepositReleaseRequestedEvent, EV, HandoverPendingEvent, HandoverUpdatedEvent, ReservationEndedEvent, VehicleStatusChangedEvent } from '../../common/events';
 import { IDEMPOTENCY_STALE_MS, IDEMPOTENCY_STORE, type IdempotencyStore } from '../../common/idempotency/idempotency.store';
 import { pageArgs, toPage } from '../../common/pagination';
-import { conflict, notFound, ProblemException, unprocessable } from '../../common/problem';
+import { badRequest, conflict, forbidden, notFound, ProblemException, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
 import { distanceM } from '../../common/util';
 import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { isStaff, type Principal } from '../auth/principal';
+import { isAdmin, isStaff, type Principal } from '../auth/principal';
 import { isUniqueViolation } from '../payments/payment-state.service';
 import { DEPOT_RETURN_RADIUS_M, depotPosition, RentalEndService } from '../rentals/rental-end.service';
 import { RentalStartService } from '../rentals/rental-start.service';
@@ -40,6 +40,12 @@ const notAtDepot = () =>
   new ProblemException(422, 'vehicle-not-at-depot', 'A moto não está no galpão. Use o encerramento forçado pelo suporte.', undefined, 'Moto fora do galpão');
 const notPending = () => new ProblemException(422, 'handover-not-pending', 'Esta entrega não está mais aguardando o seu aceite.', undefined, 'Entrega não está pendente');
 /** Decisão 10 (pré-reserva/balcão): o aceite pelo app (beta12) deixou de iniciar o aluguel. */
+/** Entrega sem QR (celular do cliente sem bateria): só o admin, com motivo. */
+const noCodeRequiresAdmin = () =>
+  forbidden('Só o admin pode entregar a moto sem o QR do cliente.', 'pickup-without-code-requires-admin');
+/** Motivo da entrega sem QR: 10 a 300 caracteres depois de aparar. */
+const NO_CODE_REASON_MIN = 10;
+const NO_CODE_REASON_MAX = 300;
 const counterCheckout = () =>
   new ProblemException(409, 'handover-counter-checkout', 'O aluguel é iniciado pelo atendente no galpão.', undefined, 'Aluguel iniciado no balcão');
 
@@ -82,8 +88,10 @@ export class HandoversService {
     return presignedUpload(this.storage, this.cfg.buckets.returnPhotos, purpose === 'contract' ? 'contracts' : 'handovers', contentType);
   }
 
-  create(operator: Principal, dto: HandoverCreateDto): Promise<CreateResult> {
-    return dto.type === 'pickup' ? this.createPickup(operator, dto) : this.createReturn(operator, dto);
+  async create(operator: Principal, dto: HandoverCreateDto): Promise<CreateResult> {
+    if (dto.type === 'pickup') return this.createPickup(operator, dto);
+    if (dto.reservationId !== undefined || dto.noCodeReason !== undefined) throw badRequest('reservationId e noCodeReason só valem na saída (pickup).');
+    return this.createReturn(operator, dto);
   }
 
   // ───────────────────────── saída (pickup) ─────────────────────────
@@ -91,13 +99,35 @@ export class HandoversService {
   /**
    * Código válido → reserva de galpão `active` (ou `handover` sem saída aberta, depois de uma disputa) com a moto
    * `reserved` → entrega `pending_customer` e reserva `handover`, numa transação. Código adulterado ou vencido → 404.
+   *
+   * Sem QR (só admin): `reservationId` + `noCodeReason` no lugar do `pickupCode` (os dois caminhos juntos ou pela metade →
+   * 400; sem ser admin → 403). Reserva inexistente, sem galpão ou de outro galpão → 404; o resto é igual ao caminho com
+   * código. Grava o AuditLog `handover.pickup_without_code` (ator, reserva, galpão e motivo) na transação da entrega.
    */
   async createPickup(operator: Principal, dto: HandoverCreateDto): Promise<CreateResult> {
-    const code = verifyPickupCode(dto.pickupCode ?? '', new Date(), this.pickupSecret);
-    if (!code) throw notFound('Código de retirada inválido ou vencido.');
-    const r = await this.prisma.reservation.findUnique({ where: { id: code.reservationId }, include: { vehicle: true } });
-    if (!r || !r.depotId) throw notFound('Código de retirada inválido ou vencido.');
-    if (dto.depotId && dto.depotId !== r.depotId) throw unprocessable('validation-error', 'Este código é de uma retirada em outro galpão.');
+    const noCode = dto.reservationId !== undefined || dto.noCodeReason !== undefined;
+    if (noCode && dto.pickupCode !== undefined) throw badRequest('Envie o código do QR ou a reserva com o motivo, não os dois.');
+    let reservationId: string;
+    let noCodeReason: string | undefined;
+    if (noCode) {
+      if (!isAdmin(operator)) throw noCodeRequiresAdmin();
+      noCodeReason = dto.noCodeReason?.trim() ?? '';
+      if (!dto.reservationId || noCodeReason.length < NO_CODE_REASON_MIN || noCodeReason.length > NO_CODE_REASON_MAX) {
+        throw badRequest(`Informe a reserva e o motivo da entrega sem QR (${NO_CODE_REASON_MIN} a ${NO_CODE_REASON_MAX} caracteres).`);
+      }
+      reservationId = dto.reservationId;
+    } else {
+      const code = verifyPickupCode(dto.pickupCode ?? '', new Date(), this.pickupSecret);
+      if (!code) throw notFound('Código de retirada inválido ou vencido.');
+      reservationId = code.reservationId;
+    }
+    const r = await this.prisma.reservation.findUnique({ where: { id: reservationId }, include: { vehicle: true } });
+    if (noCode) {
+      if (!r || !r.depotId || (dto.depotId && dto.depotId !== r.depotId)) throw notFound('Reserva não encontrada neste galpão.');
+    } else {
+      if (!r || !r.depotId) throw notFound('Código de retirada inválido ou vencido.');
+      if (dto.depotId && dto.depotId !== r.depotId) throw unprocessable('validation-error', 'Este código é de uma retirada em outro galpão.');
+    }
     if (r.status !== 'active' && r.status !== 'handover') throw conflict('conflict', 'Esta reserva não está mais ativa.');
     if (!r.vehicle || r.vehicle.status !== 'reserved') throw conflict('vehicle-unavailable', 'A moto desta reserva não está separada.');
 
@@ -108,7 +138,7 @@ export class HandoversService {
           const moved = await tx.reservation.updateMany({ where: { id: r.id, status: 'active' }, data: { status: 'handover' } });
           if (moved.count !== 1) throw conflict('conflict', 'Esta reserva não está mais ativa.');
         }
-        return tx.handover.create({
+        const row = await tx.handover.create({
           data: {
             type: 'pickup',
             status: 'pending_customer',
@@ -123,13 +153,21 @@ export class HandoversService {
           },
           include: { vehicle: { select: { code: true } } },
         });
+        if (noCodeReason !== undefined) {
+          // Só ids e o motivo digitado pelo admin; nada do cliente.
+          await this.audit.record(
+            { actor: operator, action: 'handover.pickup_without_code', entityType: 'Handover', entityId: row.id, reason: noCodeReason, metadata: { reservationId: r.id, depotId: r.depotId } },
+            tx,
+          );
+        }
+        return row;
       });
     } catch (err) {
       if (isUniqueViolation(err)) throw conflict('conflict', 'Já existe uma entrega aberta para esta reserva.');
       throw err;
     }
     this.events.emit(EV.HANDOVER_PENDING, { handoverId: created.id, reservationId: r.id, customerId: r.customerId, depotId: r.depotId } satisfies HandoverPendingEvent);
-    this.logger.log({ msg: 'handover_created', handoverId: created.id, type: 'pickup', reservationId: r.id, depotId: r.depotId });
+    this.logger.log({ msg: 'handover_created', handoverId: created.id, type: 'pickup', reservationId: r.id, depotId: r.depotId, withoutCode: noCode });
     return { status: 201, body: await this.view(created, undefined, undefined, true) };
   }
 

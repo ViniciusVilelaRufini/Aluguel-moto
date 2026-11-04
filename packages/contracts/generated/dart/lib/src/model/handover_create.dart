@@ -16,7 +16,9 @@ part 'handover_create.g.dart';
 /// Properties:
 /// * [type]
 /// * [depotId] - Galpão onde a entrega acontece. Obrigatório em `return_depot` (`400`); em `pickup` precisa ser o da reserva, quando enviado.
-/// * [pickupCode] - Só em `pickup` (obrigatório): conteúdo do QR da reserva.
+/// * [pickupCode] - Só em `pickup` (obrigatório, salvo na entrega sem QR): conteúdo do QR da reserva.
+/// * [reservationId] - Só em `pickup` sem QR (só `admin`), com `noCodeReason` e sem `pickupCode`: reserva entregue.
+/// * [noCodeReason] - Só em `pickup` sem QR (só `admin`), com `reservationId`: por que a entrega foi feita sem ler o QR. Vai para a auditoria.
 /// * [rentalId] - Só em `return_depot` (obrigatório): aluguel que chega.
 /// * [checklist]
 /// * [photoKeys] - Chaves devolvidas por `POST /handovers/uploads` (prefixo `handovers/`).
@@ -33,9 +35,17 @@ abstract class HandoverCreate
   @BuiltValueField(wireName: r'depotId')
   String? get depotId;
 
-  /// Só em `pickup` (obrigatório): conteúdo do QR da reserva.
+  /// Só em `pickup` (obrigatório, salvo na entrega sem QR): conteúdo do QR da reserva.
   @BuiltValueField(wireName: r'pickupCode')
   String? get pickupCode;
+
+  /// Só em `pickup` sem QR (só `admin`), com `noCodeReason` e sem `pickupCode`: reserva entregue.
+  @BuiltValueField(wireName: r'reservationId')
+  String? get reservationId;
+
+  /// Só em `pickup` sem QR (só `admin`), com `reservationId`: por que a entrega foi feita sem ler o QR. Vai para a auditoria.
+  @BuiltValueField(wireName: r'noCodeReason')
+  String? get noCodeReason;
 
   /// Só em `return_depot` (obrigatório): aluguel que chega.
   @BuiltValueField(wireName: r'rentalId')
@@ -96,6 +106,20 @@ class _$HandoverCreateSerializer
       yield r'pickupCode';
       yield serializers.serialize(
         object.pickupCode,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.reservationId != null) {
+      yield r'reservationId';
+      yield serializers.serialize(
+        object.reservationId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.noCodeReason != null) {
+      yield r'noCodeReason';
+      yield serializers.serialize(
+        object.noCodeReason,
         specifiedType: const FullType(String),
       );
     }
@@ -176,6 +200,22 @@ class _$HandoverCreateSerializer
           ) as String?;
           if (valueDes == null) continue;
           result.pickupCode = valueDes;
+          break;
+        case r'reservationId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.reservationId = valueDes;
+          break;
+        case r'noCodeReason':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.noCodeReason = valueDes;
           break;
         case r'rentalId':
           final valueDes = serializers.deserialize(
