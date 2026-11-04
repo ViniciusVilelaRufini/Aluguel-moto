@@ -14,6 +14,14 @@ export const TOPICS = {
 /** GT06 não limita velocidade: o reported traz o máximo legal, garantido pelo controlador da moto (spec §1.4). */
 export const FIXED_LIMIT_KMH = 32;
 
+/**
+ * Posição fraca: satélites conhecidos (`satelites`) abaixo disto. Continua no mapa e no trajeto, mas não é amostra parada da
+ * segunda guarda do corte nem entra no alerta `movimento_sem_aluguel` (a API também não a conta como parada para a trava só
+ * relé nem muda cerca/limite de zona com ela). Mesmo valor de MIN_GPS_SATELLITES em services/api/src/modules/iot/mqtt-contract.ts
+ * (copiado, não importado entre pacotes; contrato: packages/contracts/mqtt.md).
+ */
+export const MIN_GPS_SATELLITES = 5;
+
 export type DeviceEventType = 'queda' | 'violacao' | 'bateria_critica' | 'movimento_sem_aluguel';
 
 export interface TelemetryMessage {
@@ -27,6 +35,8 @@ export interface TelemetryMessage {
   timestamp: string;
   /** `false` = `bateria_pct` é 0 por falta de leitura (teto de 5 min da ponte), não bateria vazia. Ausente = `true`. */
   bateria_conhecida?: boolean;
+  /** Satélites do fix (`attributes.sat` do Traccar). Ausente = desconhecido. */
+  satelites?: number;
 }
 
 export interface DeviceEventMessage {
@@ -40,6 +50,8 @@ export interface ReportedState {
   modo_roubada?: boolean;
   firmware?: string;
   velocidade_kmh?: number;
+  /** Rastreamento GPS desligado com a ignição desligada (modo de economia do J16), do byte de status do heartbeat. */
+  gps_economia?: boolean;
 }
 
 export interface DesiredDelta {
@@ -62,7 +74,8 @@ export function isValidTelemetry(t: TelemetryMessage): boolean {
     Number.isInteger(t.sinal) &&
     inRange(t.sinal, 0, 5) &&
     !Number.isNaN(Date.parse(t.timestamp)) &&
-    (t.bateria_conhecida === undefined || typeof t.bateria_conhecida === 'boolean')
+    (t.bateria_conhecida === undefined || typeof t.bateria_conhecida === 'boolean') &&
+    (t.satelites === undefined || (Number.isInteger(t.satelites) && inRange(t.satelites, 0, 255)))
   );
 }
 

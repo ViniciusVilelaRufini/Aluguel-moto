@@ -1,4 +1,4 @@
-import { isValidTelemetry, type DeviceEventMessage, type DeviceEventType, type TelemetryMessage } from './contract';
+import { isValidTelemetry, MIN_GPS_SATELLITES, type DeviceEventMessage, type DeviceEventType, type TelemetryMessage } from './contract';
 import type { TraccarEvent, TraccarPosition } from './traccar/types';
 import { knotsToKmh, rssiToSignal, voltageToPct, type BatteryModel } from './units';
 
@@ -17,8 +17,17 @@ export interface DeviceMemory {
   lastFixTime?: number;
   /** Última posição válida publicada: base da segunda guarda do corte e do `reported.velocidade_kmh`. */
   last?: { fixTime: number; speedKmh: number; lat: number; lng: number };
-  /** Onde a moto estava quando o corte foi visto (deslocamento > 20 m travada → `movimento_sem_aluguel`). */
-  lockAnchor?: { lat: number; lng: number };
+  /**
+   * Cadeia de posições boas com o corte ativo (deslocamento > 20 m travada → `movimento_sem_aluguel`): `lat`/`lng` = âncora
+   * (primeira posição boa da cadeia), `prev` = última posição boa. Some com o corte não confirmado, posição fraca, posição sem
+   * fix e heartbeat com o GPS desligado; posição boa a mais de `LOCK_ANCHOR_MAX_GAP_MS` da anterior reancora.
+   */
+  lockAnchor?: { lat: number; lng: number; prev: { lat: number; lng: number; fixTime: number } };
+  /**
+   * Byte terminal info do último status GT06 (`attributes.status` cru do Traccar): hora (min(serverTime, ingestão)), bit 6
+   * (rastreamento GPS ligado) e bit 1 (ACC). Base de `gpsSleepOf`.
+   */
+  gpsStatus?: { at: number; tracking: boolean; ignition: boolean };
   /**
    * Relógio da ponte (ms) do último `engineStop`/`engineResume` aceito pelo Traccar (`markCommandSent`). Enquanto houver
    * `pendingCommand`, só vale status recebido depois da resposta do aparelho (`commandAckAt`) ou, sem resposta, depois de
@@ -50,6 +59,36 @@ export const RELAY_REPLY_SETTLE_MS = 5_000;
 export const COMMAND_ACK_GRACE_MS = 5_000;
 
 export const MOVED_WHILE_LOCKED_M = 20;
+
+/**
+ * Bancada do J16 (2026-11-04): ao voltar de um período sem fix (modo de economia, `Slp:1`), a primeira posição salta dezenas de
+ * metros da âncora tirada antes, com a moto parada, e disparava `movimento_sem_aluguel` falso. Posição boa a mais que isto da
+ * posição boa anterior (hora do fix) não é comparada: reancora.
+ */
+export const LOCK_ANCHOR_MAX_GAP_MS = 60_000;
+
+/** Heartbeat do J16 a cada ~60 s: byte de status recebido há mais que isto é desconhecido para `gpsSleepOf`. */
+export const GPS_STATUS_FRESH_MS = 180_000;
+
+/** Byte terminal info do GT06 (heartbeat 0x13; Traccar `attributes.status`): bit 1 = ACC, bit 6 = rastreamento GPS ligado. */
+const GT06_STATUS_ACC = 1 << 1;
+const GT06_STATUS_GPS_TRACKING = 1 << 6;
+
+/**
+ * Modo de economia do GPS: `true` = o último status (≤ 3 min) disse rastreamento GPS desligado com a ACC desligada (o J16 com
+ * `Slp:1` liga o GPS por ~5 min e desliga por 10–70 min com a ignição desligada); `false` = GPS ligado ou ACC ligada;
+ * `undefined` = sem status fresco (o Traccar não entregou o byte, ou heartbeat velho).
+ */
+export function gpsSleepOf(mem: DeviceMemory, now: number): boolean | undefined {
+  const s = mem.gpsStatus;
+  if (!s || now - s.at > GPS_STATUS_FRESH_MS) return undefined;
+  return !s.tracking && !s.ignition;
+}
+
+/** `attributes.sat` do Traccar (satélites do fix GT06); fora de inteiro 0..255 = desconhecido. */
+function satellitesOf(v: unknown): number | undefined {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 255 ? v : undefined;
+}
 
 /**
  * Bit de corte ATUAL: `undefined` enquanto aguarda o primeiro status depois de uma (re)conexão.
@@ -208,6 +247,12 @@ export function applyPosition(
     next.commandAckAt = undefined;
   }
   if (typeof a.ignition === 'boolean') next.ignition = a.ignition;
+  if (typeof a.status === 'number' && Number.isInteger(a.status) && a.status >= 0 && a.status <= 255) {
+    // Byte cru do status GT06 (decoder do Traccar: `Position.KEY_STATUS`). GPS desligado = sem posição nova até voltar: a cadeia
+    // de posições do alerta de movimento travada recomeça.
+    next.gpsStatus = { at, tracking: (a.status & GT06_STATUS_GPS_TRACKING) !== 0, ignition: (a.status & GT06_STATUS_ACC) !== 0 };
+    if (!next.gpsStatus.tracking) next.lockAnchor = undefined;
+  }
   if (typeof a.rssi === 'number') next.signal = rssiToSignal(a.rssi);
   if (typeof a.power === 'number') {
     const pct = voltageToPct(a.power, battery);
@@ -227,6 +272,8 @@ export function applyPosition(
   }
   if (!p.valid || p.outdated || !Number.isFinite(fixTime)) {
     if (newer) next.last = undefined;
+    // Posição nova sem fix: a âncora do movimento travada é de antes do período sem GPS.
+    if (newer && !p.outdated) next.lockAnchor = undefined;
     return none;
   }
   if (fixTime > now + MAX_CLOCK_SKEW_MS) {
@@ -234,6 +281,8 @@ export function applyPosition(
     return { ...none, invalid: true };
   }
   const speedKmh = knotsToKmh(p.speed);
+  const satellites = satellitesOf(a.sat);
+  const weak = satellites !== undefined && satellites < MIN_GPS_SATELLITES;
   if (!newer) {
     // Não publica (ordem), mas velocidade em movimento ou fora do contrato vence a amostra parada guardada.
     if (!(speedKmh < 3) || !Number.isFinite(speedKmh)) next.last = undefined;
@@ -248,20 +297,32 @@ export function applyPosition(
     ignicao: next.ignition ?? false,
     sinal: next.signal ?? 0,
     timestamp: new Date(fixTime).toISOString(),
+    ...(satellites === undefined ? {} : { satelites: satellites }),
   };
   if (!isValidTelemetry(telemetry)) {
     next.last = undefined;
     return { ...none, invalid: true };
   }
   next.lastFixTime = fixTime;
-  next.last = { fixTime: Math.min(fixTime, now), speedKmh, lat: p.latitude, lng: p.longitude };
+  // Posição fraca parada não é amostra parada (desconhecida = em movimento para a segunda guarda: só dificulta o corte); fraca em
+  // movimento vale (também só dificulta).
+  next.last = weak && speedKmh < 3 ? undefined : { fixTime: Math.min(fixTime, now), speedKmh, lat: p.latitude, lng: p.longitude };
   let movedWhileLocked = false;
-  if (blocked === true) {
-    const here = { lat: p.latitude, lng: p.longitude };
-    if (!next.lockAnchor) next.lockAnchor = here;
-    else if (haversineM(next.lockAnchor, here) > MOVED_WHILE_LOCKED_M) {
+  if (blocked === true && weak) {
+    // Posição fraca não entra no alerta e quebra a cadeia: a próxima boa reancora.
+    next.lockAnchor = undefined;
+  } else if (blocked === true) {
+    const here = { lat: p.latitude, lng: p.longitude, fixTime };
+    const chain = next.lockAnchor;
+    if (!chain || fixTime - chain.prev.fixTime > LOCK_ANCHOR_MAX_GAP_MS) {
+      // Primeira posição boa da cadeia (corte recém-visto, ou depois de um período sem fix, fraco ou com o GPS desligado).
+      next.lockAnchor = { lat: here.lat, lng: here.lng, prev: here };
+    } else if (haversineM(chain.prev, here) > MOVED_WHILE_LOCKED_M || haversineM(chain, here) > MOVED_WHILE_LOCKED_M) {
+      // Duas posições boas seguidas a mais de 20 m, ou o acumulado desde a âncora na mesma cadeia (arrasto lento).
       movedWhileLocked = true;
-      next.lockAnchor = here;
+      next.lockAnchor = { lat: here.lat, lng: here.lng, prev: here };
+    } else {
+      next.lockAnchor = { ...chain, prev: here };
     }
   }
   if (blocked === undefined) return { ...none, held: 'awaiting_status', memory: next };

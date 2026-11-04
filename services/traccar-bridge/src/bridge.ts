@@ -1,7 +1,7 @@
 import { FIXED_LIMIT_KMH, TOPICS, thingOf, type DeviceEventMessage, type ReportedState } from './contract';
 import { CUT_FRESH_MS, cutRefusal, parseDelta, planDeltaFor, planReconnect, type BridgeAction } from './delta';
 import { maskImei, silentLogger, type Logger } from './log';
-import { applyPosition, currentBlocked, freshBlocked, markCommandSent, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
+import { applyPosition, currentBlocked, freshBlocked, gpsSleepOf, markCommandSent, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { MqttLike } from './mqtt';
 import type { TraccarDevice, TraccarEvent, TraccarPosition, TraccarSocketMessage } from './traccar/types';
 import { MIN_TRACCAR_NOQUEUE, supportsNoQueue } from './traccar/version';
@@ -90,6 +90,8 @@ export class Bridge {
   private readonly batteryWaitSince = new Map<string, number>();
   /** Último `reported.travada` publicado (valor e hora), para M5. */
   private readonly lastTravada = new Map<string, { value: boolean; at: number }>();
+  /** Último `reported.gps_economia` publicado (valor e hora): sozinho só na mudança ou no máximo 1/min. */
+  private readonly lastGpsSleep = new Map<string, { value: boolean; at: number }>();
   private readonly alarmIds = new Map<string, number[]>();
   private readonly lastLogAt = new Map<string, number>();
   private readonly awaitingGet = new Set<string>();
@@ -408,6 +410,7 @@ export class Bridge {
     this.stolen.delete(thing);
     this.batteryWaitSince.delete(thing);
     this.lastTravada.delete(thing);
+    this.lastGpsSleep.delete(thing);
     this.alarmIds.delete(thing);
     this.awaitingGet.delete(thing);
   }
@@ -478,6 +481,9 @@ export class Bridge {
       await this.publish(TOPICS.events(thing), { tipo: 'movimento_sem_aluguel', timestamp: new Date(Date.parse(p.fixTime)).toISOString() }, 1);
     }
     if (!replay) await this.positionAlarms(thing, p, r.memory, now);
+    // Byte de status GT06 nesta mensagem (heartbeat): modo de economia do GPS para o painel/app (`reported.gps_economia`).
+    const gpsSleep = r.memory.gpsStatus !== before.gpsStatus ? gpsSleepOf(r.memory, now) : undefined;
+    const gps: ReportedState = gpsSleep === undefined ? {} : { gps_economia: gpsSleep };
     const blocked = currentBlocked(r.memory);
     if (r.relayReply && typeof blocked === 'boolean') {
       // Resposta do J16 com o estado do relé ("RELAY n OK"): status fresco do aparelho, sai na hora (sem a deduplicação de M5).
@@ -489,13 +495,25 @@ export class Bridge {
     if (r.staleAfterReply) {
       // Bancada: status logo depois da resposta "RELAY n OK" com o bit antigo. Não muda nem republica a trava (`travada` = a da resposta).
       this.logLimited(`${thing}|stale_status_after_reply`, 'info', { msg: 'stale_status_after_reply', thingName: thing, travada: blocked });
+      await this.reportGpsSleep(thing, gps);
       return;
     }
     // Status com o bit de corte → `reported.travada` do bit ATUAL: na mudança ou, igual, no máximo 1/min (M5).
     if (typeof p.attributes?.blocked === 'boolean' && typeof blocked === 'boolean') {
       const last = this.lastTravada.get(thing);
-      if (!last || last.value !== blocked || now - last.at >= REPORT_REPEAT_MS) await this.report(thing, { travada: blocked, ...this.freshSpeed(thing) });
+      if (!last || last.value !== blocked || now - last.at >= REPORT_REPEAT_MS) {
+        await this.report(thing, { travada: blocked, ...this.freshSpeed(thing), ...gps });
+        return;
+      }
     }
+    await this.reportGpsSleep(thing, gps);
+  }
+
+  /** `reported.gps_economia` sozinho (sem travada): na mudança ou, igual, no máximo 1/min. */
+  private async reportGpsSleep(thing: string, gps: ReportedState): Promise<void> {
+    if (gps.gps_economia === undefined) return;
+    const last = this.lastGpsSleep.get(thing);
+    if (!last || last.value !== gps.gps_economia || this.now() - last.at >= REPORT_REPEAT_MS) await this.report(thing, gps);
   }
 
   /**
@@ -678,6 +696,12 @@ export class Bridge {
     return { velocidade_kmh: last.speedKmh };
   }
 
+  /** `gps_economia` do status de até 3 min (`GPS_STATUS_FRESH_MS`); sem ele, nada. */
+  private freshGpsSleep(thing: string): { gps_economia?: boolean } {
+    const v = gpsSleepOf(this.mem(thing), this.now());
+    return v === undefined ? {} : { gps_economia: v };
+  }
+
   /** Reported completo (reconexão). `travada` só se o bit atual e fresco for conhecido — nunca de memória anterior. */
   private fullReported(thing: string): ReportedState {
     const model = this.deviceOf(thing)?.model;
@@ -688,6 +712,7 @@ export class Bridge {
       modo_roubada: this.stolen.get(thing) ?? false,
       firmware: (model ? `gt06/${model}` : 'gt06').slice(0, 64),
       ...this.freshSpeed(thing),
+      ...this.freshGpsSleep(thing),
     };
   }
 
@@ -708,6 +733,7 @@ export class Bridge {
     if (this.mqtt.connected === false) return;
     if (await this.publish(TOPICS.shadowUpdate(thing), { state: { reported } }, 1)) {
       if (typeof reported.travada === 'boolean') this.lastTravada.set(thing, { value: reported.travada, at: this.now() });
+      if (typeof reported.gps_economia === 'boolean') this.lastGpsSleep.set(thing, { value: reported.gps_economia, at: this.now() });
     }
   }
 

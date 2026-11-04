@@ -324,6 +324,35 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     expect(c.logs.some((l) => l.msg === 'engine_stop_refused')).toBe(false);
   });
 
+  it('bancada 2026-11-04: byte de status do heartbeat → reported.gps_economia (junto da travada; sozinho só quando muda)', async () => {
+    c = await start();
+    // `attributes.status` = byte terminal info cru (decoder GT06 do Traccar): bit 7 corte, bit 6 GPS, bit 1 ACC.
+    const hb = (id: number, at: number, status: number): TraccarPosition =>
+      position({ id, deviceId: 1, fixTime: iso(T0 - 60_000), serverTime: iso(at), outdated: true, attributes: { blocked: (status & 0x80) !== 0, ignition: (status & 0x02) !== 0, status } });
+    const gps = () => updates(c).filter((u) => u.state.reported.gps_economia !== undefined).map((u) => u.state.reported);
+    c.traccar.push({ positions: [hb(500, T0, 0x84)] }); // corte, GPS desligado, ACC desligada = economia
+    await waitFor(() => gps().length === 1);
+    expect(gps()[0]).toMatchObject({ travada: true, gps_economia: true });
+    for (const u of updates(c)) expect(validUpdate(u)).toBe(true);
+    c.now.value = T0 + 1_000;
+    c.traccar.push({ positions: [hb(501, T0 + 1_000, 0x84)] });
+    await sleep(40);
+    expect(gps().length).toBe(1); // igual e há menos de 60 s
+    c.now.value = T0 + 2_000;
+    c.traccar.push({ positions: [hb(502, T0 + 2_000, 0xc4)] }); // GPS voltou: sai na hora, sem repetir a travada
+    await waitFor(() => gps().length === 2);
+    expect(gps()[1]).toEqual({ gps_economia: false });
+    c.now.value = T0 + 60_000;
+    c.traccar.push({ positions: [hb(503, T0 + 60_000, 0xc4)] }); // repetição de 1/min da travada leva o gps_economia
+    await waitFor(() => gps().length === 3);
+    expect(gps()[2]).toMatchObject({ travada: true, gps_economia: false });
+    c.now.value = T0 + 120_000;
+    c.traccar.push({ positions: [heartbeat(504, T0 + 120_000, true)] }); // sem o byte de status: sem gps_economia
+    await waitFor(() => reportedTravada(c).length === 3);
+    expect(gps().length).toBe(3);
+    for (const u of updates(c)) expect(validUpdate(u)).toBe(true);
+  });
+
   it('depois de reconectar, memória velha não vale: sem eco travada:true até um status novo', async () => {
     c = await start();
     c.traccar.push({ positions: [heartbeat(80, T0, true)] });

@@ -3,7 +3,8 @@ import addFormats from 'ajv-formats';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cutRefusal } from './delta';
-import { applyPosition, BLOCKED_FRESH_MS, COMMAND_ACK_GRACE_MS, currentBlocked, freshBlocked, markCommandSent, markReconnected, parseRelayReply, RELAY_REPLY_SETTLE_MS, toDeviceEvents, type DeviceMemory } from './mapping';
+import { MIN_GPS_SATELLITES } from './contract';
+import { applyPosition, BLOCKED_FRESH_MS, COMMAND_ACK_GRACE_MS, currentBlocked, freshBlocked, GPS_STATUS_FRESH_MS, gpsSleepOf, LOCK_ANCHOR_MAX_GAP_MS, markCommandSent, markReconnected, parseRelayReply, RELAY_REPLY_SETTLE_MS, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { TraccarEvent, TraccarPosition } from './traccar/types';
 
 const schema = (name: string) => JSON.parse(readFileSync(join(__dirname, '../../../packages/contracts/schemas', name), 'utf8'));
@@ -522,6 +523,138 @@ describe('J16: resposta do aparelho com o estado do relé (attributes.result "RE
       const early = AP(hb(NOW + 2_000, true), sent, NOW + 2_000);
       expect(early.staleAfterReply).toBe(false);
       expect(currentBlocked(early.memory)).toBeUndefined(); // dentro da folga de 5 s do envio, sem resposta: não vale
+    });
+  });
+});
+
+describe('qualidade do GPS: satélites, modo de economia e âncora do movimento travada (bancada 2026-11-04)', () => {
+  const T = Date.parse('2026-11-04T13:00:00Z');
+  const at = (ms: number) => new Date(ms).toISOString();
+  const LAT = -23.5614;
+  /** Latitude `m` metros ao norte de LAT. */
+  const north = (m: number) => LAT + m / 111_195;
+  /** Posição GT06 válida (parada por padrão), com o bit de corte fresco e satélites. */
+  const fix = (ms: number, lat: number, sat: number | undefined = 9, speed = 0, blocked = true): TraccarPosition =>
+    pos({ fixTime: at(ms), serverTime: at(ms), latitude: lat, speed, attributes: { blocked, ignition: false, power: 72, ...(sat === undefined ? {} : { sat }) } });
+  /** Destravada (para a segunda guarda do corte). */
+  const free = (ms: number, sat: number | undefined, speed = 0) => fix(ms, LAT, sat, speed, false);
+  /** Heartbeat 0x13 com o byte terminal info cru (`attributes.status` do decoder GT06 do Traccar). */
+  const hb = (ms: number, status: number | undefined): TraccarPosition =>
+    pos({ outdated: true, fixTime: at(T - 3_600_000), serverTime: at(ms), speed: 0, attributes: { blocked: true, ignition: false, ...(status === undefined ? {} : { status }) } });
+  const run = (steps: Array<[TraccarPosition, number]>, mem: DeviceMemory = {}) => {
+    const out: Array<ReturnType<typeof applyPosition>> = [];
+    for (const [p, now] of steps) {
+      const r = applyPosition(p, mem, '72v', now);
+      out.push(r);
+      mem = r.memory;
+    }
+    return out;
+  };
+
+  it('limiares documentados: 5 satélites, 60 s entre posições boas, status de até 3 min', () => {
+    expect(MIN_GPS_SATELLITES).toBe(5);
+    expect(LOCK_ANCHOR_MAX_GAP_MS).toBe(60_000);
+    expect(GPS_STATUS_FRESH_MS).toBe(180_000);
+  });
+
+  it('attributes.sat → telemetria.satelites (schema do contrato); ausente ou inválido → sem o campo', () => {
+    const r = AP(pos({ attributes: { ...pos().attributes, sat: 14 } }), {});
+    expect(r.telemetry?.satelites).toBe(14);
+    expect(validTelemetry(r.telemetry)).toBe(true);
+    expect(AP(pos(), {}).telemetry).not.toHaveProperty('satelites');
+    for (const sat of [-1, 3.5, '7', Number.NaN]) expect(AP(pos({ attributes: { ...pos().attributes, sat } }), {}).telemetry).not.toHaveProperty('satelites');
+  });
+
+  it('posição fraca (< 5 satélites) parada: sai na telemetria, mas não é amostra parada da segunda guarda (só dificulta o corte)', () => {
+    const [weak] = run([[free(T, 4), T]]);
+    expect(weak.telemetry).toMatchObject({ satelites: 4, velocidade_kmh: 0 });
+    expect(weak.memory.last).toBeUndefined();
+    expect(cutRefusal({ online: true, mem: weak.memory, now: T })).toBe('no_position');
+    // Boa e parada → pode cortar; fraca parada depois → recusa de novo. Fraca em movimento vence a parada guardada.
+    const [good, weak2] = run([[free(T, 5), T], [free(T + 1_000, 3), T + 1_000]]);
+    expect(cutRefusal({ online: true, mem: good.memory, now: T })).toBeNull();
+    expect(cutRefusal({ online: true, mem: weak2.memory, now: T + 1_000 })).toBe('no_position');
+    const [, moving] = run([[free(T, 9), T], [free(T + 1_000, 2, 5), T + 1_000]]);
+    expect(cutRefusal({ online: true, mem: moving.memory, now: T + 1_000 })).toBe('moving');
+    // Sem o campo (simulador, rastreador antigo): como antes.
+    const [legacy] = run([[free(T, undefined), T]]);
+    expect(cutRefusal({ online: true, mem: legacy.memory, now: T })).toBeNull();
+  });
+
+  it('posição fraca não gera movimento_sem_aluguel e a boa seguinte reancora', () => {
+    const r = run([
+      [fix(T, north(0)), T],
+      [fix(T + 10_000, north(40), 3), T + 10_000], // salto de posição fraca
+      [fix(T + 20_000, north(40)), T + 20_000], // primeira boa depois da fraca: reancora
+      [fix(T + 30_000, north(65)), T + 30_000], // +25 m em 10 s entre duas boas
+    ]);
+    expect(r.map((x) => x.movedWhileLocked)).toEqual([false, false, false, true]);
+  });
+
+  it('sequência real: âncora, 1 h sem fix (heartbeats com o GPS desligado), fix 40 m adiante → sem alerta; +25 m em 10 s → alerta', () => {
+    const steps: Array<[TraccarPosition, number]> = [[fix(T, north(0), 9), T]];
+    for (let ms = T + 60_000; ms < T + 3_600_000; ms += 60_000) steps.push([hb(ms, 0x84), ms]); // 0x84: corte + GPS desligado, ACC desligada
+    steps.push([fix(T + 3_600_000, north(40), 7), T + 3_600_000]);
+    steps.push([fix(T + 3_610_000, north(65), 7), T + 3_610_000]);
+    const r = run(steps);
+    expect(r.filter((x) => x.movedWhileLocked).length).toBe(1);
+    expect(r[r.length - 2].movedWhileLocked).toBe(false);
+    expect(r[r.length - 1].movedWhileLocked).toBe(true);
+  });
+
+  it('sem o byte de status: a última boa há mais de 60 s também reancora (a âncora é de antes do período sem fix)', () => {
+    const r = run([
+      [fix(T, north(0)), T],
+      [hb(T + 60_000, undefined), T + 60_000],
+      [fix(T + 61_000, north(40)), T + 61_000],
+      [fix(T + 71_000, north(65)), T + 71_000],
+    ]);
+    expect(r.map((x) => x.movedWhileLocked)).toEqual([false, false, false, true]);
+  });
+
+  it('heartbeat com o GPS desligado quebra a cadeia (a boa seguinte reancora); GPS ligado não quebra', () => {
+    const off = run([
+      [fix(T, north(0)), T],
+      [hb(T + 5_000, 0x84), T + 5_000],
+      [fix(T + 10_000, north(30)), T + 10_000],
+    ]);
+    expect(off.map((x) => x.movedWhileLocked)).toEqual([false, false, false]);
+    const on = run([
+      [fix(T, north(0)), T],
+      [hb(T + 5_000, 0xc6), T + 5_000],
+      [fix(T + 10_000, north(30)), T + 10_000],
+    ]);
+    expect(on[2].movedWhileLocked).toBe(true);
+  });
+
+  it('arrasto lento na mesma cadeia (12 m a cada 10 s, todas boas) ainda alerta pelo acumulado desde a âncora', () => {
+    const r = run([
+      [fix(T, north(0)), T],
+      [fix(T + 10_000, north(12)), T + 10_000],
+      [fix(T + 20_000, north(24)), T + 20_000],
+    ]);
+    expect(r.map((x) => x.movedWhileLocked)).toEqual([false, false, true]);
+  });
+
+  describe('gpsSleepOf (byte terminal info do heartbeat: bit 6 = GPS, bit 1 = ACC)', () => {
+    const sleepAfter = (status: unknown, now = T) => gpsSleepOf(AP(pos({ outdated: true, serverTime: at(T), attributes: { status } }), {}, T).memory, now);
+
+    it('GPS desligado com a ACC desligada (0x04, bancada 11:48; 0x84 com o corte) → true', () => {
+      expect(sleepAfter(0x04)).toBe(true);
+      expect(sleepAfter(0x84)).toBe(true);
+    });
+
+    it('GPS ligado (0xc6, bancada 13:38; 0x44) ou ACC ligada (0x06) → false', () => {
+      expect(sleepAfter(0xc6)).toBe(false);
+      expect(sleepAfter(0x44)).toBe(false);
+      expect(sleepAfter(0x06)).toBe(false);
+    });
+
+    it('sem status, status inválido ou heartbeat de mais de 3 min → desconhecido', () => {
+      expect(gpsSleepOf({}, T)).toBeUndefined();
+      for (const bad of [undefined, -1, 256, 3.5, '4']) expect(sleepAfter(bad)).toBeUndefined();
+      expect(sleepAfter(0x04, T + GPS_STATUS_FRESH_MS)).toBe(true);
+      expect(sleepAfter(0x04, T + GPS_STATUS_FRESH_MS + 1)).toBeUndefined();
     });
   });
 });

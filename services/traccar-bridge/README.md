@@ -18,7 +18,17 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
 
 - **Telemetria** (`motos/{t}/telemetria`) de cada posição válida, não `outdated`, com `fixTime` crescente: `velocidade_kmh = speed × 1,852`
   (o Traccar usa nós), `timestamp = fixTime`, `travada ← blocked`, `ignicao ← ignition`, `sinal ← rssi` (0–5), `bateria_pct ←
-  power` pela curva do pack (`BATTERY_MODEL`; aproximado). Heartbeats do GT06 só atualizam o estado (corte, ignição, sinal).
+  power` pela curva do pack (`BATTERY_MODEL`; aproximado), `satelites ← sat` (opcional; satélites do fix). Heartbeats do GT06 só
+  atualizam o estado (corte, ignição, sinal, byte de status).
+- **Qualidade do GPS (bancada 2026-11-04):** posição com `sat` conhecido abaixo de 5 (`MIN_GPS_SATELLITES`, `contract.ts`) é
+  **fraca**: sai na telemetria (com `satelites`), mas parada não é amostra parada da segunda guarda (`last` some → `no_position`;
+  só dificulta o corte) e não entra no alerta de movimento travada. Sem `sat` (simulador), como antes.
+- **Modo de economia do GPS:** o decoder GT06 do Traccar grava o byte terminal info cru do status/heartbeat 0x13 em
+  `attributes.status` (`Position.KEY_STATUS`; além de `ignition` = bit 1, `charge` = bit 2, `blocked` = bit 7). O bit 6
+  (rastreamento GPS ligado) só existe nesse byte. Com a ACC desligada e `Slp:1` o J16 liga o GPS por ~5 min e desliga por 10–70
+  min. `reported.gps_economia` = `true` com bit 6 e bit 1 desligados, `false` com qualquer um ligado; vai junto do
+  `reported.travada` do heartbeat e, sozinho, só na mudança (ou no máximo 1/min); no reported completo da reconexão só com status
+  de até 3 min (`GPS_STATUS_FRESH_MS`). Sem `attributes.status`, não vai (desconhecido).
 - **Retenção:** com `engineResume` enviado e ainda sem status novo (defesa em profundidade: a API só confirma o unlock
   `relay_only` por `reported.travada: false` posterior ao pedido, nunca pela telemetria) ou sem bateria conhecida a telemetria
   fica retida (log `telemetry_held` com o motivo, no máximo 1/min por moto). Bit de corte desconhecido sem comando pendente
@@ -30,7 +40,11 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   **não** é retida: sai com `travada: false` (conservador — nunca confirma lock; a API não vê lacuna nem reconexão, e cercas e
   zonas continuam vendo a moto).
 - **Eventos** (`motos/{t}/eventos`): `powerCut` → `violacao`, `lowBattery`/`lowPower` → `bateria_critica`, `vibration` com o corte
-  ativo ou deslocamento > 20 m travada → `movimento_sem_aluguel` (este sai mesmo com a telemetria retida). Outros alarmes:
+  ativo ou deslocamento > 20 m travada → `movimento_sem_aluguel` (este sai mesmo com a telemetria retida). O deslocamento só
+  conta entre posições **boas** (sem `sat` ou com ≥ 5) da mesma cadeia: > 20 m entre duas seguidas ou desde a âncora (primeira boa
+  da cadeia; pega o arrasto lento). A cadeia recomeça (a primeira boa **reancora**, sem comparar) com o corte não confirmado,
+  posição fraca, posição nova sem fix, heartbeat com o GPS desligado ou mais de 60 s (`LOCK_ANCHOR_MAX_GAP_MS`) desde a boa
+  anterior: o salto do GPS que volta do modo de economia não é movimento. Outros alarmes:
   log `alarm_ignored`. Os alarmes vêm de `position.attributes.alarm` (sem Notification no Traccar o WebSocket não traz
   `events`); se houver Notification, o mesmo alarme por `events` é deduplicado pelo id da posição. Replay de conexão não gera alarme.
 - **Mensagem retida:** delta, `get/accepted` ou comando entregue como **retido** (`packet.retain`, no SUBSCRIBE e de novo a cada

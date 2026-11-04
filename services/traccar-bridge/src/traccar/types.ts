@@ -24,7 +24,11 @@ export interface TraccarPosition {
   /** Nós. */
   speed: number;
   course?: number;
-  attributes: { blocked?: boolean; ignition?: boolean; rssi?: number; power?: number; [k: string]: unknown };
+  /**
+   * Decoder GT06 do Traccar: `blocked` (bit 7 do status), `ignition` (bit 1), `status` = byte terminal info cru do status/heartbeat
+   * 0x13 e do alarme (`Position.KEY_STATUS`; o bit 6, rastreamento GPS ligado, só existe nele), `sat` = satélites do fix (4 bits).
+   */
+  attributes: { blocked?: boolean; ignition?: boolean; rssi?: number; power?: number; status?: unknown; sat?: unknown; [k: string]: unknown };
 }
 
 export interface TraccarEvent {
