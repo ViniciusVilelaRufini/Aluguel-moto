@@ -32,9 +32,10 @@ import '../station_swap/swap_widgets.dart' show openSwapProgress;
 /// com a parada confirmada pelo GPS (posicoes a cada >= 10 s): sem GPS, nao trava.
 const gpsStaleAfter = Duration(seconds: 60);
 
-/// `true` = a ultima posicao da moto e velha (sem GPS); `null` = nao sabemos
-/// (sem `positionAt`: API antiga, ou a moto nunca mandou posicao).
+/// `true` = a ultima posicao da moto e velha (sem GPS), ou a moto nunca teve
+/// posicao (0,0); `null` = nao sabemos (sem `positionAt`: API antiga).
 bool? vehicleGpsStale(Vehicle v, DateTime now) {
+  if (v.lat == 0 && v.lng == 0) return true;
   final at = v.positionAt;
   if (at == null) return null;
   return now.difference(at) > gpsStaleAfter;
@@ -72,7 +73,8 @@ final returnContextProvider = FutureProvider.autoDispose.family<ReturnContext, S
   try {
     final rental = await backend.rental(rentalId);
     final v = await backend.vehicleByCode(rental.vehicleCode);
-    pos = LatLng(v.lat, v.lng);
+    // 0,0 = moto que nunca teve posicao: sem posicao (o servidor decide o ponto verde).
+    if (v.lat != 0 || v.lng != 0) pos = LatLng(v.lat, v.lng);
     gpsStale = vehicleGpsStale(v, ref.read(clockProvider)());
   } catch (_) {
     // Sem posicao: mostra as zonas e deixa o servidor validar no encerramento.
@@ -208,9 +210,14 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
         _endReverted();
       case HandoverUpdated(:final handoverId):
         _onHandoverUpdated(handoverId);
-      // Posicao nova da moto (mesmo socket da corrida): o GPS voltou.
-      case VehiclePositionEvent() when _waitingLock && _noGps == true:
-        setState(() => _noGps = false);
+      // Posicao nova da moto (mesmo socket da corrida; 0,0 nao e posicao): o GPS voltou.
+      case VehiclePositionEvent(:final lat, :final lng) when lat != 0 || lng != 0:
+        if (_waitingLock && _noGps == true) {
+          setState(() => _noGps = false);
+        } else if (!_waitingLock && ref.read(returnContextProvider(widget.rentalId)).value?.gpsStale == true) {
+          // Formulario: o aviso some com a ficha relida.
+          ref.invalidate(returnContextProvider(widget.rentalId));
+        }
       default:
         break;
     }
@@ -367,13 +374,16 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       _waitingLock = true;
       _lockTimedOut = false;
       _waitSeconds = 0;
-      _noGps = ref.read(returnContextProvider(widget.rentalId)).value?.gpsStale;
+      // Nunca o contexto em cache (pode ter minutos): a ficha e relida ja.
+      _noGps = null;
     });
     _waitTick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _waitSeconds++);
     });
     _gpsPoll?.cancel();
+    _gpsInFlight = false;
     _gpsPoll = Timer.periodic(widget.gpsPollInterval, (_) => _checkGps(gen));
+    _checkGps(gen);
     _poll = Timer.periodic(widget.pollInterval, (_) async {
       if (++ticks >= maxTicks || !now().isBefore(deadline)) return timeOut();
       if (_pollInFlight) return;
@@ -411,7 +421,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     } catch (_) {
       // sem a ficha: fica o que ja sabiamos
     } finally {
-      _gpsInFlight = false;
+      if (gen == _pollGen) _gpsInFlight = false;
     }
   }
 

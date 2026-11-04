@@ -611,6 +611,7 @@ void main() {
         final b = await pumpGps(t, at(DateTime.now().subtract(const Duration(minutes: 5))));
         b.events = [_sysEvent('A moto não parou; pare e peça o encerramento de novo.')];
         await takeAndEndInZone(t);
+        await t.pump(const Duration(milliseconds: 100));
         expect(find.text('Aguardando a moto travar'), findsOneWidget);
         expect(find.byKey(const Key('lock-no-gps')), findsOneWidget, reason: 'nao espera 45 s');
         expect(find.byKey(const Key('lock-gps-hint')), findsNothing);
@@ -627,6 +628,7 @@ void main() {
       testWidgets('espera: o GPS voltou (ficha relida) tira o aviso', (t) async {
         final b = await pumpGps(t, at(DateTime.now().subtract(const Duration(minutes: 5))), gpsPoll: const Duration(seconds: 3));
         await takeAndEndInZone(t);
+        await t.pump(const Duration(milliseconds: 100));
         expect(find.byKey(const Key('lock-no-gps')), findsOneWidget);
         b.vehicle = at(DateTime.now());
         await t.pump(const Duration(seconds: 3));
@@ -652,7 +654,11 @@ void main() {
         ]));
         await t.pumpAndSettle();
         await takeAndEndInZone(t);
+        await t.pump(const Duration(milliseconds: 100));
         expect(find.byKey(const Key('lock-no-gps')), findsOneWidget);
+        bus.add(const VehiclePositionEvent(lat: 0, lng: 0, speedKmh: 0, batteryPct: 0, speedLimitKmh: 32));
+        await t.pump();
+        expect(find.byKey(const Key('lock-no-gps')), findsOneWidget, reason: '0,0 nao e posicao');
         bus.add(const VehiclePositionEvent(lat: -23.56, lng: -46.65, speedKmh: 0, batteryPct: 0, speedLimitKmh: 32));
         await t.pump();
         await t.pump(const Duration(milliseconds: 50));
@@ -660,9 +666,29 @@ void main() {
         await t.pumpWidget(const SizedBox());
       });
 
-      test('vehicleGpsStale: null sem a hora; 60 s de folga', () {
+      testWidgets('moto que nunca teve GPS (0,0, sem hora): avisa e nao diz "fora do ponto"', (t) async {
+        await pumpGps(t, sampleVehicle().rebuild((b) => b
+          ..lat = 0
+          ..lng = 0));
+        expect(find.byKey(const Key('return-no-gps')), findsOneWidget);
+        expect(find.text('Fora dos pontos verdes'), findsNothing);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      testWidgets('espera relê a ficha na hora (o contexto do formulario pode estar velho)', (t) async {
+        final b = await pumpGps(t, at(DateTime.now()));
+        expect(find.byKey(const Key('return-no-gps')), findsNothing);
+        b.vehicle = at(DateTime.now().subtract(const Duration(minutes: 5))); // o GPS caiu depois de abrir a tela
+        await takeAndEndInZone(t);
+        await t.pump(const Duration(milliseconds: 100));
+        expect(find.byKey(const Key('lock-no-gps')), findsOneWidget, reason: 'sem esperar os 10 s da releitura');
+        await t.pumpWidget(const SizedBox());
+      });
+
+      test('vehicleGpsStale: null sem a hora; 60 s de folga; 0,0 = sem GPS', () {
         final now = DateTime.utc(2026, 11, 4, 12);
         expect(vehicleGpsStale(sampleVehicle(), now), isNull);
+        expect(vehicleGpsStale(sampleVehicle().rebuild((b) => b..lat = 0..lng = 0), now), isTrue);
         expect(vehicleGpsStale(at(now.subtract(const Duration(seconds: 60))), now), isFalse);
         expect(vehicleGpsStale(at(now.subtract(const Duration(seconds: 61))), now), isTrue);
       });

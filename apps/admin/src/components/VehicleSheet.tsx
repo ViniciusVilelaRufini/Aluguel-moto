@@ -50,7 +50,8 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   const [history, setHistory] = useState(false);
   const [moveFixed, setMoveFixed] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [forceEnd, setForceEnd] = useState(false);
+  /** Aluguel do "Encerrar à força" aberto (guardado no clique: a ficha relida perde o `currentRentalId` ao encerrar). */
+  const [forceEnd, setForceEnd] = useState<string | null>(null);
 
   // P3: ao reabrir a ficha, o comando ainda em curso volta (lido do histórico de comandos), em vez de sumir.
   const restored = useRef<string | null>(null);
@@ -247,7 +248,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
 
       {/* A moto que não trava (ex.: sem GPS em local coberto) prende o aluguel em "encerrando": a saída fica aqui, sem abrir o aluguel. */}
       {v.currentRentalId && can(groups, 'rental.forceEnd') && (
-        <Button size="sm" variant="danger" icon="Square" testId="vehicle-force-end" style={{ alignSelf: 'flex-start' }} onClick={() => setForceEnd(true)}>Encerrar aluguel à força</Button>
+        <Button size="sm" variant="danger" icon="Square" testId="vehicle-force-end" style={{ alignSelf: 'flex-start' }} onClick={() => setForceEnd(v.currentRentalId ?? null)}>Encerrar aluguel à força</Button>
       )}
 
       {(can(groups, 'vehicle.command') || groups.includes('suporte')) && (
@@ -289,7 +290,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
 
       {dialog && <CommandDialog type={dialog} vehicle={v} mode={mode} moving={moving} speedUnknown={pos.stale || v.speedKmh == null} onClose={() => setDialog(null)} onSend={send} />}
       {moveFixed && v.assignedSubscriptionId && <SubscriptionVehicleDialog subscriptionId={v.assignedSubscriptionId} currentCode={v.code} onClose={() => setMoveFixed(false)} />}
-      {v.currentRentalId && <ForceEndRentalDialog rentalId={v.currentRentalId} vehicleId={vehicleId} open={forceEnd} onClose={() => setForceEnd(false)} />}
+      {forceEnd && <ForceEndRentalDialog rentalId={forceEnd} vehicleId={vehicleId} open onClose={() => setForceEnd(null)} />}
       {editing && <VehicleFormModal vehicle={v} onClose={() => setEditing(false)} />}
       {history && <HistoryModal vehicleId={vehicleId} code={v.code} groups={groups} onClose={() => setHistory(false)} />}
     </SidePanel>

@@ -24,7 +24,13 @@ export function ForceEndRentalDialog({ rentalId, vehicleId, open, onClose }: { r
         toast('Aluguel encerrado');
         qc.invalidateQueries({ queryKey: ['rental', rentalId] });
         qc.invalidateQueries({ queryKey: ['rentals'] });
-        if (vehicleId) qc.invalidateQueries({ queryKey: ['vehicle', vehicleId] });
+        // Mapa e lista da frota (status e aluguel da moto), como depois de um comando na ficha.
+        qc.invalidateQueries({ queryKey: ['fleet'] });
+        qc.invalidateQueries({ queryKey: ['vehicles'] });
+        if (vehicleId) {
+          qc.invalidateQueries({ queryKey: ['vehicle', vehicleId] });
+          qc.invalidateQueries({ queryKey: ['vehicle-commands', vehicleId] });
+        }
       }}
     />
   );
