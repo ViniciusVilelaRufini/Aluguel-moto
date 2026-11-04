@@ -1,4 +1,5 @@
 import type { Payment, Prisma, PrismaClient } from '@prisma/client';
+import { COUNTER_METHODS, isCounterMethod } from './counter-methods';
 
 /**
  * Definição única de "dívida em aberto" (revisão final, I1). Usada pela inadimplência (quitação pelo cliente e manual),
@@ -17,7 +18,8 @@ type DebtDb = Pick<PrismaClient, 'payment' | 'settlementProgress' | 'subscriptio
  */
 export const SUBSCRIPTION_CREATION_DECLINED = 'subscription_creation_declined';
 
-export const openDebtWhere = (customerId: string): Prisma.PaymentWhereInput => ({
+/** Dívida do gateway: pagamento de aluguel/assinatura que terminou `failed` e ainda não foi quitado. */
+const failedDebtWhere = (customerId: string): Prisma.PaymentWhereInput => ({
   customerId,
   kind: { in: [...DEBT_KINDS] },
   status: 'failed',
@@ -26,12 +28,39 @@ export const openDebtWhere = (customerId: string): Prisma.PaymentWhereInput => (
   OR: [{ failureReason: null }, { failureReason: { not: SUBSCRIPTION_CREATION_DECLINED } }],
 });
 
-export const isOpenDebt = (p: Pick<Payment, 'kind' | 'status' | 'debtSettledAt' | 'failureReason'>): boolean =>
+/**
+ * Pré-reserva/balcão (Task 6): excedente do aluguel do balcão — `Payment` `rental` `pending` com método de balcão, acertado
+ * no galpão (nunca cobrado pelo gateway). Já é dívida em aberto enquanto não for quitado.
+ */
+export const counterDebtWhere = (customerId: string): Prisma.PaymentWhereInput => ({
+  customerId,
+  kind: 'rental',
+  status: 'pending',
+  method: { in: [...COUNTER_METHODS] },
+  debtSettledAt: null,
+});
+
+export const openDebtWhere = (customerId: string): Prisma.PaymentWhereInput => ({
+  OR: [failedDebtWhere(customerId), counterDebtWhere(customerId)],
+});
+
+type DebtFields = Pick<Payment, 'kind' | 'status' | 'debtSettledAt' | 'failureReason' | 'method'>;
+
+const isFailedDebt = (p: DebtFields): boolean =>
   (DEBT_KINDS as readonly string[]).includes(p.kind) && p.status === 'failed' && !p.debtSettledAt && p.failureReason !== SUBSCRIPTION_CREATION_DECLINED;
 
-/** Há ao menos uma dívida `failed` de aluguel/assinatura ainda não quitada. */
+const isCounterDebt = (p: DebtFields): boolean => p.kind === 'rental' && p.status === 'pending' && isCounterMethod(p.method) && !p.debtSettledAt;
+
+export const isOpenDebt = (p: DebtFields): boolean => isFailedDebt(p) || isCounterDebt(p);
+
+/** Há ao menos uma dívida em aberto: `failed` de aluguel/assinatura ou excedente do balcão, ainda não quitada. */
 export async function hasOpenDebt(db: DebtDb, customerId: string): Promise<boolean> {
   return (await db.payment.count({ where: openDebtWhere(customerId) })) > 0;
+}
+
+/** Há excedente do balcão ainda não acertado no galpão. */
+export async function hasCounterDebt(db: DebtDb, customerId: string): Promise<boolean> {
+  return (await db.payment.count({ where: counterDebtWhere(customerId) })) > 0;
 }
 
 /**
@@ -58,7 +87,7 @@ export async function debtInCollection(db: DebtDb, customerId: string, debt?: Pi
  * concluídas (critério do `debt-in-collection`); sem ele, qualquer uma conta (critério para manter a flag `delinquent`).
  */
 export async function rentalSettlementRetrying(db: DebtDb, customerId: string, opts: { onlyLive: boolean }): Promise<boolean> {
-  const pending = await db.payment.findMany({ where: { customerId, kind: 'rental', status: 'pending' }, select: { id: true } });
+  const pending = await db.payment.findMany({ where: { customerId, kind: 'rental', status: 'pending', method: { notIn: [...COUNTER_METHODS] } }, select: { id: true } });
   if (!pending.length) return false;
   const n = await db.settlementProgress.count({
     where: { paymentId: { in: pending.map((p) => p.id) }, attempts: { gt: 0 }, ...(opts.onlyLive ? { parkedAt: null, finishedAt: null } : {}) },
@@ -73,7 +102,8 @@ export async function rentalSettlementRetrying(db: DebtDb, customerId: string, o
  */
 export async function blocksAccountDeletion(db: DebtDb, customerId: string): Promise<boolean> {
   if (await hasOpenDebt(db, customerId)) return true;
-  // Qualquer liquidação de aluguel `pending` bloqueia (cobre também a retentativa automática do aluguel).
-  if ((await db.payment.count({ where: { customerId, kind: 'rental', status: 'pending' } })) > 0) return true;
+  // Qualquer liquidação de aluguel `pending` no gateway bloqueia (cobre também a retentativa automática do aluguel). Os
+  // `pending` de balcão não são liquidação: o excedente em aberto já entrou por `hasOpenDebt` (quitado, não bloqueia).
+  if ((await db.payment.count({ where: { customerId, kind: 'rental', status: 'pending', method: { notIn: [...COUNTER_METHODS] } } })) > 0) return true;
   return debtInCollection(db, customerId, { kind: 'subscription', subscriptionId: null });
 }

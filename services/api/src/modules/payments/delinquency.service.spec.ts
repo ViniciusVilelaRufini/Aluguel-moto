@@ -469,3 +469,45 @@ describe('Auditoria run-4: quitação idempotente por pagamento', () => {
     expect(ctx.reviews).toEqual([{ paymentId: b.id, reason: 'debt_settlement_after_settled' }]);
   });
 });
+
+describe('Balcão: débito de excedente acertado no galpão', () => {
+  /** Excedente do balcão: `Payment` `rental` `pending` com método de balcão, sem `depositId` (preflight C1). */
+  const counterDebt = (db: InMemoryPrisma, amountCents: number, over: Record<string, unknown> = {}) =>
+    db.payment.create({ data: { customerId: CUSTOMER, kind: 'rental', method: 'counter_pix', status: 'pending', amountCents, rentalId: 'r-1', idempotencyKey: 'counter-excess:r-1', ...over } });
+
+  it('app antigo pagando débito de balcão → 409 debt-not-payable', async () => {
+    const { db, svc, provider } = await setup();
+    const p = await counterDebt(db, 6000);
+    const createPix = jest.spyOn(provider, 'createPix');
+    await expect(svc.payDebt(CUSTOMER, p.id, { method: 'pix' })).rejects.toMatchObject({ status: 409, slug: 'debt-not-payable', detail: 'Este valor é acertado no galpão.' });
+    await expect(svc.payDebt(CUSTOMER, p.id, { method: 'card' })).rejects.toMatchObject({ slug: 'debt-not-payable', detail: 'Este valor é acertado no galpão.' });
+    expect(createPix).not.toHaveBeenCalled();
+    expect(provider.operations('charge')).toBe(0);
+    expect(await db.payment.count({ where: { kind: 'debt_settlement' } })).toBe(0);
+  });
+
+  it('saldo desconta quitações parciais pagas', async () => {
+    const { db, svc } = await setup();
+    const p = await counterDebt(db, 6000);
+    await db.payment.create({ data: { customerId: CUSTOMER, kind: 'debt_settlement', method: 'cash', status: 'paid', amountCents: 2500, settlesPaymentId: p.id } });
+    // Quitação não paga e de outro débito não contam.
+    await db.payment.create({ data: { customerId: CUSTOMER, kind: 'debt_settlement', method: 'pix', status: 'failed', amountCents: 1000, settlesPaymentId: p.id } });
+    await db.payment.create({ data: { customerId: CUSTOMER, kind: 'debt_settlement', method: 'cash', status: 'paid', amountCents: 700, settlesPaymentId: 'outro' } });
+    expect(await svc.outstanding(p)).toBe(3500);
+    expect(await svc.debtCents(CUSTOMER)).toBe(3500);
+  });
+
+  it('caução de balcão capturada não desconta de novo (o abatimento conta só pelo debt_settlement — preflight C1)', async () => {
+    const { db, svc } = await setup();
+    const dep = await db.deposit.create({ data: { customerId: CUSTOMER, method: 'cash', status: 'captured', amountCents: 5000, capturedCents: 2000, refundedCents: 0 } });
+    const p = await counterDebt(db, 6000, { depositId: dep.id });
+    await db.payment.create({ data: { customerId: CUSTOMER, kind: 'debt_settlement', method: 'cash', status: 'paid', amountCents: 2000, settlesPaymentId: p.id } });
+    expect(await svc.outstanding(p)).toBe(4000);
+  });
+
+  it('débito de cartão: a caução capturada continua descontando', async () => {
+    const { db, svc } = await setup();
+    const d = await debt(db, 12000, 5000);
+    expect(await svc.outstanding(d)).toBe(7000);
+  });
+});

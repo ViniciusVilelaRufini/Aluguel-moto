@@ -22,6 +22,8 @@ import { distanceM } from '../../common/util';
 import { V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 import { appendWalletEntry, walletCentsAvailable, walletMinutesAvailable } from '../wallet/wallet-ledger';
+import { recordCounterClose } from '../payments/counter-close';
+import { isCounterMethod, type CounterMethod } from '../payments/counter-methods';
 
 export const FORCE_END_FEE_CODE = 'force_end_outside_return_zone';
 export const FORCE_END_FEE_DEFAULT_CENTS = 1500;
@@ -314,11 +316,14 @@ export class RentalEndService {
     // R2-01: a carteira abate primeiro (ordem de liquidação: carteira → caução → cartão → dívida). O saldo é lido e debitado
     // na mesma transação que fecha o aluguel, com o cliente travado (FOR UPDATE): o débito acontece uma única vez (o
     // fechamento é condicional) e o mesmo saldo nunca paga dois fechamentos. O restante (`totalCents`) vai para a liquidação.
+    // Pré-reserva/balcão (decisão 12): aluguel do balcão não abate carteira nem pacote e nunca vai ao gateway; o resíduo
+    // (total − pré-pago) vira débito acertado no galpão, gravado na mesma transação do fechamento.
+    const counter = !!snapshot.counter;
     const { claimed, breakdown } = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${rental.customerId}::uuid FOR UPDATE`;
-      const walletAvailableCents = await walletCentsAvailable(tx, rental.customerId);
+      const walletAvailableCents = counter ? 0 : await walletCentsAvailable(tx, rental.customerId);
       // Auditoria run-4 onda 2: minutos de pacote abatem antes da carteira (só plano por minuto sem assinatura).
-      const minutesAvailable = snapshot.unit === 'minute' && !snapshot.subscriptionCovered ? await walletMinutesAvailable(tx, rental.customerId) : 0;
+      const minutesAvailable = !counter && snapshot.unit === 'minute' && !snapshot.subscriptionCovered ? await walletMinutesAvailable(tx, rental.customerId) : 0;
       const breakdown = this.pricing.calculate({
         snapshot,
         elapsedSeconds: timing.elapsedSeconds,
@@ -341,6 +346,13 @@ export class RentalEndService {
           breakdown: breakdown as unknown as Prisma.InputJsonValue,
         },
       });
+      if (claimed.count === 1 && counter) {
+        const prepaid = await this.counterPrepaid(tx, rental);
+        await recordCounterClose(tx, {
+          rentalId, customerId: rental.customerId, depositId: rental.depositId, prepaidPaymentId: prepaid.id, residualCents: breakdown.totalCents, method: prepaid.method,
+        });
+        return { claimed, breakdown };
+      }
       const packageMinutes = breakdown.lines.find((l) => l.code === 'minute_package')?.quantity ?? 0;
       if (claimed.count === 1 && packageMinutes > 0) {
         await appendWalletEntry(tx, {
@@ -394,14 +406,16 @@ export class RentalEndService {
       },
     });
 
-    try {
-      const settlement = await this.billing.settle({
-        rentalId, amountCents: breakdown.totalCents, walletCents: breakdown.walletAppliedCents ?? 0, idempotencyKey: `rental-settlement:${rentalId}`,
-      });
-      await this.prisma.rental.update({ where: { id: rentalId }, data: { paymentId: settlement.paymentId } });
-    } catch (err) {
-      // A cobrança é reprocessada pela Task 5 (inadimplência); o aluguel continua encerrado.
-      this.logger.error({ msg: 'rental_settlement_failed', rentalId, error: (err as Error).message });
+    if (!counter) {
+      try {
+        const settlement = await this.billing.settle({
+          rentalId, amountCents: breakdown.totalCents, walletCents: breakdown.walletAppliedCents ?? 0, idempotencyKey: `rental-settlement:${rentalId}`,
+        });
+        await this.prisma.rental.update({ where: { id: rentalId }, data: { paymentId: settlement.paymentId } });
+      } catch (err) {
+        // A cobrança é reprocessada pela Task 5 (inadimplência); o aluguel continua encerrado.
+        this.logger.error({ msg: 'rental_settlement_failed', rentalId, error: (err as Error).message });
+      }
     }
 
     const final = await this.load(rentalId);
@@ -409,6 +423,19 @@ export class RentalEndService {
     this.emitRental(final);
     this.logger.log({ msg: 'rental_finalized', rentalId, status: kind, costCents: breakdown.totalCents });
     return toRental(final);
+  }
+
+  /**
+   * Pagamento pré-pago no balcão (gravado pelo `counter-checkout` junto com o aluguel). Sem ele, ou com método que não é
+   * de balcão, o dado está inconsistente: o fechamento aborta (a transação desfaz) em vez de cobrar pelo caminho errado.
+   */
+  private async counterPrepaid(tx: Prisma.TransactionClient, rental: Pick<Rental, 'id' | 'paymentId'>): Promise<{ id: string; method: CounterMethod }> {
+    const prepaid = rental.paymentId ? await tx.payment.findUnique({ where: { id: rental.paymentId }, select: { id: true, method: true } }) : null;
+    if (!prepaid || !isCounterMethod(prepaid.method)) {
+      this.logger.error({ msg: 'counter_close_prepaid_missing', rentalId: rental.id, paymentId: rental.paymentId });
+      throw new Error(`Aluguel do balcão ${rental.id} sem pagamento pré-pago de balcão.`);
+    }
+    return { id: prepaid.id, method: prepaid.method };
   }
 
   /**

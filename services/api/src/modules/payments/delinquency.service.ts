@@ -12,6 +12,7 @@ import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError } from './provider/payment-provider';
 import { debtInCollection, isOpenDebt, openDebtWhere, rentalSettlementRetrying } from './open-debt';
 import { applyEffectsOnce } from './effects-once';
+import { isCounterMethod } from './counter-methods';
 import { BILLING_OPTIONS, type BillingOptions, RentalBillingService } from './rental-billing.service';
 import { ReceiptService } from './receipts/receipt.service';
 
@@ -26,7 +27,8 @@ export interface DebtPaymentInput {
 
 /**
  * Inadimplência (Task 14 das lacunas; proposta #5 de docs/decisoes.md):
- * - **saldo devedor** de um pagamento `failed` de aluguel/assinatura = valor − caução capturada como garantia;
+ * - **saldo devedor** de um pagamento `failed` de aluguel/assinatura = valor − caução capturada como garantia − quitações
+ *   pagas; excedente do balcão (`pending`, método de balcão) é dívida acertada só no galpão (`payDebt` → 409);
  * - **quitação pelo cliente** (`POST /payments/{id}/retry`): novo `Payment` `debt_settlement` com `settlesPaymentId`,
  *   cartão na hora ou Pix (webhook); pago → a dívida ganha `debtSettledAt` e a flag sai se não sobrar outra;
  * - **quitação manual** (`POST /customers/{id}/delinquency/clear`): financeiro, com motivo no AuditLog.
@@ -49,14 +51,30 @@ export class DelinquencyService {
     @Optional() private readonly receipts?: ReceiptService,
   ) {}
 
-  /** Saldo devedor de cada pagamento com dívida em aberto (os demais ficam fora do mapa). */
+  /**
+   * Saldo devedor de cada pagamento com dívida em aberto (os demais ficam fora do mapa): valor − carteira − caução capturada
+   * como garantia − Σ quitações (`debt_settlement`) pagas dele. Débito do balcão (preflight C1): a caução capturada **não**
+   * entra — o abatimento da caução no galpão já é um `debt_settlement` pago e seria contado duas vezes.
+   */
   async outstandingMap(payments: Payment[]): Promise<Map<string, number>> {
     const debts = payments.filter(isOpenDebt);
-    const depositIds = [...new Set(debts.map((p) => (p.kind === 'rental' ? p.depositId : null)).filter((x): x is string => !!x))];
+    if (!debts.length) return new Map();
+    const depositIds = [...new Set(debts.map((p) => (p.kind === 'rental' && !isCounterMethod(p.method) ? p.depositId : null)).filter((x): x is string => !!x))];
     const deposits = depositIds.length ? await this.prisma.deposit.findMany({ where: { id: { in: depositIds } }, select: { id: true, status: true, capturedCents: true } }) : [];
     const captured = new Map(deposits.map((d) => [d.id, d.status === 'captured' ? (d.capturedCents ?? 0) : 0]));
+    const settlements = await this.prisma.payment.findMany({
+      where: { kind: 'debt_settlement', status: 'paid', settlesPaymentId: { in: debts.map((p) => p.id) } },
+      select: { settlesPaymentId: true, amountCents: true },
+    });
+    const settled = new Map<string, number>();
+    for (const s of settlements) if (s.settlesPaymentId) settled.set(s.settlesPaymentId, (settled.get(s.settlesPaymentId) ?? 0) + s.amountCents);
     // Task 16: o pagamento registra o bruto; a parte da carteira (`walletCents`) já foi paga no fechamento.
-    return new Map(debts.map((p) => [p.id, Math.max(0, p.amountCents - (p.walletCents ?? 0) - (p.depositId ? (captured.get(p.depositId) ?? 0) : 0))]));
+    return new Map(
+      debts.map((p) => {
+        const guarantee = p.depositId && !isCounterMethod(p.method) ? (captured.get(p.depositId) ?? 0) : 0;
+        return [p.id, Math.max(0, p.amountCents - (p.walletCents ?? 0) - guarantee - (settled.get(p.id) ?? 0))];
+      }),
+    );
   }
 
   async outstanding(p: Payment): Promise<number | undefined> {
@@ -94,6 +112,8 @@ export class DelinquencyService {
   async payDebt(customerId: string, paymentId: string, input: DebtPaymentInput) {
     const debt = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!debt || debt.customerId !== customerId) throw notFound('Pagamento não encontrado.');
+    // Pré-reserva/balcão: débito do balcão nunca passa pelo gateway (app antigo com "Pagar agora").
+    if (isCounterMethod(debt.method)) throw conflict('debt-not-payable', 'Este valor é acertado no galpão.');
     if (!isOpenDebt(debt)) throw conflict('debt-not-payable', 'Este pagamento não tem dívida em aberto.');
     if (await this.inCollection(customerId, debt)) throw conflict('debt-in-collection', 'Ainda estamos tentando cobrar no seu cartão. Aguarde o resultado.');
     const amountCents = (await this.outstanding(debt)) ?? 0;

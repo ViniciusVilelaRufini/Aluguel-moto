@@ -124,7 +124,10 @@ describe('LgpdService — exclusão completa (Task 14)', () => {
   it('dívida quitada não bloqueia a exclusão (só conta dívida sem debtSettledAt)', async () => {
     const { prisma, service } = setup();
     await service.deleteAccount(ME);
-    expect((prisma.payment.count.mock.calls[0][0] as any).where).toMatchObject({ debtSettledAt: null });
+    // `openDebtWhere` = `OR` [dívida `failed` do gateway, excedente do balcão]: as duas só contam sem `debtSettledAt`.
+    const branches = (prisma.payment.count.mock.calls[0][0] as any).where.OR;
+    expect(branches).toHaveLength(2);
+    for (const b of branches) expect(b).toMatchObject({ debtSettledAt: null });
   });
 
   it('job diário: sinistro que encerrou depois da exclusão perde fotos, boletim, texto e posição', async () => {

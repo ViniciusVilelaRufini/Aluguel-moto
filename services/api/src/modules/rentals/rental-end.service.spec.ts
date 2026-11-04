@@ -718,3 +718,91 @@ describe('POST /rentals/{id}/force-end (validação)', () => {
     expect(ender.forceEnd).not.toHaveBeenCalled();
   });
 });
+
+describe('Balcão: fechamento sem gateway', () => {
+  beforeEach(() => jest.useFakeTimers({ now: new Date('2026-10-21T15:00:00.000Z') }));
+  afterEach(() => jest.useRealTimers());
+
+  const PREPAID_ID = '77777777-7777-4777-8777-777777777777';
+  const DEPOSIT_ID = '66666666-6666-4666-8666-666666666666';
+
+  /** Aluguel do balcão: 1 diária (6000) pré-paga no galpão via Pix; excedente 6000 por dia iniciado. */
+  function counterSetup(elapsedSeconds: number) {
+    const ctx = setup();
+    const startedAt = new Date(Date.now() - elapsedSeconds * 1000);
+    Object.assign(ctx.rental, {
+      planCode: 'day', startedAt, createdAt: startedAt, paymentId: PREPAID_ID, prepaidUntil: new Date(startedAt.getTime() + 86_400_000),
+      priceSnapshot: {
+        planCode: 'day', unit: 'day', unlockFeeCents: 0, unitPriceCents: 6000, pausePerMinuteCents: 0, insurancePremiumCents: 0, coverage: 'basic',
+        counter: { quantity: 1, prepaidCents: 6000, excessDayCents: 6000 },
+      },
+    });
+    ctx.prisma.payment.findUnique.mockImplementation((async (args: any) =>
+      args.where.id === PREPAID_ID ? { id: PREPAID_ID, kind: 'rental', status: 'paid', method: 'counter_pix', amountCents: 6000 } : null) as any);
+    ctx.prisma.payment.create.mockImplementation((async (args: any) => ({ id: 'excess-1', ...args.data })) as any);
+    ctx.prisma.deposit.updateMany.mockResolvedValue({ count: 1 });
+    return ctx;
+  }
+
+  it('aluguel do balcão sem excedente não chama o gateway', async () => {
+    const { service: svc, billing, prisma, rental } = counterSetup(3600);
+    await svc.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(billing.settle).not.toHaveBeenCalled();
+    expect(prisma.payment.create).not.toHaveBeenCalled();
+    expect(prisma.rental.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ costCents: 0 }) }));
+    expect(rental.status).toBe('ended');
+    // O pagamento do aluguel continua o pré-pago.
+    expect(rental.paymentId).toBe(PREPAID_ID);
+  });
+
+  it('excedente vira débito pending de balcão', async () => {
+    const { service: svc, billing, prisma, rental } = counterSetup(86_400 + 1);
+    await svc.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(prisma.payment.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ kind: 'rental', status: 'pending', method: 'counter_pix', amountCents: 6000, idempotencyKey: `counter-excess:${RENTAL_ID}` }),
+    });
+    // Sem `depositId` (preflight C1): o abatimento da caução conta só pelo `debt_settlement`.
+    expect((prisma.payment.create.mock.calls[0][0] as any).data.depositId).toBeUndefined();
+    expect(billing.settle).not.toHaveBeenCalled();
+    expect(rental.costCents).toBe(6000);
+    expect(rental.paymentId).toBe('excess-1');
+    // Repetir o fechamento não cria outro débito.
+    await svc.finalize(RENTAL_ID, 'ended');
+    expect(prisma.payment.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('carteira não é abatida no balcão', async () => {
+    const { service: svc, billing, prisma, rental } = counterSetup(86_400 + 1);
+    prisma.walletEntry.aggregate.mockResolvedValue({ _sum: { amountCents: 5000, minutes: 300 }, _max: { createdAt: null } } as any);
+    await svc.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(prisma.walletEntry.aggregate).not.toHaveBeenCalled();
+    expect(prisma.walletEntry.create).not.toHaveBeenCalled();
+    expect(rental.breakdown.walletAppliedCents ?? 0).toBe(0);
+    expect(rental.costCents).toBe(6000);
+    expect(billing.settle).not.toHaveBeenCalled();
+  });
+
+  it('caução de balcão com valor 0 vira released no fechamento', async () => {
+    const { service: svc, prisma } = counterSetup(3600);
+    await svc.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(prisma.deposit.updateMany).toHaveBeenCalledWith({
+      where: { id: DEPOSIT_ID, status: 'held', amountCents: 0, method: { in: ['counter_card', 'counter_pix', 'cash'] } },
+      data: { status: 'released' },
+    });
+  });
+
+  it('sem pré-pago de balcão (inconsistência): o fechamento aborta em vez de ir ao gateway', async () => {
+    const { service: svc, billing, prisma } = counterSetup(86_400 + 1);
+    prisma.payment.findUnique.mockResolvedValue({ id: PREPAID_ID, method: 'card' } as any);
+    await expect(svc.finalize(RENTAL_ID, 'ended')).rejects.toThrow(/sem pagamento pré-pago de balcão/);
+    expect(billing.settle).not.toHaveBeenCalled();
+    expect(prisma.payment.create).not.toHaveBeenCalled();
+  });
+
+  it('aluguel comum continua liquidando no gateway', async () => {
+    const { service: svc, billing, prisma } = setup();
+    await svc.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(billing.settle).toHaveBeenCalledTimes(1);
+    expect(prisma.payment.create).not.toHaveBeenCalled();
+  });
+});

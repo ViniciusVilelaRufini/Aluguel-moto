@@ -1525,3 +1525,44 @@ describe('Auditoria run-4: reconciliador da caução Pix', () => {
     expect(failedEvents).toEqual([{ depositId: b.depositId, customerId: CUSTOMER }]);
   });
 });
+
+describe('Balcão: jobs do gateway ignoram pagamentos e cauções de balcão', () => {
+  it('gateway jobs skip counter payments', async () => {
+    const ctx = await setup();
+    const findMany = jest.spyOn(ctx.db.payment, 'findMany');
+    // Excedente do balcão (`pending`, sem SettlementProgress): não é órfão de liquidação.
+    const debt = await ctx.db.payment.create({
+      data: { customerId: CUSTOMER, kind: 'rental', method: 'counter_pix', status: 'pending', amountCents: 6000, rentalId: RENTAL, idempotencyKey: `counter-excess:${RENTAL}`, createdAt: new Date(Date.now() - 60 * 60_000) },
+    });
+    // Aluguel do balcão encerrado sem `paymentId` (não deveria acontecer): não vira liquidação no gateway.
+    await ctx.db.rental.create({
+      data: { id: RENTAL, customerId: CUSTOMER, vehicleId: 'v', planCode: 'day', coverage: 'basic', status: 'ended', depositId: 'd', priceSnapshot: {}, costCents: 6000, endedAt: new Date(Date.now() - 60 * 60_000), prepaidUntil: new Date(Date.now() - 2 * 60 * 60_000) },
+    });
+    await ctx.svc.retryPendingSettlements(0);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ kind: 'rental', status: 'pending', method: { notIn: ['counter_card', 'counter_pix', 'cash'] } }) }));
+    expect(await ctx.db.payment.findUnique({ where: { id: debt.id } })).toMatchObject({ status: 'pending' });
+    expect(await ctx.db.payment.findUnique({ where: { idempotencyKey: SETTLE_KEY } })).toBeNull();
+    expect(await ctx.db.settlementProgress.count({})).toBe(0);
+    expect((await ctx.db.rental.findUnique({ where: { id: RENTAL } })).paymentId).toBeNull();
+    expect(ctx.provider.operations('charge')).toBe(0);
+  });
+
+  it('release request ignores counter deposits', async () => {
+    const ctx = await setup();
+    const dep = await ctx.db.deposit.create({ data: { customerId: CUSTOMER, method: 'cash', status: 'held', amountCents: 10000, refundedCents: 0 } });
+    const upsert = jest.spyOn(ctx.db.depositRelease, 'upsert');
+    const updateMany = jest.spyOn(ctx.db.deposit, 'updateMany');
+    await ctx.svc.onReleaseRequested({ depositId: dep.id, customerId: CUSTOMER, reason: 'reservation_expired' });
+    expect(upsert).not.toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+    expect((await ctx.db.deposit.findUnique({ where: { id: dep.id } })).status).toBe('held');
+  });
+
+  it('retentativa de liberação já gravada não marca released uma caução de balcão (o dinheiro está no galpão)', async () => {
+    const ctx = await setup();
+    const dep = await ctx.db.deposit.create({ data: { customerId: CUSTOMER, method: 'counter_card', status: 'held', amountCents: 10000, refundedCents: 0 } });
+    await ctx.db.depositRelease.create({ data: { depositId: dep.id, reason: 'reservation_expired' } });
+    await ctx.svc.retryDepositReleases();
+    expect((await ctx.db.deposit.findUnique({ where: { id: dep.id } })).status).toBe('held');
+  });
+});

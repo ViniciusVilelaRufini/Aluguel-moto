@@ -17,6 +17,7 @@ import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError, type ProviderPayment } from './provider/payment-provider';
 import { ReceiptService } from './receipts/receipt.service';
 import { hasOpenDebt, rentalSettlementRetrying } from './open-debt';
+import { COUNTER_METHODS, isCounterMethod } from './counter-methods';
 import { refundBase } from './refund-base';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
@@ -237,6 +238,8 @@ export class RentalBillingService implements RentalBillingPort {
    */
   private async releaseDeposit(deposit: Deposit, key: string): Promise<void> {
     if (deposit.status !== 'held' && deposit.status !== 'awaiting_pix') return;
+    // Pré-reserva/balcão: a caução do balcão está no galpão (devolução pelo `counter-refund`), nunca no gateway.
+    if (this.counterDepositIgnored(deposit)) return;
     let dp = await this.depositPayment(deposit.id);
     if (dp?.providerPaymentId) {
       const ppid = dp.providerPaymentId;
@@ -287,6 +290,7 @@ export class RentalBillingService implements RentalBillingPort {
     try {
       const deposit = await this.prisma.deposit.findUnique({ where: { id: ev.depositId } });
       if (!deposit || deposit.customerId !== ev.customerId) return;
+      if (this.counterDepositIgnored(deposit)) return;
       if (await this.prisma.rental.findFirst({ where: { depositId: ev.depositId }, select: { id: true } })) return;
       // Run-2 (fix round 1): com início em andamento (marcador `RentalStart`) o pedido é gravado mesmo assim e o
       // `attemptRelease` adia. O `DepositRelease` gravado faz a transação final do início abortar (`409 deposit-in-use`),
@@ -296,6 +300,13 @@ export class RentalBillingService implements RentalBillingPort {
     } catch (err) {
       this.logger.error({ msg: 'deposit_release_failed', depositId: ev.depositId, error: (err as Error).message });
     }
+  }
+
+  /** Caução de balcão: liberação automática é no-op (log `deposit_release_counter_ignored`). */
+  private counterDepositIgnored(deposit: Pick<Deposit, 'id' | 'method'>): boolean {
+    if (!isCounterMethod(deposit.method)) return false;
+    this.logger.log({ msg: 'deposit_release_counter_ignored', depositId: deposit.id });
+    return true;
   }
 
   private async startInFlight(depositId: string): Promise<boolean> {
@@ -981,7 +992,12 @@ export class RentalBillingService implements RentalBillingPort {
       // Liquidação já concluída sem o carimbo (queda entre a transição e o registro): fecha o registro para sair da fila.
       else if (p) await this.markFinished(p.id);
     }
-    const orphans = await this.prisma.payment.findMany({ where: { kind: 'rental', status: 'pending', createdAt: { lte: cutoff } }, orderBy: { updatedAt: 'asc' }, take: 50 });
+    // Pré-reserva/balcão: excedente do balcão (`pending` com método de balcão) é acertado no galpão, nunca liquidado aqui.
+    const orphans = await this.prisma.payment.findMany({
+      where: { kind: 'rental', status: 'pending', method: { notIn: [...COUNTER_METHODS] }, createdAt: { lte: cutoff } },
+      orderBy: { updatedAt: 'asc' },
+      take: 50,
+    });
     const withProgress = new Set((await this.prisma.settlementProgress.findMany({ where: { paymentId: { in: orphans.map((p) => p.id) } }, select: { paymentId: true } })).map((p) => p.paymentId));
     for (const p of orphans) if (!seen.has(p.id) && !withProgress.has(p.id)) candidates.push(p);
     for (const p of candidates) {
@@ -1006,7 +1022,8 @@ export class RentalBillingService implements RentalBillingPort {
     // A janela também limita a retentativa: o `settle` cria o `Payment` antes de chamar o gateway, então uma falha do
     // gateway deixa o `Payment` (vinculado na próxima execução); um aluguel que nunca liquida sai da varredura em 7 dias.
     const windowStart = new Date(this.now().getTime() - RECONCILE_WINDOW_MS);
-    const unbilled = { status: { in: ['ended', 'force_ended'] as Array<'ended' | 'force_ended'> }, paymentId: null };
+    // Aluguel do balcão (`prepaidUntil`) nunca vai ao gateway: o fechamento grava o pagamento na mesma transação.
+    const unbilled = { status: { in: ['ended', 'force_ended'] as Array<'ended' | 'force_ended'> }, paymentId: null, prepaidUntil: null };
     const stale = await this.prisma.rental.count({ where: { ...unbilled, endedAt: { lt: windowStart } } });
     if (stale > 0) this.logger.warn({ msg: 'rental_unbilled_needs_review', count: stale });
     const rentals = await this.prisma.rental.findMany({
