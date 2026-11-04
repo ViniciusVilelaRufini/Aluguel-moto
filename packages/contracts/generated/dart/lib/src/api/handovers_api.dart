@@ -9,6 +9,9 @@ import 'package:built_value/serializer.dart';
 import 'package:dio/dio.dart';
 
 import 'package:volti_api/src/api_util.dart';
+import 'package:volti_api/src/model/counter_checkout_request.dart';
+import 'package:volti_api/src/model/counter_plan_code.dart';
+import 'package:volti_api/src/model/counter_quote.dart';
 import 'package:volti_api/src/model/handover.dart';
 import 'package:volti_api/src/model/handover_cancel.dart';
 import 'package:volti_api/src/model/handover_create.dart';
@@ -16,10 +19,11 @@ import 'package:volti_api/src/model/handover_dispute.dart';
 import 'package:volti_api/src/model/handover_page.dart';
 import 'package:volti_api/src/model/handover_status.dart';
 import 'package:volti_api/src/model/handover_type.dart';
+import 'package:volti_api/src/model/handover_upload_request.dart';
+import 'package:volti_api/src/model/insurance_coverage.dart';
 import 'package:volti_api/src/model/presigned_upload.dart';
 import 'package:volti_api/src/model/problem.dart';
 import 'package:volti_api/src/model/rental.dart';
-import 'package:volti_api/src/model/upload_request.dart';
 
 class HandoversApi {
   final Dio _dio;
@@ -28,8 +32,8 @@ class HandoversApi {
 
   const HandoversApi(this._dio, this._serializers);
 
-  /// Aceitar a moto e destravar
-  /// Só o cliente dono (outro cliente → &#x60;404&#x60;) e só com a entrega &#x60;pending_customer&#x60; (senão &#x60;422&#x60; &#x60;handover-not-pending&#x60;). Numa transação idempotente por entrega: cria o aluguel com o plano, o seguro e a caução da reserva, cobra o plano (assinatura em &#x60;weekly&#x60;/&#x60;monthly&#x60;), converte a reserva, pede o destravamento e a moto vai de &#x60;reserved&#x60; a &#x60;rented&#x60;. Aceites repetidos (mesma ou outra &#x60;Idempotency-Key&#x60;) devolvem o mesmo aluguel, com uma única cobrança. Exige consentimento de localização (&#x60;403&#x60; &#x60;location-consent-required&#x60;).  Pagamento recusado → &#x60;422&#x60; &#x60;payment-declined&#x60;: nada muda, a entrega continua &#x60;pending_customer&#x60; com &#x60;lastError&#x60; e a moto não destrava. Gateway fora → &#x60;503&#x60; &#x60;gateway-unavailable&#x60;. Aluguel já ativo → &#x60;409&#x60; &#x60;rental-already-active&#x60;. &#x60;Idempotency-Key&#x60; ausente ou curta → &#x60;400&#x60;.  Moto sem conexão ou sem confirmar o destravamento → &#x60;409&#x60; &#x60;vehicle-offline&#x60; (\&quot;Não conseguimos falar com a moto agora. Tente de novo em instantes ou fale com o operador.\&quot;): nada é cobrado, nenhum aluguel é criado, a caução **continua retida** com a reserva, a entrega continua &#x60;pending_customer&#x60; (com &#x60;lastError: vehicle-offline&#x60;) e o cliente pode aceitar de novo.
+  /// Aceite antigo da entrega (desativado)
+  /// **Desativado (pré-reserva no balcão, 2026-11-04).** O aluguel de galpão é iniciado pelo atendente no balcão (&#x60;POST /handovers/{id}/counter-checkout&#x60;), depois do contrato assinado e do pagamento. Mantido só para os apps antigos: entrega de outro cliente → &#x60;404&#x60;; do cliente dono → sempre &#x60;409&#x60; &#x60;handover-counter-checkout&#x60; (\&quot;O aluguel é iniciado pelo atendente no galpão.\&quot;), sem ler caução, cobrar nada nem destravar. A resposta &#x60;201&#x60; não acontece mais; continua no contrato só por compatibilidade dos clientes gerados.
   ///
   /// Parameters:
   /// * [id]
@@ -222,6 +226,116 @@ class HandoversApi {
     );
   }
 
+  /// Contrato e pagamento no balcão (inicia o aluguel)
+  /// O atendente registra o contrato assinado e o pagamento feitos no balcão e inicia o aluguel. Só a entrega de saída (&#x60;pickup&#x60;) &#x60;pending_customer&#x60; (inexistente ou outro tipo → &#x60;404&#x60;; cancelada ou disputada → &#x60;422&#x60; &#x60;handover-not-pending&#x60;). Entrega já &#x60;accepted&#x60; com aluguel → devolve o mesmo aluguel (convergência: dois balcões ou toque duplo, mesmo com &#x60;Idempotency-Key&#x60; diferentes, geram um aluguel e um pagamento). Outro checkout da mesma entrega em andamento → &#x60;409&#x60; &#x60;conflict&#x60;.  - &#x60;contractPhotoKeys&#x60;: 1 a 4 fotos do contrato (chaves de &#x60;POST /handovers/uploads&#x60; com &#x60;purpose: contract&#x60;).   Nenhuma foto → &#x60;422&#x60; &#x60;contract-photos-required&#x60; (\&quot;Fotografe o contrato assinado (1 a 4 fotos).\&quot;). - &#x60;payment.amountCents&#x60; precisa ser igual ao &#x60;totalCents&#x60; de &#x60;GET /handovers/{id}/counter-quote&#x60; com os mesmos   &#x60;planCode&#x60;, &#x60;coverage&#x60; e &#x60;quantity&#x60; (senão &#x60;422&#x60; &#x60;counter-amount-mismatch&#x60;, \&quot;O valor não confere com o   calculado. Atualize o valor e tente de novo.\&quot;). - Pagamento e caução não passam pelo gateway (o balcão não digita cartão: só método e referência, ex.: NSU ou   ID do Pix). Viram um &#x60;Payment&#x60; &#x60;kind: rental&#x60; &#x60;paid&#x60; com método de balcão (&#x60;recordedBy&#x60; &#x3D; atendente, auditado)   e uma caução &#x60;Deposit&#x60; de balcão &#x60;held&#x60; (sem &#x60;deposit&#x60; → caução de balcão com &#x60;amountCents: 0&#x60;, mesmo método   do pagamento). Caução &gt; 0 também gera um &#x60;Payment&#x60; &#x60;kind: deposit&#x60; &#x60;paid&#x60;. - O cliente precisa ter KYC aprovado, termos vigentes e consentimento de localização; consentimento revogado   depois da pré-reserva → &#x60;422&#x60; &#x60;location-consent-required&#x60; (\&quot;Peça ao cliente para permitir a localização no   app.\&quot;).  Numa transação: cria o aluguel (&#x60;prepaidUntil&#x60; &#x3D; início + período × &#x60;quantity&#x60;), grava os pagamentos e as fotos do contrato na entrega (&#x60;contractPhotoKeys&#x60;), converte a reserva, a entrega vira &#x60;accepted&#x60; e a moto vai de &#x60;reserved&#x60; a &#x60;rented&#x60; pelo comando de destravar existente (eventos &#x60;handover.updated&#x60; e &#x60;rental.updated&#x60;). Moto sem conexão ou sem confirmar o destravamento → &#x60;409&#x60; &#x60;vehicle-offline&#x60;: nada é registrado, a entrega continua &#x60;pending_customer&#x60; com &#x60;lastError&#x60; e o atendente pode tentar de novo. Moto já alugada → &#x60;409&#x60; &#x60;vehicle-unavailable&#x60;; cliente com aluguel ativo → &#x60;409&#x60; &#x60;rental-already-active&#x60;. &#x60;Idempotency-Key&#x60; ausente ou curta → &#x60;400&#x60;.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [idempotencyKey] - Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
+  /// * [counterCheckoutRequest]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Rental] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Rental>> counterCheckoutHandover({
+    required String id,
+    required String idempotencyKey,
+    required CounterCheckoutRequest counterCheckoutRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/handovers/{id}/counter-checkout'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        r'Idempotency-Key': idempotencyKey,
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(CounterCheckoutRequest);
+      _bodyData =
+          _serializers.serialize(counterCheckoutRequest, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Rental? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Rental),
+            ) as Rental;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Rental>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
   /// Registrar entrega (saída ou chegada no galpão)
   /// - &#x60;pickup&#x60;: o operador lê o &#x60;pickupCode&#x60; da reserva (precisa estar &#x60;active&#x60;, no galpão, com a moto &#x60;reserved&#x60;),   envia checklist de saída, fotos (&#x60;POST /handovers/uploads&#x60;) e bateria. Cria a entrega &#x60;pending_customer&#x60;, a   reserva passa a &#x60;handover&#x60; e o cliente recebe o evento &#x60;handover.pending&#x60;. Código adulterado ou vencido → &#x60;404&#x60;. - &#x60;return_depot&#x60;: chegada do aluguel &#x60;rentalId&#x60; no galpão. A entrega já nasce &#x60;accepted&#x60;, o aluguel é encerrado   pelo fechamento normal e a moto volta a &#x60;free&#x60; com o &#x60;depotId&#x60; do galpão, ou vai para &#x60;maintenance&#x60; se algum   item do checklist vier com &#x60;ok: false&#x60;. O &#x60;depotId&#x60; precisa ser um galpão ativo (senão &#x60;404&#x60;) e a posição ao   vivo da moto (rastreador online) precisa estar a até 150 m dele; fora do raio ou sem posição ao vivo →   &#x60;422&#x60; &#x60;vehicle-not-at-depot&#x60; sem mudar nada (o escape é &#x60;POST /rentals/{id}/force-end&#x60;, do admin, com taxa e   auditoria). A chegada aceita grava a auditoria &#x60;rental.return_depot&#x60; (operador, aluguel, galpão e distância).
   ///
@@ -323,11 +437,11 @@ class HandoversApi {
     );
   }
 
-  /// URL de upload da foto da entrega
-  /// Upload direto ao bucket (&#x60;handovers/&lt;uuid&gt;.&lt;ext&gt;&#x60;); depois envie as chaves em &#x60;photoKeys&#x60; de &#x60;POST /handovers&#x60;.
+  /// URL de upload da foto da entrega ou do contrato
+  /// Upload direto ao bucket. &#x60;purpose: photo&#x60; (padrão; corpo antigo só com &#x60;contentType&#x60;) → &#x60;handovers/&lt;uuid&gt;.&lt;ext&gt;&#x60;; envie as chaves em &#x60;photoKeys&#x60; de &#x60;POST /handovers&#x60;. &#x60;purpose: contract&#x60; → &#x60;contracts/&lt;uuid&gt;.&lt;ext&gt;&#x60; (foto do contrato assinado no balcão); envie as chaves em &#x60;contractPhotoKeys&#x60; de &#x60;POST /handovers/{id}/counter-checkout&#x60;.
   ///
   /// Parameters:
-  /// * [uploadRequest]
+  /// * [handoverUploadRequest]
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -338,7 +452,7 @@ class HandoversApi {
   /// Returns a [Future] containing a [Response] with a [PresignedUpload] as data
   /// Throws [DioException] if API call or serialization fails
   Future<Response<PresignedUpload>> createHandoverPhotoUpload({
-    required UploadRequest uploadRequest,
+    required HandoverUploadRequest handoverUploadRequest,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
     Map<String, dynamic>? extra,
@@ -369,8 +483,9 @@ class HandoversApi {
     dynamic _bodyData;
 
     try {
-      const _type = FullType(UploadRequest);
-      _bodyData = _serializers.serialize(uploadRequest, specifiedType: _type);
+      const _type = FullType(HandoverUploadRequest);
+      _bodyData =
+          _serializers.serialize(handoverUploadRequest, specifiedType: _type);
     } catch (error, stackTrace) {
       throw DioException(
         requestOptions: _options.compose(
@@ -531,7 +646,7 @@ class HandoversApi {
   }
 
   /// Entrega (\&quot;Confira sua moto\&quot;)
-  /// Cliente: só a entrega da própria reserva ou aluguel (senão &#x60;404&#x60;). Traz checklist, bateria e as fotos em &#x60;photoUrls&#x60; (links assinados, 24 h). O operador acompanha o status e &#x60;lastError&#x60; (ex.: pagamento não aprovado).
+  /// Cliente: só a entrega da própria reserva ou aluguel (senão &#x60;404&#x60;). Traz checklist, bateria e as fotos em &#x60;photoUrls&#x60; (links assinados, 24 h). O operador acompanha o status e &#x60;lastError&#x60; (ex.: moto sem conexão no checkout do balcão).
   ///
   /// Parameters:
   /// * [id]
@@ -609,6 +724,108 @@ class HandoversApi {
     }
 
     return Response<Handover>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Prévia do valor no balcão
+  /// Valor do plano do balcão × &#x60;quantity&#x60; + seguro, em centavos, para a entrega de saída &#x60;{id}&#x60; (&#x60;pickup&#x60;; outra entrega ou inexistente → &#x60;404&#x60;). Planos do balcão: &#x60;day&#x60;, &#x60;weekly&#x60; e &#x60;monthly&#x60;, pré-pagos pelo período (dia &#x3D; 24 h, semana &#x3D; 7 dias, mês &#x3D; 30 dias, contados do início do aluguel; pausa não estende). &#x60;quantity&#x60;: diária 1–30, semana 1–4, mês 1–3 (acima do limite do plano → &#x60;400&#x60; &#x60;validation-error&#x60; com &#x60;field: quantity&#x60;). O seguro é um prêmio único por aluguel (não multiplica pela quantidade). &#x60;excessDayCents&#x60; &#x3D; preço da diária (&#x60;unitPriceCents&#x60; do plano &#x60;day&#x60; ativo), cobrado por **dia iniciado** depois de &#x60;prepaidUntil&#x60; e acertado no galpão. Cupom e carteira não valem no balcão. O &#x60;payment.amountCents&#x60; de &#x60;counter-checkout&#x60; precisa ser igual a &#x60;totalCents&#x60;.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [planCode]
+  /// * [coverage]
+  /// * [quantity] - Quantidade do período (padrão 1; diária até 30, semana até 4, mês até 3).
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [CounterQuote] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<CounterQuote>> getHandoverCounterQuote({
+    required String id,
+    required CounterPlanCode planCode,
+    required InsuranceCoverage coverage,
+    int? quantity = 1,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/handovers/{id}/counter-quote'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'GET',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _queryParameters = <String, dynamic>{
+      r'planCode': encodeQueryParameter(
+          _serializers, planCode, const FullType(CounterPlanCode)),
+      r'coverage': encodeQueryParameter(
+          _serializers, coverage, const FullType(InsuranceCoverage)),
+      if (quantity != null)
+        r'quantity':
+            encodeQueryParameter(_serializers, quantity, const FullType(int)),
+    };
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      queryParameters: _queryParameters,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    CounterQuote? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(CounterQuote),
+            ) as CounterQuote;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<CounterQuote>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

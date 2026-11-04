@@ -12,7 +12,7 @@ import 'package:built_value/serializer.dart';
 
 part 'reservation_create.g.dart';
 
-/// Só `vehicleId` = reserva de rua (fluxo antigo, 15 min). Com `depotId` = reserva de retirada no galpão: exige `pickupMode`, `planCode`, `coverage` e `depositMethod` (`400`), e `pickupAt` em `scheduled`.
+/// Só `vehicleId` = reserva de rua (fluxo antigo, 15 min). Com `depotId` = pré-reserva de retirada no galpão: exige `pickupMode` (`400`) e `pickupAt` em `scheduled`. `planCode`, `coverage`, `depositMethod`, `cardId` e `couponCode` são aceitos (apps antigos) e ignorados: plano, seguro e pagamento são escolhidos no balcão.
 ///
 /// Properties:
 /// * [vehicleId]
@@ -22,8 +22,8 @@ part 'reservation_create.g.dart';
 /// * [planCode]
 /// * [coverage]
 /// * [depositMethod]
-/// * [cardId] - Cartão da caução com `depositMethod: card` (ausente = cartão padrão).
-/// * [couponCode] - Cupom aplicado ao plano na entrega.
+/// * [cardId] - Ignorado (apps antigos): a pré-reserva não tem caução.
+/// * [couponCode] - Ignorado (apps antigos): cupom não vale no balcão nesta fase.
 @BuiltValue()
 abstract class ReservationCreate
     implements Built<ReservationCreate, ReservationCreateBuilder> {
@@ -51,13 +51,13 @@ abstract class ReservationCreate
 
   @BuiltValueField(wireName: r'depositMethod')
   DepositMethod? get depositMethod;
-  // enum depositMethodEnum {  card,  pix,  };
+  // enum depositMethodEnum {  card,  pix,  counter_card,  counter_pix,  cash,  };
 
-  /// Cartão da caução com `depositMethod: card` (ausente = cartão padrão).
+  /// Ignorado (apps antigos): a pré-reserva não tem caução.
   @BuiltValueField(wireName: r'cardId')
   String? get cardId;
 
-  /// Cupom aplicado ao plano na entrega.
+  /// Ignorado (apps antigos): cupom não vale no balcão nesta fase.
   @BuiltValueField(wireName: r'couponCode')
   String? get couponCode;
 

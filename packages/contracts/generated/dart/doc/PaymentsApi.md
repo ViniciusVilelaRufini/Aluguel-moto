@@ -12,6 +12,8 @@ Method | HTTP request | Description
 [**addPaymentCard**](PaymentsApi.md#addpaymentcard) | **POST** /payments/cards | Cadastrar cartão (token do gateway)
 [**assignSubscriptionVehicle**](PaymentsApi.md#assignsubscriptionvehicle) | **PUT** /payments/subscriptions/{id}/vehicle | Definir a moto fixa do plano
 [**cancelSubscription**](PaymentsApi.md#cancelsubscription) | **DELETE** /payments/subscriptions/{id} | Cancelar assinatura
+[**counterRefundDeposit**](PaymentsApi.md#counterrefunddeposit) | **POST** /payments/deposits/{id}/counter-refund | Devolver caução do balcão
+[**counterSettlePayment**](PaymentsApi.md#countersettlepayment) | **POST** /payments/{id}/counter-settle | Quitar débito no balcão
 [**createSubscription**](PaymentsApi.md#createsubscription) | **POST** /payments/subscriptions | Assinar plano semanal ou mensal
 [**deletePaymentCard**](PaymentsApi.md#deletepaymentcard) | **DELETE** /payments/cards/{id} | Remover cartão
 [**getDeposit**](PaymentsApi.md#getdeposit) | **GET** /payments/deposits/{id} | Estado da caução
@@ -157,6 +159,100 @@ Name | Type | Description  | Notes
 ### HTTP request headers
 
  - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **counterRefundDeposit**
+> Deposit counterRefundDeposit(id, idempotencyKey, counterRefundRequest)
+
+Devolver caução do balcão
+
+O atendente registra a devolução (total ou parcial) da caução do balcão ao cliente, sem gateway. Só caução com método de balcão (`counter_card`, `counter_pix`, `cash`; outra → `409` `conflict`, \"Esta caução não é do balcão.\") e só depois do encerramento do aluguel dela (`409` `conflict`, \"A caução só é devolvida depois do encerramento do aluguel.\"). `amountCents` ≤ disponível (`amountCents` − `capturedCents` − `refundedCents`), senão `422` `counter-amount-mismatch`; devoluções e abatimentos concorrentes nunca passam do valor retido. Soma em `refundedCents`; quando o disponível chega a 0 a caução vira `captured` (se houve abatimento) ou `released`. Nada é abatido nem devolvido automaticamente. Grava AuditLog `deposit.counter_refund`. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPaymentsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final String idempotencyKey = idempotencyKey_example; // String | Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
+final CounterRefundRequest counterRefundRequest = ; // CounterRefundRequest | 
+
+try {
+    final response = api.counterRefundDeposit(id, idempotencyKey, counterRefundRequest);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PaymentsApi->counterRefundDeposit: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **idempotencyKey** | **String**| Chave única por intenção (UUID v4 recomendado). Válida por 24 h. | 
+ **counterRefundRequest** | [**CounterRefundRequest**](CounterRefundRequest.md)|  | 
+
+### Return type
+
+[**Deposit**](Deposit.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **counterSettlePayment**
+> Payment counterSettlePayment(id, idempotencyKey, counterSettleRequest)
+
+Quitar débito no balcão
+
+O atendente registra a quitação (total ou parcial) de uma dívida em aberto do cliente no balcão, sem gateway: o débito de balcão `pending` (excedente do período, multa de zona, dano) ou um débito antigo `failed`. Informe exatamente um entre `method` (pagamento no balcão) e `fromDepositId` (abater da caução de balcão do mesmo cliente); os dois ou nenhum → `400` `validation-error`. Não é dívida em aberto → `409` `debt-not-payable`. `amountCents` ≤ saldo do débito, e com `fromDepositId` também ≤ disponível da caução; senão `422` `counter-amount-mismatch`. Cada parte vira um `Payment` `debt_settlement` `paid` (`settlesPaymentId` = este id, `recordedBy` = atendente; com caução, `depositId` e `capturedCents` da caução somados). Saldo do débito de balcão = valor − carteira − Σ quitações pagas dele. Saldo zerado → o débito ganha `debtSettledAt` (débito de balcão também vira `paid`) e a flag `delinquent` sai quando não restar outra dívida. Grava AuditLog `payment.counter_settle`. Devolve o débito com `outstandingCents` atualizado. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPaymentsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final String idempotencyKey = idempotencyKey_example; // String | Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
+final CounterSettleRequest counterSettleRequest = ; // CounterSettleRequest | 
+
+try {
+    final response = api.counterSettlePayment(id, idempotencyKey, counterSettleRequest);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PaymentsApi->counterSettlePayment: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **idempotencyKey** | **String**| Chave única por intenção (UUID v4 recomendado). Válida por 24 h. | 
+ **counterSettleRequest** | [**CounterSettleRequest**](CounterSettleRequest.md)|  | 
+
+### Return type
+
+[**Payment**](Payment.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
  - **Accept**: application/json, application/problem+json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
@@ -601,7 +697,7 @@ Name | Type | Description  | Notes
 
 Quitar dívida (cliente)
 
-O cliente paga o saldo devedor (`outstandingCents`) de um pagamento de aluguel ou assinatura que terminou `failed` (inadimplência). Cria um pagamento `debt_settlement` com `settlesPaymentId` = este id. Cartão: cobrança na hora (`201` `paid`; recusa → `402` `payment-failed`; sem cartão → `402` `card-not-found`). Pix: `201` `pending` com `pix`; a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha `debtSettledAt` e a flag `delinquent` sai quando não restar outra dívida e o recibo do aluguel (PDF) fica pronto. Não é dívida (ou já quitada) → `409` `debt-not-payable`; cobrança automática ainda em curso → `409` `debt-in-collection` (aluguel: a liquidação ainda retenta no cartão; assinatura: a assinatura desta dívida está `past_due`, com o gateway retentando a recorrência, ou com o cancelamento no gateway ainda não confirmado). Uma quitação Pix pendente e ainda válida é reaproveitada. Gateway sem resposta conclusiva (resultado da cobrança desconhecido ou tentativa anterior que não deu para conferir) → `503` `gateway-unavailable`; a tentativa fica `pending` e é conferida antes de qualquer nova cobrança. 
+O cliente paga o saldo devedor (`outstandingCents`) de um pagamento de aluguel ou assinatura que terminou `failed` (inadimplência). Cria um pagamento `debt_settlement` com `settlesPaymentId` = este id. Cartão: cobrança na hora (`201` `paid`; recusa → `402` `payment-failed`; sem cartão → `402` `card-not-found`). Pix: `201` `pending` com `pix`; a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha `debtSettledAt` e a flag `delinquent` sai quando não restar outra dívida e o recibo do aluguel (PDF) fica pronto. Não é dívida (ou já quitada) → `409` `debt-not-payable`; débito de balcão (método `counter_card`, `counter_pix` ou `cash`) → `409` `debt-not-payable` (\"Este valor é acertado no galpão.\"), nada é cobrado; cobrança automática ainda em curso → `409` `debt-in-collection` (aluguel: a liquidação ainda retenta no cartão; assinatura: a assinatura desta dívida está `past_due`, com o gateway retentando a recorrência, ou com o cancelamento no gateway ainda não confirmado). Uma quitação Pix pendente e ainda válida é reaproveitada. Gateway sem resposta conclusiva (resultado da cobrança desconhecido ou tentativa anterior que não deu para conferir) → `503` `gateway-unavailable`; a tentativa fica `pending` e é conferida antes de qualquer nova cobrança. 
 
 ### Example
 ```dart

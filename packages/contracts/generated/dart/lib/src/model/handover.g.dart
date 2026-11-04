@@ -36,6 +36,8 @@ class _$Handover extends Handover {
   @override
   final String? batterySerial;
   @override
+  final BuiltList<String>? contractPhotoKeys;
+  @override
   final HandoverStatus status;
   @override
   final String? lastError;
@@ -70,6 +72,7 @@ class _$Handover extends Handover {
       this.photoUrls,
       required this.batteryPct,
       this.batterySerial,
+      this.contractPhotoKeys,
       required this.status,
       this.lastError,
       this.disputeReason,
@@ -104,6 +107,7 @@ class _$Handover extends Handover {
         photoUrls == other.photoUrls &&
         batteryPct == other.batteryPct &&
         batterySerial == other.batterySerial &&
+        contractPhotoKeys == other.contractPhotoKeys &&
         status == other.status &&
         lastError == other.lastError &&
         disputeReason == other.disputeReason &&
@@ -131,6 +135,7 @@ class _$Handover extends Handover {
     _$hash = $jc(_$hash, photoUrls.hashCode);
     _$hash = $jc(_$hash, batteryPct.hashCode);
     _$hash = $jc(_$hash, batterySerial.hashCode);
+    _$hash = $jc(_$hash, contractPhotoKeys.hashCode);
     _$hash = $jc(_$hash, status.hashCode);
     _$hash = $jc(_$hash, lastError.hashCode);
     _$hash = $jc(_$hash, disputeReason.hashCode);
@@ -160,6 +165,7 @@ class _$Handover extends Handover {
           ..add('photoUrls', photoUrls)
           ..add('batteryPct', batteryPct)
           ..add('batterySerial', batterySerial)
+          ..add('contractPhotoKeys', contractPhotoKeys)
           ..add('status', status)
           ..add('lastError', lastError)
           ..add('disputeReason', disputeReason)
@@ -240,6 +246,12 @@ class HandoverBuilder implements Builder<Handover, HandoverBuilder> {
   set batterySerial(String? batterySerial) =>
       _$this._batterySerial = batterySerial;
 
+  ListBuilder<String>? _contractPhotoKeys;
+  ListBuilder<String> get contractPhotoKeys =>
+      _$this._contractPhotoKeys ??= ListBuilder<String>();
+  set contractPhotoKeys(ListBuilder<String>? contractPhotoKeys) =>
+      _$this._contractPhotoKeys = contractPhotoKeys;
+
   HandoverStatus? _status;
   HandoverStatus? get status => _$this._status;
   set status(HandoverStatus? status) => _$this._status = status;
@@ -295,6 +307,7 @@ class HandoverBuilder implements Builder<Handover, HandoverBuilder> {
       _photoUrls = $v.photoUrls?.toBuilder();
       _batteryPct = $v.batteryPct;
       _batterySerial = $v.batterySerial;
+      _contractPhotoKeys = $v.contractPhotoKeys?.toBuilder();
       _status = $v.status;
       _lastError = $v.lastError;
       _disputeReason = $v.disputeReason;
@@ -345,6 +358,7 @@ class HandoverBuilder implements Builder<Handover, HandoverBuilder> {
             batteryPct: BuiltValueNullFieldError.checkNotNull(
                 batteryPct, r'Handover', 'batteryPct'),
             batterySerial: batterySerial,
+            contractPhotoKeys: _contractPhotoKeys?.build(),
             status: BuiltValueNullFieldError.checkNotNull(
                 status, r'Handover', 'status'),
             lastError: lastError,
@@ -365,6 +379,9 @@ class HandoverBuilder implements Builder<Handover, HandoverBuilder> {
         photoKeys.build();
         _$failedField = 'photoUrls';
         _photoUrls?.build();
+
+        _$failedField = 'contractPhotoKeys';
+        _contractPhotoKeys?.build();
       } catch (e) {
         throw BuiltValueNestedFieldError(
             r'Handover', _$failedField, e.toString());

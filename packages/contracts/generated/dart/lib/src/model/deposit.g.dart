@@ -22,6 +22,10 @@ class _$Deposit extends Deposit {
   @override
   final int? capturedCents;
   @override
+  final int? refundedCents;
+  @override
+  final String? reference;
+  @override
   final PixCharge? pix;
   @override
   final DateTime createdAt;
@@ -39,6 +43,8 @@ class _$Deposit extends Deposit {
       required this.status,
       required this.amountCents,
       this.capturedCents,
+      this.refundedCents,
+      this.reference,
       this.pix,
       required this.createdAt,
       required this.updatedAt})
@@ -61,6 +67,8 @@ class _$Deposit extends Deposit {
         status == other.status &&
         amountCents == other.amountCents &&
         capturedCents == other.capturedCents &&
+        refundedCents == other.refundedCents &&
+        reference == other.reference &&
         pix == other.pix &&
         createdAt == other.createdAt &&
         updatedAt == other.updatedAt;
@@ -76,6 +84,8 @@ class _$Deposit extends Deposit {
     _$hash = $jc(_$hash, status.hashCode);
     _$hash = $jc(_$hash, amountCents.hashCode);
     _$hash = $jc(_$hash, capturedCents.hashCode);
+    _$hash = $jc(_$hash, refundedCents.hashCode);
+    _$hash = $jc(_$hash, reference.hashCode);
     _$hash = $jc(_$hash, pix.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jc(_$hash, updatedAt.hashCode);
@@ -93,6 +103,8 @@ class _$Deposit extends Deposit {
           ..add('status', status)
           ..add('amountCents', amountCents)
           ..add('capturedCents', capturedCents)
+          ..add('refundedCents', refundedCents)
+          ..add('reference', reference)
           ..add('pix', pix)
           ..add('createdAt', createdAt)
           ..add('updatedAt', updatedAt))
@@ -132,6 +144,15 @@ class DepositBuilder implements Builder<Deposit, DepositBuilder> {
   set capturedCents(int? capturedCents) =>
       _$this._capturedCents = capturedCents;
 
+  int? _refundedCents;
+  int? get refundedCents => _$this._refundedCents;
+  set refundedCents(int? refundedCents) =>
+      _$this._refundedCents = refundedCents;
+
+  String? _reference;
+  String? get reference => _$this._reference;
+  set reference(String? reference) => _$this._reference = reference;
+
   PixChargeBuilder? _pix;
   PixChargeBuilder get pix => _$this._pix ??= PixChargeBuilder();
   set pix(PixChargeBuilder? pix) => _$this._pix = pix;
@@ -158,6 +179,8 @@ class DepositBuilder implements Builder<Deposit, DepositBuilder> {
       _status = $v.status;
       _amountCents = $v.amountCents;
       _capturedCents = $v.capturedCents;
+      _refundedCents = $v.refundedCents;
+      _reference = $v.reference;
       _pix = $v.pix?.toBuilder();
       _createdAt = $v.createdAt;
       _updatedAt = $v.updatedAt;
@@ -195,6 +218,8 @@ class DepositBuilder implements Builder<Deposit, DepositBuilder> {
             amountCents: BuiltValueNullFieldError.checkNotNull(
                 amountCents, r'Deposit', 'amountCents'),
             capturedCents: capturedCents,
+            refundedCents: refundedCents,
+            reference: reference,
             pix: _pix?.build(),
             createdAt: BuiltValueNullFieldError.checkNotNull(
                 createdAt, r'Deposit', 'createdAt'),

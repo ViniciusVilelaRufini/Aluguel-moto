@@ -38,7 +38,7 @@ abstract class StartRentalRequest
 
   @BuiltValueField(wireName: r'depositMethod')
   DepositMethod get depositMethod;
-  // enum depositMethodEnum {  card,  pix,  };
+  // enum depositMethodEnum {  card,  pix,  counter_card,  counter_pix,  cash,  };
 
   @BuiltValueField(wireName: r'couponCode')
   String? get couponCode;

@@ -9,6 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'payment_method.g.dart';
 
+/// `counter_card` (maquininha), `counter_pix` (Pix no balcão) e `cash` (dinheiro): registrados pelo atendente no balcão, sem gateway; jobs de cobrança e retentativa ignoram esses métodos.
 class PaymentMethod extends EnumClass {
   @BuiltValueEnumConst(wireName: r'card')
   static const PaymentMethod card = _$card;
@@ -16,6 +17,12 @@ class PaymentMethod extends EnumClass {
   static const PaymentMethod pix = _$pix;
   @BuiltValueEnumConst(wireName: r'wallet')
   static const PaymentMethod wallet = _$wallet;
+  @BuiltValueEnumConst(wireName: r'counter_card')
+  static const PaymentMethod counterCard = _$counterCard;
+  @BuiltValueEnumConst(wireName: r'counter_pix')
+  static const PaymentMethod counterPix = _$counterPix;
+  @BuiltValueEnumConst(wireName: r'cash')
+  static const PaymentMethod cash = _$cash;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const PaymentMethod unknownDefaultOpenApi = _$unknownDefaultOpenApi;
 

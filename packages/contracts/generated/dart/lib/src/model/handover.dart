@@ -19,7 +19,7 @@ part 'handover.g.dart';
 /// * [type]
 /// * [depotId]
 /// * [reservationId]
-/// * [rentalId] - Preenchido no aceite (`pickup`) ou desde a criação (`return_depot`).
+/// * [rentalId] - Preenchido no checkout do balcão (`pickup`) ou desde a criação (`return_depot`).
 /// * [vehicleId]
 /// * [vehicleCode]
 /// * [operatorId]
@@ -29,14 +29,15 @@ part 'handover.g.dart';
 /// * [photoUrls] - Links assinados (24 h), na mesma ordem de `photoKeys`.
 /// * [batteryPct]
 /// * [batterySerial]
+/// * [contractPhotoKeys] - staff. Fotos do contrato assinado no balcão (chaves `contracts/`), gravadas no checkout do balcão. No export LGPD do titular, só as chaves.
 /// * [status]
-/// * [lastError] - Slug do último erro do aceite (ex.: `payment-declined`); some quando o aceite dá certo.
+/// * [lastError] - Slug do último erro do checkout do balcão (ex.: `vehicle-offline`) ou do aceite antigo; some quando dá certo.
 /// * [disputeReason]
 /// * [cancelReason] - staff. Motivo do cancelamento (`POST /handovers/{id}/cancel`), lido do AuditLog.
 /// * [canceledAt] - staff. Quando foi cancelada.
 /// * [canceledByName] - staff. Nome de quem cancelou.
 /// * [createdAt]
-/// * [respondedAt] - Aceite ou disputa do cliente.
+/// * [respondedAt] - Checkout do balcão (ou aceite antigo) ou disputa do cliente.
 @BuiltValue()
 abstract class Handover implements Built<Handover, HandoverBuilder> {
   @BuiltValueField(wireName: r'id')
@@ -52,7 +53,7 @@ abstract class Handover implements Built<Handover, HandoverBuilder> {
   @BuiltValueField(wireName: r'reservationId')
   String? get reservationId;
 
-  /// Preenchido no aceite (`pickup`) ou desde a criação (`return_depot`).
+  /// Preenchido no checkout do balcão (`pickup`) ou desde a criação (`return_depot`).
   @BuiltValueField(wireName: r'rentalId')
   String? get rentalId;
 
@@ -85,11 +86,15 @@ abstract class Handover implements Built<Handover, HandoverBuilder> {
   @BuiltValueField(wireName: r'batterySerial')
   String? get batterySerial;
 
+  /// staff. Fotos do contrato assinado no balcão (chaves `contracts/`), gravadas no checkout do balcão. No export LGPD do titular, só as chaves.
+  @BuiltValueField(wireName: r'contractPhotoKeys')
+  BuiltList<String>? get contractPhotoKeys;
+
   @BuiltValueField(wireName: r'status')
   HandoverStatus get status;
   // enum statusEnum {  pending_customer,  accepted,  disputed,  canceled,  };
 
-  /// Slug do último erro do aceite (ex.: `payment-declined`); some quando o aceite dá certo.
+  /// Slug do último erro do checkout do balcão (ex.: `vehicle-offline`) ou do aceite antigo; some quando dá certo.
   @BuiltValueField(wireName: r'lastError')
   String? get lastError;
 
@@ -111,7 +116,7 @@ abstract class Handover implements Built<Handover, HandoverBuilder> {
   @BuiltValueField(wireName: r'createdAt')
   DateTime get createdAt;
 
-  /// Aceite ou disputa do cliente.
+  /// Checkout do balcão (ou aceite antigo) ou disputa do cliente.
   @BuiltValueField(wireName: r'respondedAt')
   DateTime? get respondedAt;
 
@@ -219,6 +224,13 @@ class _$HandoverSerializer implements PrimitiveSerializer<Handover> {
       yield serializers.serialize(
         object.batterySerial,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.contractPhotoKeys != null) {
+      yield r'contractPhotoKeys';
+      yield serializers.serialize(
+        object.contractPhotoKeys,
+        specifiedType: const FullType(BuiltList, [FullType(String)]),
       );
     }
     yield r'status';
@@ -403,6 +415,15 @@ class _$HandoverSerializer implements PrimitiveSerializer<Handover> {
           ) as String?;
           if (valueDes == null) continue;
           result.batterySerial = valueDes;
+          break;
+        case r'contractPhotoKeys':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType:
+                const FullType.nullable(BuiltList, [FullType(String)]),
+          ) as BuiltList<String>?;
+          if (valueDes == null) continue;
+          result.contractPhotoKeys.replace(valueDes);
           break;
         case r'status':
           final valueDes = serializers.deserialize(

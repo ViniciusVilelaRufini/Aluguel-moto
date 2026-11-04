@@ -9,7 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'handover_type.g.dart';
 
-/// `pickup` = saída do galpão com aceite do cliente; `return_depot` = chegada no galpão (encerra o aluguel).
+/// `pickup` = saída do galpão, concluída pelo checkout do balcão; `return_depot` = chegada no galpão (encerra o aluguel).
 class HandoverType extends EnumClass {
   @BuiltValueEnumConst(wireName: r'pickup')
   static const HandoverType pickup = _$pickup;

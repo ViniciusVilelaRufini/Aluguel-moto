@@ -47,6 +47,17 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(Consents.serializer)
       ..add(ConsentsUpdate.serializer)
       ..add(ConversationStatus.serializer)
+      ..add(CounterBalance.serializer)
+      ..add(CounterCheckoutRequest.serializer)
+      ..add(CounterDebt.serializer)
+      ..add(CounterDepositBalance.serializer)
+      ..add(CounterDepositInput.serializer)
+      ..add(CounterPaymentInput.serializer)
+      ..add(CounterPaymentMethod.serializer)
+      ..add(CounterPlanCode.serializer)
+      ..add(CounterQuote.serializer)
+      ..add(CounterRefundRequest.serializer)
+      ..add(CounterSettleRequest.serializer)
       ..add(Coupon.serializer)
       ..add(CouponCodeRequest.serializer)
       ..add(CouponInput.serializer)
@@ -123,6 +134,8 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(HandoverPage.serializer)
       ..add(HandoverStatus.serializer)
       ..add(HandoverType.serializer)
+      ..add(HandoverUploadPurpose.serializer)
+      ..add(HandoverUploadRequest.serializer)
       ..add(HealthState.serializer)
       ..add(HealthStatus.serializer)
       ..add(HeatmapPoint.serializer)
@@ -333,6 +346,13 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(Claim)]),
           () => ListBuilder<Claim>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(CounterDebt)]),
+          () => ListBuilder<CounterDebt>())
+      ..addBuilderFactory(
+          const FullType(
+              BuiltList, const [const FullType(CounterDepositBalance)]),
+          () => ListBuilder<CounterDepositBalance>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(Coupon)]),
           () => ListBuilder<Coupon>())
       ..addBuilderFactory(
@@ -392,6 +412,9 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(
               BuiltList, const [const FullType(HandoverChecklistItem)]),
           () => ListBuilder<HandoverChecklistItem>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(String)]),
+          () => ListBuilder<String>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(String)]),
           () => ListBuilder<String>())
@@ -536,6 +559,9 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(StationSwap)]),
           () => ListBuilder<StationSwap>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(String)]),
+          () => ListBuilder<String>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(String)]),
           () => ListBuilder<String>())

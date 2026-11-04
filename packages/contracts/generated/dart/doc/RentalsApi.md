@@ -15,6 +15,7 @@ Method | HTTP request | Description
 [**forceEndRental**](RentalsApi.md#forceendrental) | **POST** /rentals/{id}/force-end | Encerramento forçado (staff)
 [**getCurrentRental**](RentalsApi.md#getcurrentrental) | **GET** /rentals/current | Aluguel em andamento do cliente
 [**getRental**](RentalsApi.md#getrental) | **GET** /rentals/{id} | Detalhe do aluguel
+[**getRentalCounterBalance**](RentalsApi.md#getrentalcounterbalance) | **GET** /rentals/{id}/counter-balance | Saldo a acertar no balcão
 [**getRentalReceipt**](RentalsApi.md#getrentalreceipt) | **GET** /rentals/{id}/receipt | Recibo do aluguel
 [**getRentalTrack**](RentalsApi.md#getrentaltrack) | **GET** /rentals/{id}/track | Trajeto do aluguel
 [**listRentalEvents**](RentalsApi.md#listrentalevents) | **GET** /rentals/{id}/events | Linha do tempo do aluguel
@@ -284,6 +285,49 @@ Name | Type | Description  | Notes
 ### Authorization
 
 [staffAuth](../README.md#staffAuth), [customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **getRentalCounterBalance**
+> CounterBalance getRentalCounterBalance(id)
+
+Saldo a acertar no balcão
+
+Para o acerto no galpão (checklist de chegada, página do cliente no painel): todas as dívidas em aberto do cliente deste aluguel (`debts`, com `outstandingCents` > 0; inclui débitos de balcão `pending` e débitos antigos `failed`) e as cauções de balcão do cliente com saldo disponível (`deposits`). Saldo do débito de balcão = valor − carteira − Σ quitações `debt_settlement` pagas dele. Disponível da caução = `amountCents` − `capturedCents` − `refundedCents`. Só o primeiro nome do cliente. Aluguel inexistente → `404`. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getRentalsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+
+try {
+    final response = api.getRentalCounterBalance(id);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling RentalsApi->getRentalCounterBalance: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+
+### Return type
+
+[**CounterBalance**](CounterBalance.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
 
 ### HTTP request headers
 

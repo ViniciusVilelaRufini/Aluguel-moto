@@ -11,14 +11,14 @@ part 'price_line.g.dart';
 /// PriceLine
 ///
 /// Properties:
-/// * [code] - `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`.
+/// * [code] - `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`. Aluguel do balcão: `counter_plan` (plano pré-pago × quantidade), `excess_day` (excedente por dia iniciado depois de `prepaidUntil`), `insurance_<coverage>` e `counter_prepaid` (\"Pago no balcão\", negativo).
 /// * [description]
 /// * [quantity] - Minutos, horas ou dias cobrados.
 /// * [unitCents]
 /// * [amountCents] - Negativo para descontos.
 @BuiltValue()
 abstract class PriceLine implements Built<PriceLine, PriceLineBuilder> {
-  /// `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`.
+  /// `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`. Aluguel do balcão: `counter_plan` (plano pré-pago × quantidade), `excess_day` (excedente por dia iniciado depois de `prepaidUntil`), `insurance_<coverage>` e `counter_prepaid` (\"Pago no balcão\", negativo).
   @BuiltValueField(wireName: r'code')
   String get code;
 

@@ -53,6 +53,17 @@ import 'package:volti_api/src/model/command_type.dart';
 import 'package:volti_api/src/model/consents.dart';
 import 'package:volti_api/src/model/consents_update.dart';
 import 'package:volti_api/src/model/conversation_status.dart';
+import 'package:volti_api/src/model/counter_balance.dart';
+import 'package:volti_api/src/model/counter_checkout_request.dart';
+import 'package:volti_api/src/model/counter_debt.dart';
+import 'package:volti_api/src/model/counter_deposit_balance.dart';
+import 'package:volti_api/src/model/counter_deposit_input.dart';
+import 'package:volti_api/src/model/counter_payment_input.dart';
+import 'package:volti_api/src/model/counter_payment_method.dart';
+import 'package:volti_api/src/model/counter_plan_code.dart';
+import 'package:volti_api/src/model/counter_quote.dart';
+import 'package:volti_api/src/model/counter_refund_request.dart';
+import 'package:volti_api/src/model/counter_settle_request.dart';
 import 'package:volti_api/src/model/coupon.dart';
 import 'package:volti_api/src/model/coupon_code_request.dart';
 import 'package:volti_api/src/model/coupon_input.dart';
@@ -127,6 +138,8 @@ import 'package:volti_api/src/model/handover_dispute.dart';
 import 'package:volti_api/src/model/handover_page.dart';
 import 'package:volti_api/src/model/handover_status.dart';
 import 'package:volti_api/src/model/handover_type.dart';
+import 'package:volti_api/src/model/handover_upload_purpose.dart';
+import 'package:volti_api/src/model/handover_upload_request.dart';
 import 'package:volti_api/src/model/health_state.dart';
 import 'package:volti_api/src/model/health_status.dart';
 import 'package:volti_api/src/model/heatmap_point.dart';
@@ -351,6 +364,17 @@ part 'serializers.g.dart';
   Consents,
   ConsentsUpdate,
   ConversationStatus,
+  CounterBalance,
+  CounterCheckoutRequest,
+  CounterDebt,
+  CounterDepositBalance,
+  CounterDepositInput,
+  CounterPaymentInput,
+  CounterPaymentMethod,
+  CounterPlanCode,
+  CounterQuote,
+  CounterRefundRequest,
+  CounterSettleRequest,
   Coupon,
   CouponCodeRequest,
   CouponInput,
@@ -425,6 +449,8 @@ part 'serializers.g.dart';
   HandoverPage,
   HandoverStatus,
   HandoverType,
+  HandoverUploadPurpose,
+  HandoverUploadRequest,
   HealthState,
   HealthStatus,
   HeatmapPoint,
@@ -798,6 +824,10 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<PriceLine>(),
       )
       ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(CounterDebt)]),
+        () => ListBuilder<CounterDebt>(),
+      )
+      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(VehicleRevenueRow)]),
         () => ListBuilder<VehicleRevenueRow>(),
       )
@@ -871,6 +901,10 @@ Serializers serializers = (_$serializers.toBuilder()
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(RentalEvent)]),
         () => ListBuilder<RentalEvent>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(CounterDepositBalance)]),
+        () => ListBuilder<CounterDepositBalance>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(String)]),

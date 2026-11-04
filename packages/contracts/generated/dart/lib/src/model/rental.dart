@@ -32,7 +32,8 @@ part 'rental.g.dart';
 /// * [couponCode]
 /// * [depositId]
 /// * [insurancePolicyId]
-/// * [paymentId] - Pagamento da liquidação.
+/// * [paymentId] - Pagamento da liquidação. Aluguel do balcão: o pagamento pré-pago no balcão ou, com excedente no fechamento, o débito de balcão `pending`.
+/// * [prepaidUntil] - Só aluguel do balcão: fim do período pré-pago (início + período × quantidade; pausa não estende). Depois disso o aluguel continua e o excedente conta por dia iniciado, acertado no galpão. O app avisa 1 h antes.
 /// * [endZoneId]
 /// * [returnPhotoObjectKey]
 /// * [forceEndReason] - staff.
@@ -101,9 +102,13 @@ abstract class Rental implements Built<Rental, RentalBuilder> {
   @BuiltValueField(wireName: r'insurancePolicyId')
   String? get insurancePolicyId;
 
-  /// Pagamento da liquidação.
+  /// Pagamento da liquidação. Aluguel do balcão: o pagamento pré-pago no balcão ou, com excedente no fechamento, o débito de balcão `pending`.
   @BuiltValueField(wireName: r'paymentId')
   String? get paymentId;
+
+  /// Só aluguel do balcão: fim do período pré-pago (início + período × quantidade; pausa não estende). Depois disso o aluguel continua e o excedente conta por dia iniciado, acertado no galpão. O app avisa 1 h antes.
+  @BuiltValueField(wireName: r'prepaidUntil')
+  DateTime? get prepaidUntil;
 
   @BuiltValueField(wireName: r'endZoneId')
   String? get endZoneId;
@@ -255,6 +260,13 @@ class _$RentalSerializer implements PrimitiveSerializer<Rental> {
       yield serializers.serialize(
         object.paymentId,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.prepaidUntil != null) {
+      yield r'prepaidUntil';
+      yield serializers.serialize(
+        object.prepaidUntil,
+        specifiedType: const FullType(DateTime),
       );
     }
     if (object.endZoneId != null) {
@@ -465,6 +477,14 @@ class _$RentalSerializer implements PrimitiveSerializer<Rental> {
           ) as String?;
           if (valueDes == null) continue;
           result.paymentId = valueDes;
+          break;
+        case r'prepaidUntil':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DateTime),
+          ) as DateTime?;
+          if (valueDes == null) continue;
+          result.prepaidUntil = valueDes;
           break;
         case r'endZoneId':
           final valueDes = serializers.deserialize(

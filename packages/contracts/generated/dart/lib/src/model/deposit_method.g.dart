@@ -8,6 +8,9 @@ part of 'deposit_method.dart';
 
 const DepositMethod _$card = const DepositMethod._('card');
 const DepositMethod _$pix = const DepositMethod._('pix');
+const DepositMethod _$counterCard = const DepositMethod._('counterCard');
+const DepositMethod _$counterPix = const DepositMethod._('counterPix');
+const DepositMethod _$cash = const DepositMethod._('cash');
 const DepositMethod _$unknownDefaultOpenApi =
     const DepositMethod._('unknownDefaultOpenApi');
 
@@ -17,6 +20,12 @@ DepositMethod _$valueOf(String name) {
       return _$card;
     case 'pix':
       return _$pix;
+    case 'counterCard':
+      return _$counterCard;
+    case 'counterPix':
+      return _$counterPix;
+    case 'cash':
+      return _$cash;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -28,6 +37,9 @@ final BuiltSet<DepositMethod> _$values =
     BuiltSet<DepositMethod>(const <DepositMethod>[
   _$card,
   _$pix,
+  _$counterCard,
+  _$counterPix,
+  _$cash,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -35,6 +47,9 @@ class _$DepositMethodMeta {
   const _$DepositMethodMeta();
   DepositMethod get card => _$card;
   DepositMethod get pix => _$pix;
+  DepositMethod get counterCard => _$counterCard;
+  DepositMethod get counterPix => _$counterPix;
+  DepositMethod get cash => _$cash;
   DepositMethod get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   DepositMethod valueOf(String name) => _$valueOf(name);
   BuiltSet<DepositMethod> get values => _$values;
@@ -52,11 +67,17 @@ class _$DepositMethodSerializer implements PrimitiveSerializer<DepositMethod> {
   static const Map<String, Object> _toWire = const <String, Object>{
     'card': 'card',
     'pix': 'pix',
+    'counterCard': 'counter_card',
+    'counterPix': 'counter_pix',
+    'cash': 'cash',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
     'card': 'card',
     'pix': 'pix',
+    'counter_card': 'counterCard',
+    'counter_pix': 'counterPix',
+    'cash': 'cash',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

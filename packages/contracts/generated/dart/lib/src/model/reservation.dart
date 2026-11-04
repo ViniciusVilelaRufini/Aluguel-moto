@@ -77,7 +77,7 @@ abstract class Reservation implements Built<Reservation, ReservationBuilder> {
 
   @BuiltValueField(wireName: r'depositMethod')
   DepositMethod? get depositMethod;
-  // enum depositMethodEnum {  card,  pix,  };
+  // enum depositMethodEnum {  card,  pix,  counter_card,  counter_pix,  cash,  };
 
   @BuiltValueField(wireName: r'deposit')
   Deposit? get deposit;

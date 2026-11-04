@@ -44,6 +44,8 @@ class _$Rental extends Rental {
   @override
   final String? paymentId;
   @override
+  final DateTime? prepaidUntil;
+  @override
   final String? endZoneId;
   @override
   final String? returnPhotoObjectKey;
@@ -82,6 +84,7 @@ class _$Rental extends Rental {
       required this.depositId,
       this.insurancePolicyId,
       this.paymentId,
+      this.prepaidUntil,
       this.endZoneId,
       this.returnPhotoObjectKey,
       this.forceEndReason,
@@ -120,6 +123,7 @@ class _$Rental extends Rental {
         depositId == other.depositId &&
         insurancePolicyId == other.insurancePolicyId &&
         paymentId == other.paymentId &&
+        prepaidUntil == other.prepaidUntil &&
         endZoneId == other.endZoneId &&
         returnPhotoObjectKey == other.returnPhotoObjectKey &&
         forceEndReason == other.forceEndReason &&
@@ -151,6 +155,7 @@ class _$Rental extends Rental {
     _$hash = $jc(_$hash, depositId.hashCode);
     _$hash = $jc(_$hash, insurancePolicyId.hashCode);
     _$hash = $jc(_$hash, paymentId.hashCode);
+    _$hash = $jc(_$hash, prepaidUntil.hashCode);
     _$hash = $jc(_$hash, endZoneId.hashCode);
     _$hash = $jc(_$hash, returnPhotoObjectKey.hashCode);
     _$hash = $jc(_$hash, forceEndReason.hashCode);
@@ -184,6 +189,7 @@ class _$Rental extends Rental {
           ..add('depositId', depositId)
           ..add('insurancePolicyId', insurancePolicyId)
           ..add('paymentId', paymentId)
+          ..add('prepaidUntil', prepaidUntil)
           ..add('endZoneId', endZoneId)
           ..add('returnPhotoObjectKey', returnPhotoObjectKey)
           ..add('forceEndReason', forceEndReason)
@@ -276,6 +282,11 @@ class RentalBuilder implements Builder<Rental, RentalBuilder> {
   String? get paymentId => _$this._paymentId;
   set paymentId(String? paymentId) => _$this._paymentId = paymentId;
 
+  DateTime? _prepaidUntil;
+  DateTime? get prepaidUntil => _$this._prepaidUntil;
+  set prepaidUntil(DateTime? prepaidUntil) =>
+      _$this._prepaidUntil = prepaidUntil;
+
   String? _endZoneId;
   String? get endZoneId => _$this._endZoneId;
   set endZoneId(String? endZoneId) => _$this._endZoneId = endZoneId;
@@ -337,6 +348,7 @@ class RentalBuilder implements Builder<Rental, RentalBuilder> {
       _depositId = $v.depositId;
       _insurancePolicyId = $v.insurancePolicyId;
       _paymentId = $v.paymentId;
+      _prepaidUntil = $v.prepaidUntil;
       _endZoneId = $v.endZoneId;
       _returnPhotoObjectKey = $v.returnPhotoObjectKey;
       _forceEndReason = $v.forceEndReason;
@@ -397,6 +409,7 @@ class RentalBuilder implements Builder<Rental, RentalBuilder> {
                 depositId, r'Rental', 'depositId'),
             insurancePolicyId: insurancePolicyId,
             paymentId: paymentId,
+            prepaidUntil: prepaidUntil,
             endZoneId: endZoneId,
             returnPhotoObjectKey: returnPhotoObjectKey,
             forceEndReason: forceEndReason,

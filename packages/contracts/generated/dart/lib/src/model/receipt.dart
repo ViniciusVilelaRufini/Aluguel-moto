@@ -29,13 +29,13 @@ part 'receipt.g.dart';
 /// * [endedAt]
 /// * [durationSeconds]
 /// * [breakdown]
-/// * [paymentId] - Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`).
+/// * [paymentId] - Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`; aluguel do balcão: o débito acertado no galpão).
 /// * [paymentStatus]
 /// * [paymentMethod] - Forma do valor recebido (a da quitação, quando a dívida foi paga depois). Ausente enquanto não pago e na quitação manual.
 /// * [cardLast4]
 /// * [depositUsedCents] - Parte da caução usada para abater o valor (caução capturada). Ausente quando a caução não foi usada.
 /// * [depositReleasedCents] - Parte da caução devolvida/liberada ao cliente depois do fechamento.
-/// * [amountDueCents] - Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento).
+/// * [amountDueCents] - Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento). Aluguel do balcão: valor a acertar no galpão.
 /// * [pdfUrl] - URL pré-assinada do PDF (expira em 15 min). Só com `paymentStatus` `paid`.
 /// * [invoiceNumber] - Número da NFS-e, quando emitida.
 /// * [track]
@@ -77,7 +77,7 @@ abstract class Receipt implements Built<Receipt, ReceiptBuilder> {
   @BuiltValueField(wireName: r'breakdown')
   PriceBreakdown get breakdown;
 
-  /// Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`).
+  /// Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`; aluguel do balcão: o débito acertado no galpão).
   @BuiltValueField(wireName: r'paymentId')
   String? get paymentId;
 
@@ -88,7 +88,7 @@ abstract class Receipt implements Built<Receipt, ReceiptBuilder> {
   /// Forma do valor recebido (a da quitação, quando a dívida foi paga depois). Ausente enquanto não pago e na quitação manual.
   @BuiltValueField(wireName: r'paymentMethod')
   PaymentMethod? get paymentMethod;
-  // enum paymentMethodEnum {  card,  pix,  wallet,  };
+  // enum paymentMethodEnum {  card,  pix,  wallet,  counter_card,  counter_pix,  cash,  };
 
   @BuiltValueField(wireName: r'cardLast4')
   String? get cardLast4;
@@ -101,7 +101,7 @@ abstract class Receipt implements Built<Receipt, ReceiptBuilder> {
   @BuiltValueField(wireName: r'depositReleasedCents')
   int? get depositReleasedCents;
 
-  /// Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento).
+  /// Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento). Aluguel do balcão: valor a acertar no galpão.
   @BuiltValueField(wireName: r'amountDueCents')
   int? get amountDueCents;
 

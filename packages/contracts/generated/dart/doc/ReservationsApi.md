@@ -20,7 +20,7 @@ Method | HTTP request | Description
 
 Cancelar reserva
 
-Grátis. A moto volta a `free` e, em reserva de galpão, a caução é liberada (pré-autorização cancelada ou Pix estornado). Reserva com status `handover` (entrega aberta) → `409` `reservation-in-handover`: o cliente usa `POST /handovers/{id}/dispute`, ou o operador cancela a entrega. Reserva já encerrada → `409`. 
+Grátis. A moto volta a `free` e, em reserva de galpão antiga feita com caução, a caução é liberada (pré-autorização cancelada ou Pix estornado); a pré-reserva atual não tem caução. Reserva com status `handover` (entrega aberta) → `409` `reservation-in-handover`: o operador cancela a entrega. Reserva já encerrada → `409`. 
 
 ### Example
 ```dart
@@ -62,7 +62,7 @@ void (empty response body)
 
 Reservar moto
 
-Uma reserva ativa por cliente (`409` `reservation-already-active`). Dura 15 minutos (TTL no Redis); ao expirar, a moto volta a `free`. Exige KYC aprovado (`403` `kyc-not-approved`) e cliente sem bloqueio. Cliente inadimplente ou com dívida em aberto (pagamento de aluguel/assinatura `failed` não quitado) → `409` `payment-pending` (\"Pague o valor pendente para alugar de novo.\"); a dívida é paga por `POST /payments/{id}/retry`.  Sem `depotId` (reserva de rua): moto com `depotId`, separada por reserva de galpão ou `awaiting_pickup` → `409` `vehicle-unavailable`. Moto do galpão só sai pela entrega.  **Retirada em galpão** (com `depotId`): exige `Idempotency-Key`, `pickupMode`, `planCode`, `coverage` e `depositMethod`. Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422` `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409` `vehicle-unavailable`, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização no `cardId` ou, sem ele, no cartão padrão; sem nenhum cartão ativo → `422` `card-required` (\"Cadastre um cartão ou pague a caução com Pix.\"), `cardId` inexistente → `422` `card-not-found`, recusa do emissor → `422` `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano só é cobrado no aceite da entrega. A resposta traz `pickupCode` (QR de retirada). Cancelar (`DELETE /reservations/{id}`) é grátis e libera a caução; ao vencer `expiresAt`, um job expira a reserva. 
+Uma reserva ativa por cliente (`409` `reservation-already-active`). Dura 15 minutos (TTL no Redis); ao expirar, a moto volta a `free`. Exige KYC aprovado (`403` `kyc-not-approved`) e cliente sem bloqueio. Cliente inadimplente ou com dívida em aberto (pagamento de aluguel/assinatura `failed` não quitado, ou débito do balcão `pending` com método de balcão) → `409` `payment-pending` (\"Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.\"); a dívida é acertada no balcão (`POST /payments/{id}/counter-settle`).  Sem `depotId` (reserva de rua): moto com `depotId`, separada por reserva de galpão ou `awaiting_pickup` → `409` `vehicle-unavailable`. Moto do galpão só sai pela entrega.  **Pré-reserva no galpão** (com `depotId`): exige `Idempotency-Key` e `pickupMode` (e `pickupAt` em `scheduled`). Sem caução, sem plano e sem pagamento no app: `planCode`, `coverage`, `depositMethod`, `cardId` e `couponCode` são aceitos (apps antigos) e **ignorados**; plano, seguro, contrato e pagamento são feitos no balcão (`POST /handovers/{id}/counter-checkout`). Além do KYC, exige termos vigentes e consentimento de localização (`403` `location-consent-required`; o contrato em papel não substitui o consentimento digital). Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422` `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409` `vehicle-unavailable`, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem reserva aberta (`409` `rental-already-active` / `reservation-open`), e separa a moto (`free` → `reserved`). A resposta traz `pickupCode` (QR de retirada). Cancelar (`DELETE /reservations/{id}`) é grátis; ao vencer `expiresAt`, um job expira a reserva. 
 
 ### Example
 ```dart
@@ -107,7 +107,7 @@ Name | Type | Description  | Notes
 
 Entrega simulada (só em ambiente de teste)
 
-**Só existe em ambiente de teste**: a API registra esta rota apenas com `ALLOW_TEST_HANDOVER=true` (em produção, só junto com `PAYMENT_PROVIDER=fake` e `ALLOW_FAKE_PAYMENTS=true`). Fora disso a rota não existe e responde `404`.  Faz o papel da equipe do galpão para o app de teste: na reserva de galpão `active` do próprio cliente, assina o `pickupCode` da reserva e cria a entrega de saída como em `POST /handovers` (`pickup`), com checklist de teste (`[{ code: teste, ok: true }]`), sem fotos e com a bateria atual da moto. Mesmas verificações de `POST /handovers` (moto `reserved`, uma entrega aberta por reserva). A entrega nasce `pending_customer`, a reserva passa a `handover` e o cliente segue pelo aceite normal (`POST /handovers/{id}/accept`). O operador da entrega é um ator de sistema (o cliente vê \"Equipe Volti\").  Reserva inexistente, de outro cliente ou sem galpão → `404`. Reserva fora de `active` (entrega já aberta, encerrada) ou moto não separada → `409` (`conflict`, `vehicle-unavailable`). 
+**Só existe em ambiente de teste**: a API registra esta rota apenas com `ALLOW_TEST_HANDOVER=true` (em produção, só junto com `PAYMENT_PROVIDER=fake` e `ALLOW_FAKE_PAYMENTS=true`). Fora disso a rota não existe e responde `404`.  Faz o papel da equipe do galpão para o app de teste: na reserva de galpão `active` do próprio cliente, assina o `pickupCode` da reserva e cria a entrega de saída como em `POST /handovers` (`pickup`), com checklist de teste (`[{ code: teste, ok: true }]`), sem fotos e com a bateria atual da moto. Mesmas verificações de `POST /handovers` (moto `reserved`, uma entrega aberta por reserva). Em seguida simula também o checkout do balcão (`POST /handovers/{id}/counter-checkout`) com plano `day`, quantidade 1, seguro `basic`, sem fotos de contrato e pagamento `cash` de teste (`reference: teste`) no valor da prévia: o aluguel começa, a reserva é convertida e a moto destrava. Devolve a entrega já `accepted` (com `rentalId`). O operador da entrega é um ator de sistema (o cliente vê \"Equipe Volti\").  Reserva inexistente, de outro cliente ou sem galpão → `404`. Reserva fora de `active` (entrega já aberta, encerrada) ou moto não separada → `409` (`conflict`, `vehicle-unavailable`). 
 
 ### Example
 ```dart
@@ -150,7 +150,7 @@ Name | Type | Description  | Notes
 
 Reserva ativa do cliente
 
-Sempre `200`; `reservation` fica ausente quando não há reserva aberta. Reserva aberta = `active` ou `handover` (entrega de galpão aguardando o aceite; o app abre \"Confira sua moto\" com `handoverId`). 
+Sempre `200`; `reservation` fica ausente quando não há reserva aberta. Reserva aberta = `active` ou `handover` (entrega de galpão aberta, aguardando o checkout no balcão; o app mostra \"Sua moto está sendo preparada\" com `handoverId`). 
 
 ### Example
 ```dart

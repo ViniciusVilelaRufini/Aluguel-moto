@@ -9,7 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'deposit_status.g.dart';
 
-/// `held`/`awaiting_pix`/`failed` vêm de `RentalBillingPort.holdDeposit`; `captured`/`released` no encerramento.
+/// `held`/`awaiting_pix`/`failed` vêm de `RentalBillingPort.holdDeposit`; `captured`/`released` no encerramento. Caução do balcão: nasce `held`; quando o disponível (`amountCents` − `capturedCents` − `refundedCents`) chega a 0 vira `captured` (se houve abatimento) ou `released`; caução de balcão com valor 0 vira `released` no fechamento.
 class DepositStatus extends EnumClass {
   @BuiltValueEnumConst(wireName: r'awaiting_pix')
   static const DepositStatus awaitingPix = _$awaitingPix;

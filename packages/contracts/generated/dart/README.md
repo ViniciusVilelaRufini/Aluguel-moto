@@ -45,7 +45,8 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `payment-pending`, `card-required`, `vehicle-locked-by-staff`, `vehicle-not-at-depot`, `deposit-in-use`,
 `task-type-mismatch`, `battery-swap-already-recorded`, `battery-not-in-van`, `battery-serial-mismatch`,
 `battery-in-other-van`, `battery-at-station`, `staff-not-registered`, `staff-account-relink-required`,
-`staff-directory-unavailable`.
+`staff-directory-unavailable`, `handover-counter-checkout`, `counter-amount-mismatch`,
+`contract-photos-required`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -71,9 +72,16 @@ entrega no galpão (`handover.*`) também estão descritos na extensão `x-ws-ev
 
 ## Retirada em galpão
 As motos ficam num galpão (`Depot`). Disponível para retirada = `status: free` com `depotId` preenchido.
-O cliente reserva com `POST /reservations` informando `depotId` (retirar agora ou agendar); o operador lê o
-`pickupCode`, faz o checklist de saída (`POST /handovers`) e o cliente confere e aceita
-(`POST /handovers/{id}/accept`), o que cria o aluguel, cobra o plano e destrava a moto.
+O cliente faz a **pré-reserva** com `POST /reservations` informando `depotId` (retirar agora ou agendar; sem
+caução, sem plano e sem pagamento no app). No galpão, o operador lê o `pickupCode` e faz o checklist de saída
+(`POST /handovers`); no **balcão**, o cliente assina o contrato em papel e paga, e o atendente registra plano,
+seguro, fotos do contrato e pagamento em `POST /handovers/{id}/counter-checkout` (prévia do valor em
+`GET /handovers/{id}/counter-quote`), o que cria o aluguel, converte a reserva e destrava a moto. O cliente não
+aceita nada no app (`POST /handovers/{id}/accept` → `409` `handover-counter-checkout`).
+O aluguel do balcão é pré-pago pelo período (`Rental.prepaidUntil`) e o fechamento nunca usa o gateway: o
+excedente vira débito em aberto (`Payment` `pending` com método de balcão), quitado em
+`POST /payments/{id}/counter-settle`; a caução do balcão volta por `POST /payments/deposits/{id}/counter-refund`;
+a equipe lê o saldo em `GET /rentals/{id}/counter-balance`.
 **Moto do galpão só sai pela entrega:** moto com `depotId`, ou separada por uma reserva de galpão, responde
 `409` `vehicle-unavailable` em `POST /rentals` e na reserva de rua (sem `depotId`), e some do
 `GET /vehicles/nearby` do cliente (assim como `awaiting_pickup`).
@@ -193,12 +201,14 @@ Class | Method | HTTP request | Description
 [*FieldTasksApi*](doc/FieldTasksApi.md) | [**submitBatterySwap**](doc/FieldTasksApi.md#submitbatteryswap) | **POST** /field-tasks/{id}/battery-swap | Registrar troca de bateria
 [*FieldTasksApi*](doc/FieldTasksApi.md) | [**submitInspection**](doc/FieldTasksApi.md#submitinspection) | **POST** /field-tasks/{id}/inspection | Registrar checklist de inspeção
 [*FieldTasksApi*](doc/FieldTasksApi.md) | [**updateFieldTask**](doc/FieldTasksApi.md#updatefieldtask) | **PATCH** /field-tasks/{id} | Atualizar ou atribuir tarefa
-[*HandoversApi*](doc/HandoversApi.md) | [**acceptHandover**](doc/HandoversApi.md#accepthandover) | **POST** /handovers/{id}/accept | Aceitar a moto e destravar
+[*HandoversApi*](doc/HandoversApi.md) | [**acceptHandover**](doc/HandoversApi.md#accepthandover) | **POST** /handovers/{id}/accept | Aceite antigo da entrega (desativado)
 [*HandoversApi*](doc/HandoversApi.md) | [**cancelHandover**](doc/HandoversApi.md#cancelhandover) | **POST** /handovers/{id}/cancel | Cancelar a entrega de saída (operação)
+[*HandoversApi*](doc/HandoversApi.md) | [**counterCheckoutHandover**](doc/HandoversApi.md#countercheckouthandover) | **POST** /handovers/{id}/counter-checkout | Contrato e pagamento no balcão (inicia o aluguel)
 [*HandoversApi*](doc/HandoversApi.md) | [**createHandover**](doc/HandoversApi.md#createhandover) | **POST** /handovers | Registrar entrega (saída ou chegada no galpão)
-[*HandoversApi*](doc/HandoversApi.md) | [**createHandoverPhotoUpload**](doc/HandoversApi.md#createhandoverphotoupload) | **POST** /handovers/uploads | URL de upload da foto da entrega
+[*HandoversApi*](doc/HandoversApi.md) | [**createHandoverPhotoUpload**](doc/HandoversApi.md#createhandoverphotoupload) | **POST** /handovers/uploads | URL de upload da foto da entrega ou do contrato
 [*HandoversApi*](doc/HandoversApi.md) | [**disputeHandover**](doc/HandoversApi.md#disputehandover) | **POST** /handovers/{id}/dispute | Apontar problema na moto
 [*HandoversApi*](doc/HandoversApi.md) | [**getHandover**](doc/HandoversApi.md#gethandover) | **GET** /handovers/{id} | Entrega (\&quot;Confira sua moto\&quot;)
+[*HandoversApi*](doc/HandoversApi.md) | [**getHandoverCounterQuote**](doc/HandoversApi.md#gethandovercounterquote) | **GET** /handovers/{id}/counter-quote | Prévia do valor no balcão
 [*HandoversApi*](doc/HandoversApi.md) | [**listHandovers**](doc/HandoversApi.md#listhandovers) | **GET** /handovers | Entregas (operação, painel e disputas)
 [*HealthApi*](doc/HealthApi.md) | [**getHealth**](doc/HealthApi.md#gethealth) | **GET** /health | Saúde do serviço
 [*InsuranceApi*](doc/InsuranceApi.md) | [**getInsurancePolicy**](doc/InsuranceApi.md#getinsurancepolicy) | **GET** /insurance/policies/{id} | Detalhe da apólice
@@ -225,6 +235,8 @@ Class | Method | HTTP request | Description
 [*PaymentsApi*](doc/PaymentsApi.md) | [**addPaymentCard**](doc/PaymentsApi.md#addpaymentcard) | **POST** /payments/cards | Cadastrar cartão (token do gateway)
 [*PaymentsApi*](doc/PaymentsApi.md) | [**assignSubscriptionVehicle**](doc/PaymentsApi.md#assignsubscriptionvehicle) | **PUT** /payments/subscriptions/{id}/vehicle | Definir a moto fixa do plano
 [*PaymentsApi*](doc/PaymentsApi.md) | [**cancelSubscription**](doc/PaymentsApi.md#cancelsubscription) | **DELETE** /payments/subscriptions/{id} | Cancelar assinatura
+[*PaymentsApi*](doc/PaymentsApi.md) | [**counterRefundDeposit**](doc/PaymentsApi.md#counterrefunddeposit) | **POST** /payments/deposits/{id}/counter-refund | Devolver caução do balcão
+[*PaymentsApi*](doc/PaymentsApi.md) | [**counterSettlePayment**](doc/PaymentsApi.md#countersettlepayment) | **POST** /payments/{id}/counter-settle | Quitar débito no balcão
 [*PaymentsApi*](doc/PaymentsApi.md) | [**createSubscription**](doc/PaymentsApi.md#createsubscription) | **POST** /payments/subscriptions | Assinar plano semanal ou mensal
 [*PaymentsApi*](doc/PaymentsApi.md) | [**deletePaymentCard**](doc/PaymentsApi.md#deletepaymentcard) | **DELETE** /payments/cards/{id} | Remover cartão
 [*PaymentsApi*](doc/PaymentsApi.md) | [**getDeposit**](doc/PaymentsApi.md#getdeposit) | **GET** /payments/deposits/{id} | Estado da caução
@@ -268,6 +280,7 @@ Class | Method | HTTP request | Description
 [*RentalsApi*](doc/RentalsApi.md) | [**forceEndRental**](doc/RentalsApi.md#forceendrental) | **POST** /rentals/{id}/force-end | Encerramento forçado (staff)
 [*RentalsApi*](doc/RentalsApi.md) | [**getCurrentRental**](doc/RentalsApi.md#getcurrentrental) | **GET** /rentals/current | Aluguel em andamento do cliente
 [*RentalsApi*](doc/RentalsApi.md) | [**getRental**](doc/RentalsApi.md#getrental) | **GET** /rentals/{id} | Detalhe do aluguel
+[*RentalsApi*](doc/RentalsApi.md) | [**getRentalCounterBalance**](doc/RentalsApi.md#getrentalcounterbalance) | **GET** /rentals/{id}/counter-balance | Saldo a acertar no balcão
 [*RentalsApi*](doc/RentalsApi.md) | [**getRentalReceipt**](doc/RentalsApi.md#getrentalreceipt) | **GET** /rentals/{id}/receipt | Recibo do aluguel
 [*RentalsApi*](doc/RentalsApi.md) | [**getRentalTrack**](doc/RentalsApi.md#getrentaltrack) | **GET** /rentals/{id}/track | Trajeto do aluguel
 [*RentalsApi*](doc/RentalsApi.md) | [**listRentalEvents**](doc/RentalsApi.md#listrentalevents) | **GET** /rentals/{id}/events | Linha do tempo do aluguel
@@ -386,6 +399,17 @@ Class | Method | HTTP request | Description
  - [Consents](doc/Consents.md)
  - [ConsentsUpdate](doc/ConsentsUpdate.md)
  - [ConversationStatus](doc/ConversationStatus.md)
+ - [CounterBalance](doc/CounterBalance.md)
+ - [CounterCheckoutRequest](doc/CounterCheckoutRequest.md)
+ - [CounterDebt](doc/CounterDebt.md)
+ - [CounterDepositBalance](doc/CounterDepositBalance.md)
+ - [CounterDepositInput](doc/CounterDepositInput.md)
+ - [CounterPaymentInput](doc/CounterPaymentInput.md)
+ - [CounterPaymentMethod](doc/CounterPaymentMethod.md)
+ - [CounterPlanCode](doc/CounterPlanCode.md)
+ - [CounterQuote](doc/CounterQuote.md)
+ - [CounterRefundRequest](doc/CounterRefundRequest.md)
+ - [CounterSettleRequest](doc/CounterSettleRequest.md)
  - [Coupon](doc/Coupon.md)
  - [CouponCodeRequest](doc/CouponCodeRequest.md)
  - [CouponInput](doc/CouponInput.md)
@@ -460,6 +484,8 @@ Class | Method | HTTP request | Description
  - [HandoverPage](doc/HandoverPage.md)
  - [HandoverStatus](doc/HandoverStatus.md)
  - [HandoverType](doc/HandoverType.md)
+ - [HandoverUploadPurpose](doc/HandoverUploadPurpose.md)
+ - [HandoverUploadRequest](doc/HandoverUploadRequest.md)
  - [HealthState](doc/HealthState.md)
  - [HealthStatus](doc/HealthStatus.md)
  - [HeatmapPoint](doc/HeatmapPoint.md)

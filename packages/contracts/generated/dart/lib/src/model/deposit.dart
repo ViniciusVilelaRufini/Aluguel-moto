@@ -21,6 +21,8 @@ part 'deposit.g.dart';
 /// * [status]
 /// * [amountCents]
 /// * [capturedCents]
+/// * [refundedCents] - Caução do balcão: valor já devolvido ao cliente no balcão (`POST /payments/deposits/{id}/counter-refund`).
+/// * [reference] - Caução do balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix).
 /// * [pix]
 /// * [createdAt]
 /// * [updatedAt]
@@ -38,7 +40,7 @@ abstract class Deposit implements Built<Deposit, DepositBuilder> {
 
   @BuiltValueField(wireName: r'method')
   DepositMethod get method;
-  // enum methodEnum {  card,  pix,  };
+  // enum methodEnum {  card,  pix,  counter_card,  counter_pix,  cash,  };
 
   @BuiltValueField(wireName: r'status')
   DepositStatus get status;
@@ -49,6 +51,14 @@ abstract class Deposit implements Built<Deposit, DepositBuilder> {
 
   @BuiltValueField(wireName: r'capturedCents')
   int? get capturedCents;
+
+  /// Caução do balcão: valor já devolvido ao cliente no balcão (`POST /payments/deposits/{id}/counter-refund`).
+  @BuiltValueField(wireName: r'refundedCents')
+  int? get refundedCents;
+
+  /// Caução do balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix).
+  @BuiltValueField(wireName: r'reference')
+  String? get reference;
 
   @BuiltValueField(wireName: r'pix')
   PixCharge? get pix;
@@ -119,6 +129,20 @@ class _$DepositSerializer implements PrimitiveSerializer<Deposit> {
       yield serializers.serialize(
         object.capturedCents,
         specifiedType: const FullType(int),
+      );
+    }
+    if (object.refundedCents != null) {
+      yield r'refundedCents';
+      yield serializers.serialize(
+        object.refundedCents,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.reference != null) {
+      yield r'reference';
+      yield serializers.serialize(
+        object.reference,
+        specifiedType: const FullType(String),
       );
     }
     if (object.pix != null) {
@@ -213,6 +237,22 @@ class _$DepositSerializer implements PrimitiveSerializer<Deposit> {
           ) as int?;
           if (valueDes == null) continue;
           result.capturedCents = valueDes;
+          break;
+        case r'refundedCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.refundedCents = valueDes;
+          break;
+        case r'reference':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.reference = valueDes;
           break;
         case r'pix':
           final valueDes = serializers.deserialize(

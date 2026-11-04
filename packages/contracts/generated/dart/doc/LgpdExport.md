@@ -24,7 +24,7 @@ Name | Type | Description | Notes
 **referralCode** | **String** |  | [optional] 
 **maintenanceRequests** | [**BuiltList&lt;CustomerMaintenanceRequest&gt;**](CustomerMaintenanceRequest.md) |  | [optional] 
 **depotReservations** | [**BuiltList&lt;Reservation&gt;**](Reservation.md) | Reservas de retirada no galpão (sem `pickupCode`). | [optional] 
-**handovers** | [**BuiltList&lt;Handover&gt;**](Handover.md) | Entregas do titular (fotos só como chaves, sem links). | [optional] 
+**handovers** | [**BuiltList&lt;Handover&gt;**](Handover.md) | Entregas do titular (fotos e fotos do contrato em `contractPhotoKeys` só como chaves, sem links). | [optional] 
 **stationSwaps** | [**BuiltList&lt;StationSwap&gt;**](StationSwap.md) | Trocas de bateria na estação feitas pelo titular (sem posição). | [optional] 
 **supportConversations** | [**BuiltList&lt;LgpdSupportConversation&gt;**](LgpdSupportConversation.md) | Conversas do chat de suporte com as mensagens (anexos só como chaves; atendente só pelo primeiro nome). | [optional] 
 

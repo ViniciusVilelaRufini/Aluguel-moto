@@ -9,6 +9,9 @@ part of 'payment_method.dart';
 const PaymentMethod _$card = const PaymentMethod._('card');
 const PaymentMethod _$pix = const PaymentMethod._('pix');
 const PaymentMethod _$wallet = const PaymentMethod._('wallet');
+const PaymentMethod _$counterCard = const PaymentMethod._('counterCard');
+const PaymentMethod _$counterPix = const PaymentMethod._('counterPix');
+const PaymentMethod _$cash = const PaymentMethod._('cash');
 const PaymentMethod _$unknownDefaultOpenApi =
     const PaymentMethod._('unknownDefaultOpenApi');
 
@@ -20,6 +23,12 @@ PaymentMethod _$valueOf(String name) {
       return _$pix;
     case 'wallet':
       return _$wallet;
+    case 'counterCard':
+      return _$counterCard;
+    case 'counterPix':
+      return _$counterPix;
+    case 'cash':
+      return _$cash;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -32,6 +41,9 @@ final BuiltSet<PaymentMethod> _$values =
   _$card,
   _$pix,
   _$wallet,
+  _$counterCard,
+  _$counterPix,
+  _$cash,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -40,6 +52,9 @@ class _$PaymentMethodMeta {
   PaymentMethod get card => _$card;
   PaymentMethod get pix => _$pix;
   PaymentMethod get wallet => _$wallet;
+  PaymentMethod get counterCard => _$counterCard;
+  PaymentMethod get counterPix => _$counterPix;
+  PaymentMethod get cash => _$cash;
   PaymentMethod get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   PaymentMethod valueOf(String name) => _$valueOf(name);
   BuiltSet<PaymentMethod> get values => _$values;
@@ -58,12 +73,18 @@ class _$PaymentMethodSerializer implements PrimitiveSerializer<PaymentMethod> {
     'card': 'card',
     'pix': 'pix',
     'wallet': 'wallet',
+    'counterCard': 'counter_card',
+    'counterPix': 'counter_pix',
+    'cash': 'cash',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
     'card': 'card',
     'pix': 'pix',
     'wallet': 'wallet',
+    'counter_card': 'counterCard',
+    'counter_pix': 'counterPix',
+    'cash': 'cash',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

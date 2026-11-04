@@ -9,6 +9,7 @@ import 'package:built_value/serializer.dart';
 import 'package:dio/dio.dart';
 
 import 'package:volti_api/src/api_util.dart';
+import 'package:volti_api/src/model/counter_balance.dart';
 import 'package:volti_api/src/model/current_rental.dart';
 import 'package:volti_api/src/model/end_rental_request.dart';
 import 'package:volti_api/src/model/force_end_rental_request.dart';
@@ -631,6 +632,91 @@ class RentalsApi {
     }
 
     return Response<Rental>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Saldo a acertar no balcão
+  /// Para o acerto no galpão (checklist de chegada, página do cliente no painel): todas as dívidas em aberto do cliente deste aluguel (&#x60;debts&#x60;, com &#x60;outstandingCents&#x60; &gt; 0; inclui débitos de balcão &#x60;pending&#x60; e débitos antigos &#x60;failed&#x60;) e as cauções de balcão do cliente com saldo disponível (&#x60;deposits&#x60;). Saldo do débito de balcão &#x3D; valor − carteira − Σ quitações &#x60;debt_settlement&#x60; pagas dele. Disponível da caução &#x3D; &#x60;amountCents&#x60; − &#x60;capturedCents&#x60; − &#x60;refundedCents&#x60;. Só o primeiro nome do cliente. Aluguel inexistente → &#x60;404&#x60;.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [CounterBalance] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<CounterBalance>> getRentalCounterBalance({
+    required String id,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/rentals/{id}/counter-balance'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'GET',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    CounterBalance? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(CounterBalance),
+            ) as CounterBalance;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<CounterBalance>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

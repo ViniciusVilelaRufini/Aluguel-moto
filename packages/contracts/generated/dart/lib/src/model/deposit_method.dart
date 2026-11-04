@@ -9,11 +9,18 @@ import 'package:built_value/serializer.dart';
 
 part 'deposit_method.g.dart';
 
+/// `counter_card` (maquininha), `counter_pix` (Pix no balcão) e `cash` (dinheiro): caução registrada pelo atendente no balcão, sem gateway.
 class DepositMethod extends EnumClass {
   @BuiltValueEnumConst(wireName: r'card')
   static const DepositMethod card = _$card;
   @BuiltValueEnumConst(wireName: r'pix')
   static const DepositMethod pix = _$pix;
+  @BuiltValueEnumConst(wireName: r'counter_card')
+  static const DepositMethod counterCard = _$counterCard;
+  @BuiltValueEnumConst(wireName: r'counter_pix')
+  static const DepositMethod counterPix = _$counterPix;
+  @BuiltValueEnumConst(wireName: r'cash')
+  static const DepositMethod cash = _$cash;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const DepositMethod unknownDefaultOpenApi = _$unknownDefaultOpenApi;
 

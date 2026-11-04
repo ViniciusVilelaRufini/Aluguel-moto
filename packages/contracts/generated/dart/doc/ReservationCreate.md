@@ -15,8 +15,8 @@ Name | Type | Description | Notes
 **planCode** | [**PlanCode**](PlanCode.md) |  | [optional] 
 **coverage** | [**InsuranceCoverage**](InsuranceCoverage.md) |  | [optional] 
 **depositMethod** | [**DepositMethod**](DepositMethod.md) |  | [optional] 
-**cardId** | **String** | Cartão da caução com `depositMethod: card` (ausente = cartão padrão). | [optional] 
-**couponCode** | **String** | Cupom aplicado ao plano na entrega. | [optional] 
+**cardId** | **String** | Ignorado (apps antigos): a pré-reserva não tem caução. | [optional] 
+**couponCode** | **String** | Ignorado (apps antigos): cupom não vale no balcão nesta fase. | [optional] 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

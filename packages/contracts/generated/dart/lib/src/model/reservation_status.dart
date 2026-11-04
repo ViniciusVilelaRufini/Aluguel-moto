@@ -9,7 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'reservation_status.g.dart';
 
-/// `handover` = reserva de galpão com entrega aberta, aguardando o aceite do cliente.
+/// `handover` = reserva de galpão com entrega aberta, aguardando o checkout no balcão.
 class ReservationStatus extends EnumClass {
   @BuiltValueEnumConst(wireName: r'active')
   static const ReservationStatus active = _$active;

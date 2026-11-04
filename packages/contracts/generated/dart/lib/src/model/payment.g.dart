@@ -48,6 +48,10 @@ class _$Payment extends Payment {
   @override
   final String? settlesPaymentId;
   @override
+  final String? reference;
+  @override
+  final String? recordedBy;
+  @override
   final PixCharge? pix;
   @override
   final DateTime createdAt;
@@ -78,6 +82,8 @@ class _$Payment extends Payment {
       this.debtSettledAt,
       this.debtSettlement,
       this.settlesPaymentId,
+      this.reference,
+      this.recordedBy,
       this.pix,
       required this.createdAt,
       required this.updatedAt})
@@ -113,6 +119,8 @@ class _$Payment extends Payment {
         debtSettledAt == other.debtSettledAt &&
         debtSettlement == other.debtSettlement &&
         settlesPaymentId == other.settlesPaymentId &&
+        reference == other.reference &&
+        recordedBy == other.recordedBy &&
         pix == other.pix &&
         createdAt == other.createdAt &&
         updatedAt == other.updatedAt;
@@ -141,6 +149,8 @@ class _$Payment extends Payment {
     _$hash = $jc(_$hash, debtSettledAt.hashCode);
     _$hash = $jc(_$hash, debtSettlement.hashCode);
     _$hash = $jc(_$hash, settlesPaymentId.hashCode);
+    _$hash = $jc(_$hash, reference.hashCode);
+    _$hash = $jc(_$hash, recordedBy.hashCode);
     _$hash = $jc(_$hash, pix.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jc(_$hash, updatedAt.hashCode);
@@ -171,6 +181,8 @@ class _$Payment extends Payment {
           ..add('debtSettledAt', debtSettledAt)
           ..add('debtSettlement', debtSettlement)
           ..add('settlesPaymentId', settlesPaymentId)
+          ..add('reference', reference)
+          ..add('recordedBy', recordedBy)
           ..add('pix', pix)
           ..add('createdAt', createdAt)
           ..add('updatedAt', updatedAt))
@@ -269,6 +281,14 @@ class PaymentBuilder implements Builder<Payment, PaymentBuilder> {
   set settlesPaymentId(String? settlesPaymentId) =>
       _$this._settlesPaymentId = settlesPaymentId;
 
+  String? _reference;
+  String? get reference => _$this._reference;
+  set reference(String? reference) => _$this._reference = reference;
+
+  String? _recordedBy;
+  String? get recordedBy => _$this._recordedBy;
+  set recordedBy(String? recordedBy) => _$this._recordedBy = recordedBy;
+
   PixChargeBuilder? _pix;
   PixChargeBuilder get pix => _$this._pix ??= PixChargeBuilder();
   set pix(PixChargeBuilder? pix) => _$this._pix = pix;
@@ -308,6 +328,8 @@ class PaymentBuilder implements Builder<Payment, PaymentBuilder> {
       _debtSettledAt = $v.debtSettledAt;
       _debtSettlement = $v.debtSettlement;
       _settlesPaymentId = $v.settlesPaymentId;
+      _reference = $v.reference;
+      _recordedBy = $v.recordedBy;
       _pix = $v.pix?.toBuilder();
       _createdAt = $v.createdAt;
       _updatedAt = $v.updatedAt;
@@ -360,6 +382,8 @@ class PaymentBuilder implements Builder<Payment, PaymentBuilder> {
             debtSettledAt: debtSettledAt,
             debtSettlement: debtSettlement,
             settlesPaymentId: settlesPaymentId,
+            reference: reference,
+            recordedBy: recordedBy,
             pix: _pix?.build(),
             createdAt: BuiltValueNullFieldError.checkNotNull(
                 createdAt, r'Payment', 'createdAt'),

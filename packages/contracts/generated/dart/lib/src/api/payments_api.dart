@@ -9,6 +9,8 @@ import 'package:built_value/serializer.dart';
 import 'package:dio/dio.dart';
 
 import 'package:volti_api/src/api_util.dart';
+import 'package:volti_api/src/model/counter_refund_request.dart';
+import 'package:volti_api/src/model/counter_settle_request.dart';
 import 'package:volti_api/src/model/debt_payment_request.dart';
 import 'package:volti_api/src/model/deposit.dart';
 import 'package:volti_api/src/model/deposit_page.dart';
@@ -326,6 +328,226 @@ class PaymentsApi {
     }
 
     return Response<Subscription>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Devolver caução do balcão
+  /// O atendente registra a devolução (total ou parcial) da caução do balcão ao cliente, sem gateway. Só caução com método de balcão (&#x60;counter_card&#x60;, &#x60;counter_pix&#x60;, &#x60;cash&#x60;; outra → &#x60;409&#x60; &#x60;conflict&#x60;, \&quot;Esta caução não é do balcão.\&quot;) e só depois do encerramento do aluguel dela (&#x60;409&#x60; &#x60;conflict&#x60;, \&quot;A caução só é devolvida depois do encerramento do aluguel.\&quot;). &#x60;amountCents&#x60; ≤ disponível (&#x60;amountCents&#x60; − &#x60;capturedCents&#x60; − &#x60;refundedCents&#x60;), senão &#x60;422&#x60; &#x60;counter-amount-mismatch&#x60;; devoluções e abatimentos concorrentes nunca passam do valor retido. Soma em &#x60;refundedCents&#x60;; quando o disponível chega a 0 a caução vira &#x60;captured&#x60; (se houve abatimento) ou &#x60;released&#x60;. Nada é abatido nem devolvido automaticamente. Grava AuditLog &#x60;deposit.counter_refund&#x60;.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [idempotencyKey] - Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
+  /// * [counterRefundRequest]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Deposit] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Deposit>> counterRefundDeposit({
+    required String id,
+    required String idempotencyKey,
+    required CounterRefundRequest counterRefundRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/payments/deposits/{id}/counter-refund'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        r'Idempotency-Key': idempotencyKey,
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(CounterRefundRequest);
+      _bodyData =
+          _serializers.serialize(counterRefundRequest, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Deposit? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Deposit),
+            ) as Deposit;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Deposit>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Quitar débito no balcão
+  /// O atendente registra a quitação (total ou parcial) de uma dívida em aberto do cliente no balcão, sem gateway: o débito de balcão &#x60;pending&#x60; (excedente do período, multa de zona, dano) ou um débito antigo &#x60;failed&#x60;. Informe exatamente um entre &#x60;method&#x60; (pagamento no balcão) e &#x60;fromDepositId&#x60; (abater da caução de balcão do mesmo cliente); os dois ou nenhum → &#x60;400&#x60; &#x60;validation-error&#x60;. Não é dívida em aberto → &#x60;409&#x60; &#x60;debt-not-payable&#x60;. &#x60;amountCents&#x60; ≤ saldo do débito, e com &#x60;fromDepositId&#x60; também ≤ disponível da caução; senão &#x60;422&#x60; &#x60;counter-amount-mismatch&#x60;. Cada parte vira um &#x60;Payment&#x60; &#x60;debt_settlement&#x60; &#x60;paid&#x60; (&#x60;settlesPaymentId&#x60; &#x3D; este id, &#x60;recordedBy&#x60; &#x3D; atendente; com caução, &#x60;depositId&#x60; e &#x60;capturedCents&#x60; da caução somados). Saldo do débito de balcão &#x3D; valor − carteira − Σ quitações pagas dele. Saldo zerado → o débito ganha &#x60;debtSettledAt&#x60; (débito de balcão também vira &#x60;paid&#x60;) e a flag &#x60;delinquent&#x60; sai quando não restar outra dívida. Grava AuditLog &#x60;payment.counter_settle&#x60;. Devolve o débito com &#x60;outstandingCents&#x60; atualizado.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [idempotencyKey] - Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
+  /// * [counterSettleRequest]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Payment] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Payment>> counterSettlePayment({
+    required String id,
+    required String idempotencyKey,
+    required CounterSettleRequest counterSettleRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/payments/{id}/counter-settle'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        r'Idempotency-Key': idempotencyKey,
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(CounterSettleRequest);
+      _bodyData =
+          _serializers.serialize(counterSettleRequest, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Payment? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Payment),
+            ) as Payment;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Payment>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,
@@ -1263,7 +1485,7 @@ class PaymentsApi {
   }
 
   /// Quitar dívida (cliente)
-  /// O cliente paga o saldo devedor (&#x60;outstandingCents&#x60;) de um pagamento de aluguel ou assinatura que terminou &#x60;failed&#x60; (inadimplência). Cria um pagamento &#x60;debt_settlement&#x60; com &#x60;settlesPaymentId&#x60; &#x3D; este id. Cartão: cobrança na hora (&#x60;201&#x60; &#x60;paid&#x60;; recusa → &#x60;402&#x60; &#x60;payment-failed&#x60;; sem cartão → &#x60;402&#x60; &#x60;card-not-found&#x60;). Pix: &#x60;201&#x60; &#x60;pending&#x60; com &#x60;pix&#x60;; a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha &#x60;debtSettledAt&#x60; e a flag &#x60;delinquent&#x60; sai quando não restar outra dívida e o recibo do aluguel (PDF) fica pronto. Não é dívida (ou já quitada) → &#x60;409&#x60; &#x60;debt-not-payable&#x60;; cobrança automática ainda em curso → &#x60;409&#x60; &#x60;debt-in-collection&#x60; (aluguel: a liquidação ainda retenta no cartão; assinatura: a assinatura desta dívida está &#x60;past_due&#x60;, com o gateway retentando a recorrência, ou com o cancelamento no gateway ainda não confirmado). Uma quitação Pix pendente e ainda válida é reaproveitada. Gateway sem resposta conclusiva (resultado da cobrança desconhecido ou tentativa anterior que não deu para conferir) → &#x60;503&#x60; &#x60;gateway-unavailable&#x60;; a tentativa fica &#x60;pending&#x60; e é conferida antes de qualquer nova cobrança.
+  /// O cliente paga o saldo devedor (&#x60;outstandingCents&#x60;) de um pagamento de aluguel ou assinatura que terminou &#x60;failed&#x60; (inadimplência). Cria um pagamento &#x60;debt_settlement&#x60; com &#x60;settlesPaymentId&#x60; &#x3D; este id. Cartão: cobrança na hora (&#x60;201&#x60; &#x60;paid&#x60;; recusa → &#x60;402&#x60; &#x60;payment-failed&#x60;; sem cartão → &#x60;402&#x60; &#x60;card-not-found&#x60;). Pix: &#x60;201&#x60; &#x60;pending&#x60; com &#x60;pix&#x60;; a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha &#x60;debtSettledAt&#x60; e a flag &#x60;delinquent&#x60; sai quando não restar outra dívida e o recibo do aluguel (PDF) fica pronto. Não é dívida (ou já quitada) → &#x60;409&#x60; &#x60;debt-not-payable&#x60;; débito de balcão (método &#x60;counter_card&#x60;, &#x60;counter_pix&#x60; ou &#x60;cash&#x60;) → &#x60;409&#x60; &#x60;debt-not-payable&#x60; (\&quot;Este valor é acertado no galpão.\&quot;), nada é cobrado; cobrança automática ainda em curso → &#x60;409&#x60; &#x60;debt-in-collection&#x60; (aluguel: a liquidação ainda retenta no cartão; assinatura: a assinatura desta dívida está &#x60;past_due&#x60;, com o gateway retentando a recorrência, ou com o cancelamento no gateway ainda não confirmado). Uma quitação Pix pendente e ainda válida é reaproveitada. Gateway sem resposta conclusiva (resultado da cobrança desconhecido ou tentativa anterior que não deu para conferir) → &#x60;503&#x60; &#x60;gateway-unavailable&#x60;; a tentativa fica &#x60;pending&#x60; e é conferida antes de qualquer nova cobrança.
   ///
   /// Parameters:
   /// * [id]

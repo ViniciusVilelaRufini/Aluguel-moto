@@ -980,8 +980,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * URL de upload da foto da entrega
-         * @description Upload direto ao bucket (`handovers/<uuid>.<ext>`); depois envie as chaves em `photoKeys` de `POST /handovers`.
+         * URL de upload da foto da entrega ou do contrato
+         * @description Upload direto ao bucket. `purpose: photo` (padrão; corpo antigo só com `contentType`) → `handovers/<uuid>.<ext>`;
+         *     envie as chaves em `photoKeys` de `POST /handovers`. `purpose: contract` → `contracts/<uuid>.<ext>` (foto do
+         *     contrato assinado no balcão); envie as chaves em `contractPhotoKeys` de `POST /handovers/{id}/counter-checkout`.
          */
         post: operations["createHandoverPhotoUpload"];
         delete?: never;
@@ -1000,7 +1002,8 @@ export interface paths {
         /**
          * Entrega ("Confira sua moto")
          * @description Cliente: só a entrega da própria reserva ou aluguel (senão `404`). Traz checklist, bateria e as fotos em
-         *     `photoUrls` (links assinados, 24 h). O operador acompanha o status e `lastError` (ex.: pagamento não aprovado).
+         *     `photoUrls` (links assinados, 24 h). O operador acompanha o status e `lastError` (ex.: moto sem conexão no
+         *     checkout do balcão).
          */
         get: operations["getHandover"];
         put?: never;
@@ -1021,23 +1024,85 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Aceitar a moto e destravar
-         * @description Só o cliente dono (outro cliente → `404`) e só com a entrega `pending_customer` (senão `422`
-         *     `handover-not-pending`). Numa transação idempotente por entrega: cria o aluguel com o plano, o seguro e a
-         *     caução da reserva, cobra o plano (assinatura em `weekly`/`monthly`), converte a reserva, pede o destravamento
-         *     e a moto vai de `reserved` a `rented`. Aceites repetidos (mesma ou outra `Idempotency-Key`) devolvem o mesmo
-         *     aluguel, com uma única cobrança. Exige consentimento de localização (`403` `location-consent-required`).
-         *
-         *     Pagamento recusado → `422` `payment-declined`: nada muda, a entrega continua `pending_customer` com `lastError`
-         *     e a moto não destrava. Gateway fora → `503` `gateway-unavailable`. Aluguel já ativo → `409`
-         *     `rental-already-active`. `Idempotency-Key` ausente ou curta → `400`.
-         *
-         *     Moto sem conexão ou sem confirmar o destravamento → `409` `vehicle-offline` ("Não conseguimos falar com a moto
-         *     agora. Tente de novo em instantes ou fale com o operador."): nada é cobrado, nenhum aluguel é criado, a caução
-         *     **continua retida** com a reserva, a entrega continua `pending_customer` (com `lastError: vehicle-offline`) e o
-         *     cliente pode aceitar de novo.
+         * Aceite antigo da entrega (desativado)
+         * @description **Desativado (pré-reserva no balcão, 2026-11-04).** O aluguel de galpão é iniciado pelo atendente no balcão
+         *     (`POST /handovers/{id}/counter-checkout`), depois do contrato assinado e do pagamento. Mantido só para os apps
+         *     antigos: entrega de outro cliente → `404`; do cliente dono → sempre `409` `handover-counter-checkout` ("O aluguel
+         *     é iniciado pelo atendente no galpão."), sem ler caução, cobrar nada nem destravar. A resposta `201` não acontece
+         *     mais; continua no contrato só por compatibilidade dos clientes gerados.
          */
         post: operations["acceptHandover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/handovers/{id}/counter-quote": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Prévia do valor no balcão
+         * @description Valor do plano do balcão × `quantity` + seguro, em centavos, para a entrega de saída `{id}` (`pickup`; outra
+         *     entrega ou inexistente → `404`). Planos do balcão: `day`, `weekly` e `monthly`, pré-pagos pelo período (dia =
+         *     24 h, semana = 7 dias, mês = 30 dias, contados do início do aluguel; pausa não estende). `quantity`: diária 1–30,
+         *     semana 1–4, mês 1–3 (acima do limite do plano → `400` `validation-error` com `field: quantity`). O seguro é um
+         *     prêmio único por aluguel (não multiplica pela quantidade). `excessDayCents` = preço da diária (`unitPriceCents`
+         *     do plano `day` ativo), cobrado por **dia iniciado** depois de `prepaidUntil` e acertado no galpão. Cupom e
+         *     carteira não valem no balcão. O `payment.amountCents` de `counter-checkout` precisa ser igual a `totalCents`.
+         */
+        get: operations["getHandoverCounterQuote"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/handovers/{id}/counter-checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Contrato e pagamento no balcão (inicia o aluguel)
+         * @description O atendente registra o contrato assinado e o pagamento feitos no balcão e inicia o aluguel. Só a entrega de saída
+         *     (`pickup`) `pending_customer` (inexistente ou outro tipo → `404`; cancelada ou disputada → `422`
+         *     `handover-not-pending`). Entrega já `accepted` com aluguel → devolve o mesmo aluguel (convergência: dois balcões
+         *     ou toque duplo, mesmo com `Idempotency-Key` diferentes, geram um aluguel e um pagamento). Outro checkout da
+         *     mesma entrega em andamento → `409` `conflict`.
+         *
+         *     - `contractPhotoKeys`: 1 a 4 fotos do contrato (chaves de `POST /handovers/uploads` com `purpose: contract`).
+         *       Nenhuma foto → `422` `contract-photos-required` ("Fotografe o contrato assinado (1 a 4 fotos).").
+         *     - `payment.amountCents` precisa ser igual ao `totalCents` de `GET /handovers/{id}/counter-quote` com os mesmos
+         *       `planCode`, `coverage` e `quantity` (senão `422` `counter-amount-mismatch`, "O valor não confere com o
+         *       calculado. Atualize o valor e tente de novo.").
+         *     - Pagamento e caução não passam pelo gateway (o balcão não digita cartão: só método e referência, ex.: NSU ou
+         *       ID do Pix). Viram um `Payment` `kind: rental` `paid` com método de balcão (`recordedBy` = atendente, auditado)
+         *       e uma caução `Deposit` de balcão `held` (sem `deposit` → caução de balcão com `amountCents: 0`, mesmo método
+         *       do pagamento). Caução > 0 também gera um `Payment` `kind: deposit` `paid`.
+         *     - O cliente precisa ter KYC aprovado, termos vigentes e consentimento de localização; consentimento revogado
+         *       depois da pré-reserva → `422` `location-consent-required` ("Peça ao cliente para permitir a localização no
+         *       app.").
+         *
+         *     Numa transação: cria o aluguel (`prepaidUntil` = início + período × `quantity`), grava os pagamentos e as fotos
+         *     do contrato na entrega (`contractPhotoKeys`), converte a reserva, a entrega vira `accepted` e a moto vai de
+         *     `reserved` a `rented` pelo comando de destravar existente (eventos `handover.updated` e `rental.updated`).
+         *     Moto sem conexão ou sem confirmar o destravamento → `409` `vehicle-offline`: nada é registrado, a entrega
+         *     continua `pending_customer` com `lastError` e o atendente pode tentar de novo. Moto já alugada → `409`
+         *     `vehicle-unavailable`; cliente com aluguel ativo → `409` `rental-already-active`. `Idempotency-Key` ausente ou
+         *     curta → `400`.
+         */
+        post: operations["counterCheckoutHandover"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1155,23 +1220,24 @@ export interface paths {
          * Reservar moto
          * @description Uma reserva ativa por cliente (`409` `reservation-already-active`). Dura 15 minutos (TTL no Redis);
          *     ao expirar, a moto volta a `free`. Exige KYC aprovado (`403` `kyc-not-approved`) e cliente sem
-         *     bloqueio. Cliente inadimplente ou com dívida em aberto (pagamento de aluguel/assinatura `failed` não quitado) →
-         *     `409` `payment-pending` ("Pague o valor pendente para alugar de novo."); a dívida é paga por
-         *     `POST /payments/{id}/retry`.
+         *     bloqueio. Cliente inadimplente ou com dívida em aberto (pagamento de aluguel/assinatura `failed` não quitado, ou
+         *     débito do balcão `pending` com método de balcão) → `409` `payment-pending` ("Há um valor a acertar no galpão.
+         *     Acerte no balcão para pré-reservar de novo."); a dívida é acertada no balcão (`POST /payments/{id}/counter-settle`).
          *
          *     Sem `depotId` (reserva de rua): moto com `depotId`, separada por reserva de galpão ou `awaiting_pickup` →
          *     `409` `vehicle-unavailable`. Moto do galpão só sai pela entrega.
          *
-         *     **Retirada em galpão** (com `depotId`): exige `Idempotency-Key`, `pickupMode`, `planCode`, `coverage` e
-         *     `depositMethod`. Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422`
-         *     `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409`
-         *     `vehicle-unavailable`, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem
-         *     reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização
-         *     no `cardId` ou, sem ele, no cartão padrão; sem nenhum cartão ativo → `422` `card-required` ("Cadastre um cartão
-         *     ou pague a caução com Pix."), `cardId` inexistente → `422` `card-not-found`, recusa do emissor → `422`
-         *     `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano
-         *     só é cobrado no aceite da entrega. A resposta traz `pickupCode` (QR de retirada). Cancelar
-         *     (`DELETE /reservations/{id}`) é grátis e libera a caução; ao vencer `expiresAt`, um job expira a reserva.
+         *     **Pré-reserva no galpão** (com `depotId`): exige `Idempotency-Key` e `pickupMode` (e `pickupAt` em `scheduled`).
+         *     Sem caução, sem plano e sem pagamento no app: `planCode`, `coverage`, `depositMethod`, `cardId` e `couponCode`
+         *     são aceitos (apps antigos) e **ignorados**; plano, seguro, contrato e pagamento são feitos no balcão
+         *     (`POST /handovers/{id}/counter-checkout`). Além do KYC, exige termos vigentes e consentimento de localização
+         *     (`403` `location-consent-required`; o contrato em papel não substitui o consentimento digital). Valida galpão
+         *     ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422` `pickup-outside-hours`) e de
+         *     `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409` `vehicle-unavailable`, inclusive
+         *     quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem reserva aberta (`409`
+         *     `rental-already-active` / `reservation-open`), e separa a moto (`free` → `reserved`). A resposta traz
+         *     `pickupCode` (QR de retirada). Cancelar (`DELETE /reservations/{id}`) é grátis; ao vencer `expiresAt`, um job
+         *     expira a reserva.
          */
         post: operations["createReservation"];
         delete?: never;
@@ -1190,7 +1256,8 @@ export interface paths {
         /**
          * Reserva ativa do cliente
          * @description Sempre `200`; `reservation` fica ausente quando não há reserva aberta. Reserva aberta = `active` ou `handover`
-         *     (entrega de galpão aguardando o aceite; o app abre "Confira sua moto" com `handoverId`).
+         *     (entrega de galpão aberta, aguardando o checkout no balcão; o app mostra "Sua moto está sendo preparada" com
+         *     `handoverId`).
          */
         get: operations["getCurrentReservation"];
         put?: never;
@@ -1213,9 +1280,9 @@ export interface paths {
         post?: never;
         /**
          * Cancelar reserva
-         * @description Grátis. A moto volta a `free` e, em reserva de galpão, a caução é liberada (pré-autorização cancelada ou Pix
-         *     estornado). Reserva com status `handover` (entrega aberta) → `409` `reservation-in-handover`: o cliente usa
-         *     `POST /handovers/{id}/dispute`, ou o operador cancela a entrega. Reserva já encerrada → `409`.
+         * @description Grátis. A moto volta a `free` e, em reserva de galpão antiga feita com caução, a caução é liberada
+         *     (pré-autorização cancelada ou Pix estornado); a pré-reserva atual não tem caução. Reserva com status `handover`
+         *     (entrega aberta) → `409` `reservation-in-handover`: o operador cancela a entrega. Reserva já encerrada → `409`.
          */
         delete: operations["cancelReservation"];
         options?: never;
@@ -1240,9 +1307,11 @@ export interface paths {
          *     Faz o papel da equipe do galpão para o app de teste: na reserva de galpão `active` do próprio cliente, assina o
          *     `pickupCode` da reserva e cria a entrega de saída como em `POST /handovers` (`pickup`), com checklist de teste
          *     (`[{ code: teste, ok: true }]`), sem fotos e com a bateria atual da moto. Mesmas verificações de `POST /handovers`
-         *     (moto `reserved`, uma entrega aberta por reserva). A entrega nasce `pending_customer`, a reserva passa a
-         *     `handover` e o cliente segue pelo aceite normal (`POST /handovers/{id}/accept`). O operador da entrega é um ator
-         *     de sistema (o cliente vê "Equipe Volti").
+         *     (moto `reserved`, uma entrega aberta por reserva). Em seguida simula também o checkout do balcão
+         *     (`POST /handovers/{id}/counter-checkout`) com plano `day`, quantidade 1, seguro `basic`, sem fotos de contrato
+         *     e pagamento `cash` de teste (`reference: teste`) no valor da prévia: o aluguel começa, a reserva é convertida e
+         *     a moto destrava. Devolve a entrega já `accepted` (com `rentalId`). O operador da entrega é um ator de sistema (o
+         *     cliente vê "Equipe Volti").
          *
          *     Reserva inexistente, de outro cliente ou sem galpão → `404`. Reserva fora de `active` (entrega já aberta,
          *     encerrada) ou moto não separada → `409` (`conflict`, `vehicle-unavailable`).
@@ -1334,6 +1403,30 @@ export interface paths {
         };
         /** Detalhe do aluguel */
         get: operations["getRental"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rentals/{id}/counter-balance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saldo a acertar no balcão
+         * @description Para o acerto no galpão (checklist de chegada, página do cliente no painel): todas as dívidas em aberto do
+         *     cliente deste aluguel (`debts`, com `outstandingCents` > 0; inclui débitos de balcão `pending` e débitos antigos
+         *     `failed`) e as cauções de balcão do cliente com saldo disponível (`deposits`). Saldo do débito de balcão = valor
+         *     − carteira − Σ quitações `debt_settlement` pagas dele. Disponível da caução = `amountCents` − `capturedCents` −
+         *     `refundedCents`. Só o primeiro nome do cliente. Aluguel inexistente → `404`.
+         */
+        get: operations["getRentalCounterBalance"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1957,6 +2050,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/payments/deposits/{id}/counter-refund": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Devolver caução do balcão
+         * @description O atendente registra a devolução (total ou parcial) da caução do balcão ao cliente, sem gateway. Só caução com
+         *     método de balcão (`counter_card`, `counter_pix`, `cash`; outra → `409` `conflict`, "Esta caução não é do
+         *     balcão.") e só depois do encerramento do aluguel dela (`409` `conflict`, "A caução só é devolvida depois do
+         *     encerramento do aluguel."). `amountCents` ≤ disponível (`amountCents` − `capturedCents` − `refundedCents`), senão
+         *     `422` `counter-amount-mismatch`; devoluções e abatimentos concorrentes nunca passam do valor retido. Soma em
+         *     `refundedCents`; quando o disponível chega a 0 a caução vira `captured` (se houve abatimento) ou `released`.
+         *     Nada é abatido nem devolvido automaticamente. Grava AuditLog `deposit.counter_refund`.
+         */
+        post: operations["counterRefundDeposit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/payments/subscriptions": {
         parameters: {
             query?: never;
@@ -2127,6 +2246,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/payments/{id}/counter-settle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quitar débito no balcão
+         * @description O atendente registra a quitação (total ou parcial) de uma dívida em aberto do cliente no balcão, sem gateway: o
+         *     débito de balcão `pending` (excedente do período, multa de zona, dano) ou um débito antigo `failed`. Informe
+         *     exatamente um entre `method` (pagamento no balcão) e `fromDepositId` (abater da caução de balcão do mesmo
+         *     cliente); os dois ou nenhum → `400` `validation-error`. Não é dívida em aberto → `409` `debt-not-payable`.
+         *     `amountCents` ≤ saldo do débito, e com `fromDepositId` também ≤ disponível da caução; senão `422`
+         *     `counter-amount-mismatch`. Cada parte vira um `Payment` `debt_settlement` `paid` (`settlesPaymentId` = este id,
+         *     `recordedBy` = atendente; com caução, `depositId` e `capturedCents` da caução somados). Saldo do débito de balcão = valor −
+         *     carteira − Σ quitações pagas dele. Saldo zerado → o débito ganha `debtSettledAt` (débito de balcão também vira
+         *     `paid`) e a flag `delinquent` sai quando não restar outra dívida. Grava AuditLog `payment.counter_settle`.
+         *     Devolve o débito com `outstandingCents` atualizado.
+         */
+        post: operations["counterSettlePayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/payments/{id}/retry": {
         parameters: {
             query?: never;
@@ -2143,7 +2291,8 @@ export interface paths {
          *     (`201` `paid`; recusa → `402` `payment-failed`; sem cartão → `402` `card-not-found`). Pix: `201` `pending` com `pix`;
          *     a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha `debtSettledAt` e a flag
          *     `delinquent` sai quando não restar outra dívida e o recibo do aluguel (PDF) fica pronto. Não é dívida (ou já
-         *     quitada) → `409` `debt-not-payable`; cobrança automática ainda em curso → `409` `debt-in-collection` (aluguel: a
+         *     quitada) → `409` `debt-not-payable`; débito de balcão (método `counter_card`, `counter_pix` ou `cash`) → `409`
+         *     `debt-not-payable` ("Este valor é acertado no galpão."), nada é cobrado; cobrança automática ainda em curso → `409` `debt-in-collection` (aluguel: a
          *     liquidação ainda retenta no cartão; assinatura: a assinatura desta dívida está `past_due`, com o gateway retentando
          *     a recorrência, ou com o cancelamento no gateway ainda não confirmado). Uma quitação Pix pendente e ainda válida é
          *     reaproveitada. Gateway sem resposta conclusiva (resultado da cobrança desconhecido ou tentativa anterior que não deu
@@ -3561,14 +3710,19 @@ export interface components {
         /** @enum {string} */
         GeoJsonPolygonType: "Polygon";
         /**
-         * @description `handover` = reserva de galpão com entrega aberta, aguardando o aceite do cliente.
+         * @description `handover` = reserva de galpão com entrega aberta, aguardando o checkout no balcão.
          * @enum {string}
          */
         ReservationStatus: "active" | "converted" | "canceled" | "expired" | "handover";
-        /** @enum {string} */
-        DepositMethod: "card" | "pix";
+        /**
+         * @description `counter_card` (maquininha), `counter_pix` (Pix no balcão) e `cash` (dinheiro): caução registrada pelo atendente no balcão, sem gateway.
+         * @enum {string}
+         */
+        DepositMethod: "card" | "pix" | "counter_card" | "counter_pix" | "cash";
         /**
          * @description `held`/`awaiting_pix`/`failed` vêm de `RentalBillingPort.holdDeposit`; `captured`/`released` no encerramento.
+         *     Caução do balcão: nasce `held`; quando o disponível (`amountCents` − `capturedCents` − `refundedCents`) chega a 0
+         *     vira `captured` (se houve abatimento) ou `released`; caução de balcão com valor 0 vira `released` no fechamento.
          * @enum {string}
          */
         DepositStatus: "awaiting_pix" | "held" | "failed" | "captured" | "released";
@@ -3588,12 +3742,25 @@ export interface components {
          */
         PaymentStatus: "pending" | "authorized" | "captured" | "canceled" | "paid" | "refunded" | "partially_refunded" | "failed";
         /**
-         * @description `debt_settlement`: quitação de uma dívida pelo cliente (`POST /payments/{id}/retry`), com `settlesPaymentId`.
+         * @description `debt_settlement`: quitação de uma dívida pelo cliente (`POST /payments/{id}/retry`) ou no balcão (`POST /payments/{id}/counter-settle`), com `settlesPaymentId`.
          * @enum {string}
          */
         PaymentKind: "rental" | "deposit" | "top_up" | "subscription" | "fee" | "debt_settlement";
-        /** @enum {string} */
-        PaymentMethod: "card" | "pix" | "wallet";
+        /**
+         * @description `counter_card` (maquininha), `counter_pix` (Pix no balcão) e `cash` (dinheiro): registrados pelo atendente no balcão, sem gateway; jobs de cobrança e retentativa ignoram esses métodos.
+         * @enum {string}
+         */
+        PaymentMethod: "card" | "pix" | "wallet" | "counter_card" | "counter_pix" | "cash";
+        /**
+         * @description Métodos de pagamento no balcão (subconjunto de `PaymentMethod` e `DepositMethod`): maquininha, Pix no balcão e dinheiro.
+         * @enum {string}
+         */
+        CounterPaymentMethod: "counter_card" | "counter_pix" | "cash";
+        /**
+         * @description Planos vendidos no balcão (subconjunto de `PlanCode`), pré-pagos pelo período: dia = 24 h, semana = 7 dias, mês = 30 dias. Não renovam sozinhos.
+         * @enum {string}
+         */
+        CounterPlanCode: "day" | "weekly" | "monthly";
         /** @enum {string} */
         TopUpMethod: "card" | "pix";
         /** @enum {string} */
@@ -3720,6 +3887,16 @@ export interface components {
         };
         UploadRequest: {
             contentType: components["schemas"]["UploadContentType"];
+        };
+        /**
+         * @description `photo`: foto da vistoria (`handovers/`); `contract`: foto do contrato assinado no balcão (`contracts/`).
+         * @enum {string}
+         */
+        HandoverUploadPurpose: "photo" | "contract";
+        HandoverUploadRequest: {
+            contentType: components["schemas"]["UploadContentType"];
+            /** @default photo */
+            purpose?: components["schemas"]["HandoverUploadPurpose"];
         };
         HealthStatus: {
             status: components["schemas"]["HealthState"];
@@ -4137,8 +4314,9 @@ export interface components {
             items: components["schemas"]["GeoZone"][];
         };
         /**
-         * @description Só `vehicleId` = reserva de rua (fluxo antigo, 15 min). Com `depotId` = reserva de retirada no galpão: exige
-         *     `pickupMode`, `planCode`, `coverage` e `depositMethod` (`400`), e `pickupAt` em `scheduled`.
+         * @description Só `vehicleId` = reserva de rua (fluxo antigo, 15 min). Com `depotId` = pré-reserva de retirada no galpão: exige
+         *     `pickupMode` (`400`) e `pickupAt` em `scheduled`. `planCode`, `coverage`, `depositMethod`, `cardId` e
+         *     `couponCode` são aceitos (apps antigos) e ignorados: plano, seguro e pagamento são escolhidos no balcão.
          */
         ReservationCreate: {
             /** Format: uuid */
@@ -4156,10 +4334,10 @@ export interface components {
             depositMethod?: components["schemas"]["DepositMethod"];
             /**
              * Format: uuid
-             * @description Cartão da caução com `depositMethod: card` (ausente = cartão padrão).
+             * @description Ignorado (apps antigos): a pré-reserva não tem caução.
              */
             cardId?: string;
-            /** @description Cupom aplicado ao plano na entrega. */
+            /** @description Ignorado (apps antigos): cupom não vale no balcão nesta fase. */
             couponCode?: string;
         };
         Reservation: {
@@ -4257,6 +4435,10 @@ export interface components {
             /** @example 5000 */
             amountCents: number;
             capturedCents?: number;
+            /** @description Caução do balcão: valor já devolvido ao cliente no balcão (`POST /payments/deposits/{id}/counter-refund`). */
+            refundedCents?: number;
+            /** @description Caução do balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix). */
+            reference?: string;
             pix?: components["schemas"]["PixCharge"];
             /** Format: date-time */
             createdAt: string;
@@ -4274,7 +4456,7 @@ export interface components {
         };
         PriceLine: {
             /**
-             * @description `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`.
+             * @description `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`. Aluguel do balcão: `counter_plan` (plano pré-pago × quantidade), `excess_day` (excedente por dia iniciado depois de `prepaidUntil`), `insurance_<coverage>` e `counter_prepaid` ("Pago no balcão", negativo).
              * @example time
              */
             code: string;
@@ -4334,9 +4516,15 @@ export interface components {
             insurancePolicyId?: string;
             /**
              * Format: uuid
-             * @description Pagamento da liquidação.
+             * @description Pagamento da liquidação. Aluguel do balcão: o pagamento pré-pago no balcão ou, com excedente no fechamento, o débito de balcão `pending`.
              */
             paymentId?: string;
+            /**
+             * Format: date-time
+             * @description Só aluguel do balcão: fim do período pré-pago (início + período × quantidade; pausa não estende). Depois disso
+             *     o aluguel continua e o excedente conta por dia iniciado, acertado no galpão. O app avisa 1 h antes.
+             */
+            prepaidUntil?: string;
             /** Format: uuid */
             endZoneId?: string;
             returnPhotoObjectKey?: string;
@@ -4461,7 +4649,7 @@ export interface components {
             breakdown: components["schemas"]["PriceBreakdown"];
             /**
              * Format: uuid
-             * @description Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`).
+             * @description Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`; aluguel do balcão: o débito acertado no galpão).
              */
             paymentId?: string;
             paymentStatus?: components["schemas"]["ReceiptPaymentStatus"];
@@ -4472,7 +4660,7 @@ export interface components {
             depositUsedCents?: number;
             /** @description Parte da caução devolvida/liberada ao cliente depois do fechamento. */
             depositReleasedCents?: number;
-            /** @description Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento). */
+            /** @description Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento). Aluguel do balcão: valor a acertar no galpão. */
             amountDueCents?: number;
             /**
              * Format: uri
@@ -4485,8 +4673,9 @@ export interface components {
         };
         /**
          * @description `paid`: recebido (cobrança aprovada, carteira/caução cobriram tudo ou dívida quitada pelo cliente ou pelo
-         *     financeiro); `pending`: dívida em aberto que o cliente paga no app (`amountDueCents`); `processing`: a cobrança
-         *     ainda está em andamento no gateway (retentativa ou análise), nada a pagar por enquanto.
+         *     financeiro, ou acertada no balcão); `pending`: dívida em aberto (`amountDueCents`) — balcão: acertada no galpão,
+         *     não no app; `processing`: a cobrança ainda está em andamento no gateway (retentativa ou análise), nada a pagar
+         *     por enquanto.
          * @enum {string}
          */
         ReceiptPaymentStatus: "paid" | "pending" | "processing";
@@ -4672,7 +4861,11 @@ export interface components {
             receiptUrl?: string;
             /** @description staff. Nome do cliente (detalhe e listas do painel). */
             customerName?: string;
-            /** @description Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida. */
+            /**
+             * @description Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como
+             *     garantia − quitações pagas) ou de um débito de balcão `pending` (valor − carteira − Σ quitações
+             *     `debt_settlement` pagas). Ausente quando não há dívida.
+             */
             outstandingCents?: number;
             /** @description Aluguel: parte do `amountCents` (bruto) paga com a carteira no fechamento; o restante foi cobrado na caução/gateway. O estorno devolve primeiro a parte do gateway e depois credita a da carteira (lançamento `refund`). Ausente quando a carteira não foi usada. */
             walletCents?: number;
@@ -4687,6 +4880,13 @@ export interface components {
              * @description Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.
              */
             settlesPaymentId?: string;
+            /** @description Pagamento de balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix). */
+            reference?: string;
+            /**
+             * Format: uuid
+             * @description staff. Atendente que registrou o pagamento no balcão.
+             */
+            recordedBy?: string;
             pix?: components["schemas"]["PixCharge"];
             /** Format: date-time */
             createdAt: string;
@@ -4706,6 +4906,106 @@ export interface components {
              * @description Cartão salvo (padrão: o cartão padrão). Só `card`.
              */
             cardId?: string;
+        };
+        CounterPaymentInput: {
+            method: components["schemas"]["CounterPaymentMethod"];
+            /** @description Valor recebido no balcão, em centavos. */
+            amountCents: number;
+            /** @description NSU da maquininha ou ID do Pix (opcional). */
+            reference?: string;
+        };
+        CounterDepositInput: {
+            method: components["schemas"]["CounterPaymentMethod"];
+            /** @description Caução recebida no balcão, em centavos (0 = sem caução). */
+            amountCents: number;
+            reference?: string;
+        };
+        CounterCheckoutRequest: {
+            planCode: components["schemas"]["CounterPlanCode"];
+            /**
+             * @description Quantidade do período: diária 1–30, semana 1–4, mês 1–3.
+             * @default 1
+             */
+            quantity?: number;
+            coverage: components["schemas"]["InsuranceCoverage"];
+            /** @description Fotos do contrato assinado: 1 a 4 chaves de `POST /handovers/uploads` com `purpose: contract`. Nenhuma → `422` `contract-photos-required`. */
+            contractPhotoKeys?: string[];
+            payment: components["schemas"]["CounterPaymentInput"];
+            deposit?: components["schemas"]["CounterDepositInput"];
+        };
+        CounterQuote: {
+            planCode: components["schemas"]["CounterPlanCode"];
+            quantity: number;
+            coverage: components["schemas"]["InsuranceCoverage"];
+            /** @description Preço de uma unidade do plano. */
+            planUnitCents: number;
+            /** @description `planUnitCents` × `quantity`. */
+            planCents: number;
+            /** @description Prêmio único do seguro (não multiplica pela quantidade). */
+            insuranceCents: number;
+            /** @description `planCents` + `insuranceCents`: o valor a receber no balcão. */
+            totalCents: number;
+            /** @description Preço de cada dia iniciado depois do período pré-pago (diária do plano `day`). */
+            excessDayCents: number;
+            /** @description Dias do período pré-pago (unidade × `quantity`). */
+            periodDays: number;
+        };
+        /** @description Informe exatamente um entre `method` e `fromDepositId` (os dois ou nenhum → `400`). */
+        CounterSettleRequest: {
+            amountCents: number;
+            method?: components["schemas"]["CounterPaymentMethod"];
+            /**
+             * Format: uuid
+             * @description Abater da caução de balcão do mesmo cliente.
+             */
+            fromDepositId?: string;
+            reference?: string;
+        };
+        CounterRefundRequest: {
+            amountCents: number;
+            reference?: string;
+        };
+        CounterDebt: {
+            /** Format: uuid */
+            paymentId: string;
+            /** Format: uuid */
+            rentalId?: string;
+            kind: components["schemas"]["PaymentKind"];
+            status: components["schemas"]["PaymentStatus"];
+            method: components["schemas"]["PaymentMethod"];
+            outstandingCents: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CounterDepositBalance: {
+            /** Format: uuid */
+            depositId: string;
+            /** Format: uuid */
+            rentalId?: string;
+            method: components["schemas"]["DepositMethod"];
+            status: components["schemas"]["DepositStatus"];
+            amountCents: number;
+            capturedCents: number;
+            refundedCents: number;
+            /** @description `amountCents` − `capturedCents` − `refundedCents`. */
+            availableCents: number;
+        };
+        CounterBalance: {
+            /** Format: uuid */
+            rentalId: string;
+            /** Format: uuid */
+            customerId: string;
+            /**
+             * @description Só o primeiro nome.
+             * @example Ana
+             */
+            customerFirstName?: string;
+            rentalStatus: components["schemas"]["RentalStatus"];
+            /** @description Soma de `outstandingCents` das dívidas em aberto. */
+            debtTotalCents: number;
+            debts: components["schemas"]["CounterDebt"][];
+            /** @description Cauções de balcão do cliente com saldo disponível. */
+            deposits: components["schemas"]["CounterDepositBalance"][];
         };
         DelinquencyClearRequest: {
             /** @description Como a dívida foi paga (ex.: "Transferência recebida em 20/10"). */
@@ -5752,7 +6052,7 @@ export interface components {
             maintenanceRequests?: components["schemas"]["CustomerMaintenanceRequest"][];
             /** @description Reservas de retirada no galpão (sem `pickupCode`). */
             depotReservations?: components["schemas"]["Reservation"][];
-            /** @description Entregas do titular (fotos só como chaves, sem links). */
+            /** @description Entregas do titular (fotos e fotos do contrato em `contractPhotoKeys` só como chaves, sem links). */
             handovers?: components["schemas"]["Handover"][];
             /** @description Trocas de bateria na estação feitas pelo titular (sem posição). */
             stationSwaps?: components["schemas"]["StationSwap"][];
@@ -6537,7 +6837,7 @@ export interface components {
             items: components["schemas"]["Reservation"][];
         };
         /**
-         * @description `pickup` = saída do galpão com aceite do cliente; `return_depot` = chegada no galpão (encerra o aluguel).
+         * @description `pickup` = saída do galpão, concluída pelo checkout do balcão; `return_depot` = chegada no galpão (encerra o aluguel).
          * @enum {string}
          */
         HandoverType: "pickup" | "return_depot";
@@ -6590,7 +6890,7 @@ export interface components {
             reservationId?: string;
             /**
              * Format: uuid
-             * @description Preenchido no aceite (`pickup`) ou desde a criação (`return_depot`).
+             * @description Preenchido no checkout do balcão (`pickup`) ou desde a criação (`return_depot`).
              */
             rentalId?: string;
             /** Format: uuid */
@@ -6610,10 +6910,12 @@ export interface components {
             photoUrls?: string[];
             batteryPct: number;
             batterySerial?: string;
+            /** @description staff. Fotos do contrato assinado no balcão (chaves `contracts/`), gravadas no checkout do balcão. No export LGPD do titular, só as chaves. */
+            contractPhotoKeys?: string[];
             status: components["schemas"]["HandoverStatus"];
             /**
-             * @description Slug do último erro do aceite (ex.: `payment-declined`); some quando o aceite dá certo.
-             * @example payment-declined
+             * @description Slug do último erro do checkout do balcão (ex.: `vehicle-offline`) ou do aceite antigo; some quando dá certo.
+             * @example vehicle-offline
              */
             lastError?: string;
             disputeReason?: string;
@@ -6630,7 +6932,7 @@ export interface components {
             createdAt: string;
             /**
              * Format: date-time
-             * @description Aceite ou disputa do cliente.
+             * @description Checkout do balcão (ou aceite antigo) ou disputa do cliente.
              */
             respondedAt?: string;
         };
@@ -8309,7 +8611,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UploadRequest"];
+                "application/json": components["schemas"]["HandoverUploadRequest"];
             };
         };
         responses: {
@@ -8381,6 +8683,91 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
             503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getHandoverCounterQuote: {
+        parameters: {
+            query: {
+                planCode: components["schemas"]["CounterPlanCode"];
+                coverage: components["schemas"]["InsuranceCoverage"];
+                /** @description Quantidade do período (padrão 1; diária até 30, semana até 4, mês até 3). */
+                quantity?: number;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Prévia do valor. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CounterQuote"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    counterCheckoutHandover: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Chave única por intenção (UUID v4 recomendado). Válida por 24 h. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "planCode": "weekly",
+                 *       "quantity": 1,
+                 *       "coverage": "basic",
+                 *       "contractPhotoKeys": [
+                 *         "contracts/5b1e7c3a-2f4d-4a8e-9c11-3d2e1f0a9b8c.jpg"
+                 *       ],
+                 *       "payment": {
+                 *         "method": "counter_pix",
+                 *         "amountCents": 27000,
+                 *         "reference": "E1234567820261104"
+                 *       },
+                 *       "deposit": {
+                 *         "method": "cash",
+                 *         "amountCents": 20000
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["CounterCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Aluguel iniciado no balcão. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Rental"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     disputeHandover: {
@@ -8647,7 +9034,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Reserva cancelada; a moto volta a `free` e a caução é liberada. */
+            /** @description Reserva cancelada; a moto volta a `free` (e a caução antiga, se houver, é liberada). */
             204: {
                 headers: {
                     [name: string]: unknown;
@@ -8670,7 +9057,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Entrega de saída criada, aguardando o aceite do cliente. */
+            /** @description Entrega de saída criada e concluída no balcão de teste (`accepted`, com `rentalId`). */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -8804,6 +9191,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Rental"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    getRentalCounterBalance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Saldo do balcão. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CounterBalance"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -9807,6 +10219,41 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    counterRefundDeposit: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Chave única por intenção (UUID v4 recomendado). Válida por 24 h. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CounterRefundRequest"];
+            };
+        };
+        responses: {
+            /** @description Devolução registrada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Deposit"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     listSubscriptions: {
         parameters: {
             query?: never;
@@ -10082,6 +10529,41 @@ export interface operations {
         };
         responses: {
             /** @description Estorno registrado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    counterSettlePayment: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Chave única por intenção (UUID v4 recomendado). Válida por 24 h. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CounterSettleRequest"];
+            };
+        };
+        responses: {
+            /** @description Quitação registrada; o débito com o saldo atualizado. */
             200: {
                 headers: {
                     [name: string]: unknown;

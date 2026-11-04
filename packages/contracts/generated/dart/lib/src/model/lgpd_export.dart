@@ -45,7 +45,7 @@ part 'lgpd_export.g.dart';
 /// * [referralCode]
 /// * [maintenanceRequests]
 /// * [depotReservations] - Reservas de retirada no galpão (sem `pickupCode`).
-/// * [handovers] - Entregas do titular (fotos só como chaves, sem links).
+/// * [handovers] - Entregas do titular (fotos e fotos do contrato em `contractPhotoKeys` só como chaves, sem links).
 /// * [stationSwaps] - Trocas de bateria na estação feitas pelo titular (sem posição).
 /// * [supportConversations] - Conversas do chat de suporte com as mensagens (anexos só como chaves; atendente só pelo primeiro nome).
 @BuiltValue()
@@ -100,7 +100,7 @@ abstract class LgpdExport implements Built<LgpdExport, LgpdExportBuilder> {
   @BuiltValueField(wireName: r'depotReservations')
   BuiltList<Reservation>? get depotReservations;
 
-  /// Entregas do titular (fotos só como chaves, sem links).
+  /// Entregas do titular (fotos e fotos do contrato em `contractPhotoKeys` só como chaves, sem links).
   @BuiltValueField(wireName: r'handovers')
   BuiltList<Handover>? get handovers;
 

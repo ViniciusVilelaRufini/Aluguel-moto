@@ -25,7 +25,8 @@ Name | Type | Description | Notes
 **couponCode** | **String** |  | [optional] 
 **depositId** | **String** |  | 
 **insurancePolicyId** | **String** |  | [optional] 
-**paymentId** | **String** | Pagamento da liquidação. | [optional] 
+**paymentId** | **String** | Pagamento da liquidação. Aluguel do balcão: o pagamento pré-pago no balcão ou, com excedente no fechamento, o débito de balcão `pending`. | [optional] 
+**prepaidUntil** | [**DateTime**](DateTime.md) | Só aluguel do balcão: fim do período pré-pago (início + período × quantidade; pausa não estende). Depois disso o aluguel continua e o excedente conta por dia iniciado, acertado no galpão. O app avisa 1 h antes.  | [optional] 
 **endZoneId** | **String** |  | [optional] 
 **returnPhotoObjectKey** | **String** |  | [optional] 
 **forceEndReason** | **String** | staff. | [optional] 

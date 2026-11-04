@@ -31,11 +31,13 @@ part 'payment.g.dart';
 /// * [providerPaymentId] - staff. ID no gateway.
 /// * [receiptUrl]
 /// * [customerName] - staff. Nome do cliente (detalhe e listas do painel).
-/// * [outstandingCents] - Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida.
+/// * [outstandingCents] - Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia − quitações pagas) ou de um débito de balcão `pending` (valor − carteira − Σ quitações `debt_settlement` pagas). Ausente quando não há dívida.
 /// * [walletCents] - Aluguel: parte do `amountCents` (bruto) paga com a carteira no fechamento; o restante foi cobrado na caução/gateway. O estorno devolve primeiro a parte do gateway e depois credita a da carteira (lançamento `refund`). Ausente quando a carteira não foi usada.
 /// * [debtSettledAt] - Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro).
 /// * [debtSettlement]
 /// * [settlesPaymentId] - Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.
+/// * [reference] - Pagamento de balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix).
+/// * [recordedBy] - staff. Atendente que registrou o pagamento no balcão.
 /// * [pix]
 /// * [createdAt]
 /// * [updatedAt]
@@ -62,7 +64,7 @@ abstract class Payment implements Built<Payment, PaymentBuilder> {
 
   @BuiltValueField(wireName: r'method')
   PaymentMethod get method;
-  // enum methodEnum {  card,  pix,  wallet,  };
+  // enum methodEnum {  card,  pix,  wallet,  counter_card,  counter_pix,  cash,  };
 
   @BuiltValueField(wireName: r'status')
   PaymentStatus get status;
@@ -91,7 +93,7 @@ abstract class Payment implements Built<Payment, PaymentBuilder> {
   @BuiltValueField(wireName: r'customerName')
   String? get customerName;
 
-  /// Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida.
+  /// Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia − quitações pagas) ou de um débito de balcão `pending` (valor − carteira − Σ quitações `debt_settlement` pagas). Ausente quando não há dívida.
   @BuiltValueField(wireName: r'outstandingCents')
   int? get outstandingCents;
 
@@ -110,6 +112,14 @@ abstract class Payment implements Built<Payment, PaymentBuilder> {
   /// Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.
   @BuiltValueField(wireName: r'settlesPaymentId')
   String? get settlesPaymentId;
+
+  /// Pagamento de balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix).
+  @BuiltValueField(wireName: r'reference')
+  String? get reference;
+
+  /// staff. Atendente que registrou o pagamento no balcão.
+  @BuiltValueField(wireName: r'recordedBy')
+  String? get recordedBy;
 
   @BuiltValueField(wireName: r'pix')
   PixCharge? get pix;
@@ -266,6 +276,20 @@ class _$PaymentSerializer implements PrimitiveSerializer<Payment> {
       yield r'settlesPaymentId';
       yield serializers.serialize(
         object.settlesPaymentId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.reference != null) {
+      yield r'reference';
+      yield serializers.serialize(
+        object.reference,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.recordedBy != null) {
+      yield r'recordedBy';
+      yield serializers.serialize(
+        object.recordedBy,
         specifiedType: const FullType(String),
       );
     }
@@ -463,6 +487,22 @@ class _$PaymentSerializer implements PrimitiveSerializer<Payment> {
           ) as String?;
           if (valueDes == null) continue;
           result.settlesPaymentId = valueDes;
+          break;
+        case r'reference':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.reference = valueDes;
+          break;
+        case r'recordedBy':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.recordedBy = valueDes;
           break;
         case r'pix':
           final valueDes = serializers.deserialize(

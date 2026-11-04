@@ -15,6 +15,8 @@ Name | Type | Description | Notes
 **status** | [**DepositStatus**](DepositStatus.md) |  | 
 **amountCents** | **int** |  | 
 **capturedCents** | **int** |  | [optional] 
+**refundedCents** | **int** | Caução do balcão: valor já devolvido ao cliente no balcão (`POST /payments/deposits/{id}/counter-refund`). | [optional] 
+**reference** | **String** | Caução do balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix). | [optional] 
 **pix** | [**PixCharge**](PixCharge.md) |  | [optional] 
 **createdAt** | [**DateTime**](DateTime.md) |  | 
 **updatedAt** | [**DateTime**](DateTime.md) |  | 

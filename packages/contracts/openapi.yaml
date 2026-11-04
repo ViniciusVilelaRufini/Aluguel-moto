@@ -50,7 +50,8 @@ info:
     `payment-pending`, `card-required`, `vehicle-locked-by-staff`, `vehicle-not-at-depot`, `deposit-in-use`,
     `task-type-mismatch`, `battery-swap-already-recorded`, `battery-not-in-van`, `battery-serial-mismatch`,
     `battery-in-other-van`, `battery-at-station`, `staff-not-registered`, `staff-account-relink-required`,
-    `staff-directory-unavailable`.
+    `staff-directory-unavailable`, `handover-counter-checkout`, `counter-amount-mismatch`,
+    `contract-photos-required`.
 
     ## Autenticação e grupos
     - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -76,9 +77,16 @@ info:
 
     ## Retirada em galpão
     As motos ficam num galpão (`Depot`). Disponível para retirada = `status: free` com `depotId` preenchido.
-    O cliente reserva com `POST /reservations` informando `depotId` (retirar agora ou agendar); o operador lê o
-    `pickupCode`, faz o checklist de saída (`POST /handovers`) e o cliente confere e aceita
-    (`POST /handovers/{id}/accept`), o que cria o aluguel, cobra o plano e destrava a moto.
+    O cliente faz a **pré-reserva** com `POST /reservations` informando `depotId` (retirar agora ou agendar; sem
+    caução, sem plano e sem pagamento no app). No galpão, o operador lê o `pickupCode` e faz o checklist de saída
+    (`POST /handovers`); no **balcão**, o cliente assina o contrato em papel e paga, e o atendente registra plano,
+    seguro, fotos do contrato e pagamento em `POST /handovers/{id}/counter-checkout` (prévia do valor em
+    `GET /handovers/{id}/counter-quote`), o que cria o aluguel, converte a reserva e destrava a moto. O cliente não
+    aceita nada no app (`POST /handovers/{id}/accept` → `409` `handover-counter-checkout`).
+    O aluguel do balcão é pré-pago pelo período (`Rental.prepaidUntil`) e o fechamento nunca usa o gateway: o
+    excedente vira débito em aberto (`Payment` `pending` com método de balcão), quitado em
+    `POST /payments/{id}/counter-settle`; a caução do balcão volta por `POST /payments/deposits/{id}/counter-refund`;
+    a equipe lê o saldo em `GET /rentals/{id}/counter-balance`.
     **Moto do galpão só sai pela entrega:** moto com `depotId`, ou separada por uma reserva de galpão, responde
     `409` `vehicle-unavailable` em `POST /rentals` e na reserva de rua (sem `depotId`), e some do
     `GET /vehicles/nearby` do cliente (assim como `awaiting_pickup`).
@@ -146,15 +154,15 @@ tags:
   - name: depots
     description: Galpões da Volti (endereço, horário de funcionamento, prazos de retirada, motos e agenda).
   - name: handovers
-    description: Entrega formal da moto no galpão (checklist de saída com aceite do cliente e checklist de chegada).
+    description: Entrega formal da moto no galpão (checklist de saída, contrato e pagamento no balcão e checklist de chegada).
   - name: batteries
     description: Baterias (série, carga, ciclos) e estoque na van do operador.
 
 x-ws-events:
   handover.pending:
     description: |
-      O operador criou a entrega de saída (`POST /handovers`, `type: pickup`). O app abre "Confira sua moto" e carrega
-      `GET /handovers/{handoverId}`.
+      O operador criou a entrega de saída (`POST /handovers`, `type: pickup`). O app abre "Sua moto está sendo
+      preparada" (vistoria só para leitura, sem aceite) e carrega `GET /handovers/{handoverId}`.
     rooms: ['customer:{customerId}', 'depot:{depotId}']
     payload:
       type: object
@@ -164,9 +172,9 @@ x-ws-events:
         reservationId: { type: string, format: uuid }
   handover.updated:
     description: |
-      Mudança de status da entrega (aceite, disputa, cancelamento) ou falha no aceite (`lastError`, ex.:
-      `payment-declined`, com a entrega ainda `pending_customer`). O operador vê "Aceito", "Pagamento não aprovado"
-      ou "Problema apontado".
+      Mudança de status da entrega (`accepted` quando o atendente conclui o checkout do balcão, disputa,
+      cancelamento) ou falha no checkout (`lastError`, ex.: `vehicle-offline`, com a entrega ainda `pending_customer`).
+      Com `accepted`, o app do cliente abre a corrida (junto com `rental.updated`).
     rooms: ['customer:{customerId}', 'depot:{depotId}']
     payload:
       type: object
@@ -1615,8 +1623,11 @@ paths:
     post:
       tags: [handovers]
       operationId: createHandoverPhotoUpload
-      summary: URL de upload da foto da entrega
-      description: Upload direto ao bucket (`handovers/<uuid>.<ext>`); depois envie as chaves em `photoKeys` de `POST /handovers`.
+      summary: URL de upload da foto da entrega ou do contrato
+      description: |
+        Upload direto ao bucket. `purpose: photo` (padrão; corpo antigo só com `contentType`) → `handovers/<uuid>.<ext>`;
+        envie as chaves em `photoKeys` de `POST /handovers`. `purpose: contract` → `contracts/<uuid>.<ext>` (foto do
+        contrato assinado no balcão); envie as chaves em `contractPhotoKeys` de `POST /handovers/{id}/counter-checkout`.
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
@@ -1624,7 +1635,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/UploadRequest' }
+            schema: { $ref: '#/components/schemas/HandoverUploadRequest' }
       responses:
         '201':
           description: URL pré-assinada.
@@ -1641,7 +1652,8 @@ paths:
       summary: Entrega ("Confira sua moto")
       description: |
         Cliente: só a entrega da própria reserva ou aluguel (senão `404`). Traz checklist, bateria e as fotos em
-        `photoUrls` (links assinados, 24 h). O operador acompanha o status e `lastError` (ex.: pagamento não aprovado).
+        `photoUrls` (links assinados, 24 h). O operador acompanha o status e `lastError` (ex.: moto sem conexão no
+        checkout do balcão).
       security:
         - customerAuth: []
         - staffAuth: []
@@ -1660,22 +1672,13 @@ paths:
     post:
       tags: [handovers]
       operationId: acceptHandover
-      summary: Aceitar a moto e destravar
+      summary: Aceite antigo da entrega (desativado)
       description: |
-        Só o cliente dono (outro cliente → `404`) e só com a entrega `pending_customer` (senão `422`
-        `handover-not-pending`). Numa transação idempotente por entrega: cria o aluguel com o plano, o seguro e a
-        caução da reserva, cobra o plano (assinatura em `weekly`/`monthly`), converte a reserva, pede o destravamento
-        e a moto vai de `reserved` a `rented`. Aceites repetidos (mesma ou outra `Idempotency-Key`) devolvem o mesmo
-        aluguel, com uma única cobrança. Exige consentimento de localização (`403` `location-consent-required`).
-
-        Pagamento recusado → `422` `payment-declined`: nada muda, a entrega continua `pending_customer` com `lastError`
-        e a moto não destrava. Gateway fora → `503` `gateway-unavailable`. Aluguel já ativo → `409`
-        `rental-already-active`. `Idempotency-Key` ausente ou curta → `400`.
-
-        Moto sem conexão ou sem confirmar o destravamento → `409` `vehicle-offline` ("Não conseguimos falar com a moto
-        agora. Tente de novo em instantes ou fale com o operador."): nada é cobrado, nenhum aluguel é criado, a caução
-        **continua retida** com a reserva, a entrega continua `pending_customer` (com `lastError: vehicle-offline`) e o
-        cliente pode aceitar de novo.
+        **Desativado (pré-reserva no balcão, 2026-11-04).** O aluguel de galpão é iniciado pelo atendente no balcão
+        (`POST /handovers/{id}/counter-checkout`), depois do contrato assinado e do pagamento. Mantido só para os apps
+        antigos: entrega de outro cliente → `404`; do cliente dono → sempre `409` `handover-counter-checkout` ("O aluguel
+        é iniciado pelo atendente no galpão."), sem ler caução, cobrar nada nem destravar. A resposta `201` não acontece
+        mais; continua no contrato só por compatibilidade dos clientes gerados.
       security:
         - customerAuth: []
       parameters:
@@ -1694,6 +1697,109 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
         '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /handovers/{id}/counter-quote:
+    get:
+      tags: [handovers]
+      operationId: getHandoverCounterQuote
+      summary: Prévia do valor no balcão
+      description: |
+        Valor do plano do balcão × `quantity` + seguro, em centavos, para a entrega de saída `{id}` (`pickup`; outra
+        entrega ou inexistente → `404`). Planos do balcão: `day`, `weekly` e `monthly`, pré-pagos pelo período (dia =
+        24 h, semana = 7 dias, mês = 30 dias, contados do início do aluguel; pausa não estende). `quantity`: diária 1–30,
+        semana 1–4, mês 1–3 (acima do limite do plano → `400` `validation-error` com `field: quantity`). O seguro é um
+        prêmio único por aluguel (não multiplica pela quantidade). `excessDayCents` = preço da diária (`unitPriceCents`
+        do plano `day` ativo), cobrado por **dia iniciado** depois de `prepaidUntil` e acertado no galpão. Cupom e
+        carteira não valem no balcão. O `payment.amountCents` de `counter-checkout` precisa ser igual a `totalCents`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - name: planCode
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/CounterPlanCode' }
+        - name: coverage
+          in: query
+          required: true
+          schema: { $ref: '#/components/schemas/InsuranceCoverage' }
+        - name: quantity
+          in: query
+          required: false
+          description: 'Quantidade do período (padrão 1; diária até 30, semana até 4, mês até 3).'
+          schema: { type: integer, minimum: 1, maximum: 30, default: 1 }
+      responses:
+        '200':
+          description: Prévia do valor.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CounterQuote' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /handovers/{id}/counter-checkout:
+    post:
+      tags: [handovers]
+      operationId: counterCheckoutHandover
+      summary: Contrato e pagamento no balcão (inicia o aluguel)
+      description: |
+        O atendente registra o contrato assinado e o pagamento feitos no balcão e inicia o aluguel. Só a entrega de saída
+        (`pickup`) `pending_customer` (inexistente ou outro tipo → `404`; cancelada ou disputada → `422`
+        `handover-not-pending`). Entrega já `accepted` com aluguel → devolve o mesmo aluguel (convergência: dois balcões
+        ou toque duplo, mesmo com `Idempotency-Key` diferentes, geram um aluguel e um pagamento). Outro checkout da
+        mesma entrega em andamento → `409` `conflict`.
+
+        - `contractPhotoKeys`: 1 a 4 fotos do contrato (chaves de `POST /handovers/uploads` com `purpose: contract`).
+          Nenhuma foto → `422` `contract-photos-required` ("Fotografe o contrato assinado (1 a 4 fotos).").
+        - `payment.amountCents` precisa ser igual ao `totalCents` de `GET /handovers/{id}/counter-quote` com os mesmos
+          `planCode`, `coverage` e `quantity` (senão `422` `counter-amount-mismatch`, "O valor não confere com o
+          calculado. Atualize o valor e tente de novo.").
+        - Pagamento e caução não passam pelo gateway (o balcão não digita cartão: só método e referência, ex.: NSU ou
+          ID do Pix). Viram um `Payment` `kind: rental` `paid` com método de balcão (`recordedBy` = atendente, auditado)
+          e uma caução `Deposit` de balcão `held` (sem `deposit` → caução de balcão com `amountCents: 0`, mesmo método
+          do pagamento). Caução > 0 também gera um `Payment` `kind: deposit` `paid`.
+        - O cliente precisa ter KYC aprovado, termos vigentes e consentimento de localização; consentimento revogado
+          depois da pré-reserva → `422` `location-consent-required` ("Peça ao cliente para permitir a localização no
+          app.").
+
+        Numa transação: cria o aluguel (`prepaidUntil` = início + período × `quantity`), grava os pagamentos e as fotos
+        do contrato na entrega (`contractPhotoKeys`), converte a reserva, a entrega vira `accepted` e a moto vai de
+        `reserved` a `rented` pelo comando de destravar existente (eventos `handover.updated` e `rental.updated`).
+        Moto sem conexão ou sem confirmar o destravamento → `409` `vehicle-offline`: nada é registrado, a entrega
+        continua `pending_customer` com `lastError` e o atendente pode tentar de novo. Moto já alugada → `409`
+        `vehicle-unavailable`; cliente com aluguel ativo → `409` `rental-already-active`. `Idempotency-Key` ausente ou
+        curta → `400`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CounterCheckoutRequest' }
+            example:
+              planCode: weekly
+              quantity: 1
+              coverage: basic
+              contractPhotoKeys: [contracts/5b1e7c3a-2f4d-4a8e-9c11-3d2e1f0a9b8c.jpg]
+              payment: { method: counter_pix, amountCents: 27000, reference: E1234567820261104 }
+              deposit: { method: cash, amountCents: 20000 }
+      responses:
+        '201':
+          description: Aluguel iniciado no balcão.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rental' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /handovers/{id}/dispute:
     post:
       tags: [handovers]
@@ -1889,23 +1995,24 @@ paths:
       description: |
         Uma reserva ativa por cliente (`409` `reservation-already-active`). Dura 15 minutos (TTL no Redis);
         ao expirar, a moto volta a `free`. Exige KYC aprovado (`403` `kyc-not-approved`) e cliente sem
-        bloqueio. Cliente inadimplente ou com dívida em aberto (pagamento de aluguel/assinatura `failed` não quitado) →
-        `409` `payment-pending` ("Pague o valor pendente para alugar de novo."); a dívida é paga por
-        `POST /payments/{id}/retry`.
+        bloqueio. Cliente inadimplente ou com dívida em aberto (pagamento de aluguel/assinatura `failed` não quitado, ou
+        débito do balcão `pending` com método de balcão) → `409` `payment-pending` ("Há um valor a acertar no galpão.
+        Acerte no balcão para pré-reservar de novo."); a dívida é acertada no balcão (`POST /payments/{id}/counter-settle`).
 
         Sem `depotId` (reserva de rua): moto com `depotId`, separada por reserva de galpão ou `awaiting_pickup` →
         `409` `vehicle-unavailable`. Moto do galpão só sai pela entrega.
 
-        **Retirada em galpão** (com `depotId`): exige `Idempotency-Key`, `pickupMode`, `planCode`, `coverage` e
-        `depositMethod`. Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422`
-        `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409`
-        `vehicle-unavailable`, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem
-        reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização
-        no `cardId` ou, sem ele, no cartão padrão; sem nenhum cartão ativo → `422` `card-required` ("Cadastre um cartão
-        ou pague a caução com Pix."), `cardId` inexistente → `422` `card-not-found`, recusa do emissor → `422`
-        `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano
-        só é cobrado no aceite da entrega. A resposta traz `pickupCode` (QR de retirada). Cancelar
-        (`DELETE /reservations/{id}`) é grátis e libera a caução; ao vencer `expiresAt`, um job expira a reserva.
+        **Pré-reserva no galpão** (com `depotId`): exige `Idempotency-Key` e `pickupMode` (e `pickupAt` em `scheduled`).
+        Sem caução, sem plano e sem pagamento no app: `planCode`, `coverage`, `depositMethod`, `cardId` e `couponCode`
+        são aceitos (apps antigos) e **ignorados**; plano, seguro, contrato e pagamento são feitos no balcão
+        (`POST /handovers/{id}/counter-checkout`). Além do KYC, exige termos vigentes e consentimento de localização
+        (`403` `location-consent-required`; o contrato em papel não substitui o consentimento digital). Valida galpão
+        ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422` `pickup-outside-hours`) e de
+        `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409` `vehicle-unavailable`, inclusive
+        quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem reserva aberta (`409`
+        `rental-already-active` / `reservation-open`), e separa a moto (`free` → `reserved`). A resposta traz
+        `pickupCode` (QR de retirada). Cancelar (`DELETE /reservations/{id}`) é grátis; ao vencer `expiresAt`, um job
+        expira a reserva.
       security:
         - customerAuth: []
       parameters:
@@ -1926,9 +2033,6 @@ paths:
                   depotId: 9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c
                   pickupMode: scheduled
                   pickupAt: '2026-10-23T13:00:00Z'
-                  planCode: day
-                  coverage: basic
-                  depositMethod: pix
       responses:
         '201':
           description: Reserva criada.
@@ -1948,7 +2052,8 @@ paths:
       summary: Reserva ativa do cliente
       description: |
         Sempre `200`; `reservation` fica ausente quando não há reserva aberta. Reserva aberta = `active` ou `handover`
-        (entrega de galpão aguardando o aceite; o app abre "Confira sua moto" com `handoverId`).
+        (entrega de galpão aberta, aguardando o checkout no balcão; o app mostra "Sua moto está sendo preparada" com
+        `handoverId`).
       security:
         - customerAuth: []
       responses:
@@ -1964,16 +2069,16 @@ paths:
       operationId: cancelReservation
       summary: Cancelar reserva
       description: |
-        Grátis. A moto volta a `free` e, em reserva de galpão, a caução é liberada (pré-autorização cancelada ou Pix
-        estornado). Reserva com status `handover` (entrega aberta) → `409` `reservation-in-handover`: o cliente usa
-        `POST /handovers/{id}/dispute`, ou o operador cancela a entrega. Reserva já encerrada → `409`.
+        Grátis. A moto volta a `free` e, em reserva de galpão antiga feita com caução, a caução é liberada
+        (pré-autorização cancelada ou Pix estornado); a pré-reserva atual não tem caução. Reserva com status `handover`
+        (entrega aberta) → `409` `reservation-in-handover`: o operador cancela a entrega. Reserva já encerrada → `409`.
       security:
         - customerAuth: []
       parameters:
         - $ref: '#/components/parameters/PathId'
       responses:
         '204':
-          description: Reserva cancelada; a moto volta a `free` e a caução é liberada.
+          description: Reserva cancelada; a moto volta a `free` (e a caução antiga, se houver, é liberada).
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
@@ -1989,9 +2094,11 @@ paths:
         Faz o papel da equipe do galpão para o app de teste: na reserva de galpão `active` do próprio cliente, assina o
         `pickupCode` da reserva e cria a entrega de saída como em `POST /handovers` (`pickup`), com checklist de teste
         (`[{ code: teste, ok: true }]`), sem fotos e com a bateria atual da moto. Mesmas verificações de `POST /handovers`
-        (moto `reserved`, uma entrega aberta por reserva). A entrega nasce `pending_customer`, a reserva passa a
-        `handover` e o cliente segue pelo aceite normal (`POST /handovers/{id}/accept`). O operador da entrega é um ator
-        de sistema (o cliente vê "Equipe Volti").
+        (moto `reserved`, uma entrega aberta por reserva). Em seguida simula também o checkout do balcão
+        (`POST /handovers/{id}/counter-checkout`) com plano `day`, quantidade 1, seguro `basic`, sem fotos de contrato
+        e pagamento `cash` de teste (`reference: teste`) no valor da prévia: o aluguel começa, a reserva é convertida e
+        a moto destrava. Devolve a entrega já `accepted` (com `rentalId`). O operador da entrega é um ator de sistema (o
+        cliente vê "Equipe Volti").
 
         Reserva inexistente, de outro cliente ou sem galpão → `404`. Reserva fora de `active` (entrega já aberta,
         encerrada) ou moto não separada → `409` (`conflict`, `vehicle-unavailable`).
@@ -2001,7 +2108,7 @@ paths:
         - $ref: '#/components/parameters/PathId'
       responses:
         '201':
-          description: Entrega de saída criada, aguardando o aceite do cliente.
+          description: Entrega de saída criada e concluída no balcão de teste (`accepted`, com `rentalId`).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Handover' }
@@ -2138,6 +2245,31 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Rental' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /rentals/{id}/counter-balance:
+    get:
+      tags: [rentals]
+      operationId: getRentalCounterBalance
+      summary: Saldo a acertar no balcão
+      description: |
+        Para o acerto no galpão (checklist de chegada, página do cliente no painel): todas as dívidas em aberto do
+        cliente deste aluguel (`debts`, com `outstandingCents` > 0; inclui débitos de balcão `pending` e débitos antigos
+        `failed`) e as cauções de balcão do cliente com saldo disponível (`deposits`). Saldo do débito de balcão = valor
+        − carteira − Σ quitações `debt_settlement` pagas dele. Disponível da caução = `amountCents` − `capturedCents` −
+        `refundedCents`. Só o primeiro nome do cliente. Aluguel inexistente → `404`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo, financeiro]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      responses:
+        '200':
+          description: Saldo do balcão.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CounterBalance' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -3006,6 +3138,42 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /payments/deposits/{id}/counter-refund:
+    post:
+      tags: [payments]
+      operationId: counterRefundDeposit
+      summary: Devolver caução do balcão
+      description: |
+        O atendente registra a devolução (total ou parcial) da caução do balcão ao cliente, sem gateway. Só caução com
+        método de balcão (`counter_card`, `counter_pix`, `cash`; outra → `409` `conflict`, "Esta caução não é do
+        balcão.") e só depois do encerramento do aluguel dela (`409` `conflict`, "A caução só é devolvida depois do
+        encerramento do aluguel."). `amountCents` ≤ disponível (`amountCents` − `capturedCents` − `refundedCents`), senão
+        `422` `counter-amount-mismatch`; devoluções e abatimentos concorrentes nunca passam do valor retido. Soma em
+        `refundedCents`; quando o disponível chega a 0 a caução vira `captured` (se houve abatimento) ou `released`.
+        Nada é abatido nem devolvido automaticamente. Grava AuditLog `deposit.counter_refund`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CounterRefundRequest' }
+      responses:
+        '200':
+          description: Devolução registrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deposit' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /payments/subscriptions:
     get:
       tags: [payments]
@@ -3260,6 +3428,45 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+  /payments/{id}/counter-settle:
+    post:
+      tags: [payments]
+      operationId: counterSettlePayment
+      summary: Quitar débito no balcão
+      description: |
+        O atendente registra a quitação (total ou parcial) de uma dívida em aberto do cliente no balcão, sem gateway: o
+        débito de balcão `pending` (excedente do período, multa de zona, dano) ou um débito antigo `failed`. Informe
+        exatamente um entre `method` (pagamento no balcão) e `fromDepositId` (abater da caução de balcão do mesmo
+        cliente); os dois ou nenhum → `400` `validation-error`. Não é dívida em aberto → `409` `debt-not-payable`.
+        `amountCents` ≤ saldo do débito, e com `fromDepositId` também ≤ disponível da caução; senão `422`
+        `counter-amount-mismatch`. Cada parte vira um `Payment` `debt_settlement` `paid` (`settlesPaymentId` = este id,
+        `recordedBy` = atendente; com caução, `depositId` e `capturedCents` da caução somados). Saldo do débito de balcão = valor −
+        carteira − Σ quitações pagas dele. Saldo zerado → o débito ganha `debtSettledAt` (débito de balcão também vira
+        `paid`) e a flag `delinquent` sai quando não restar outra dívida. Grava AuditLog `payment.counter_settle`.
+        Devolve o débito com `outstandingCents` atualizado.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CounterSettleRequest' }
+      responses:
+        '200':
+          description: Quitação registrada; o débito com o saldo atualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /payments/{id}/retry:
     post:
       tags: [payments]
@@ -3271,7 +3478,8 @@ paths:
         (`201` `paid`; recusa → `402` `payment-failed`; sem cartão → `402` `card-not-found`). Pix: `201` `pending` com `pix`;
         a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha `debtSettledAt` e a flag
         `delinquent` sai quando não restar outra dívida e o recibo do aluguel (PDF) fica pronto. Não é dívida (ou já
-        quitada) → `409` `debt-not-payable`; cobrança automática ainda em curso → `409` `debt-in-collection` (aluguel: a
+        quitada) → `409` `debt-not-payable`; débito de balcão (método `counter_card`, `counter_pix` ou `cash`) → `409`
+        `debt-not-payable` ("Este valor é acertado no galpão."), nada é cobrado; cobrança automática ainda em curso → `409` `debt-in-collection` (aluguel: a
         liquidação ainda retenta no cartão; assinatura: a assinatura desta dívida está `past_due`, com o gateway retentando
         a recorrência, ou com o cancelamento no gateway ainda não confirmado). Uma quitação Pix pendente e ainda válida é
         reaproveitada. Gateway sem resposta conclusiva (resultado da cobrança desconhecido ou tentativa anterior que não deu
@@ -5595,14 +5803,18 @@ components:
     ReservationStatus:
       type: string
       enum: [active, converted, canceled, expired, handover]
-      description: '`handover` = reserva de galpão com entrega aberta, aguardando o aceite do cliente.'
+      description: '`handover` = reserva de galpão com entrega aberta, aguardando o checkout no balcão.'
     DepositMethod:
       type: string
-      enum: [card, pix]
+      enum: [card, pix, counter_card, counter_pix, cash]
+      description: '`counter_card` (maquininha), `counter_pix` (Pix no balcão) e `cash` (dinheiro): caução registrada pelo atendente no balcão, sem gateway.'
     DepositStatus:
       type: string
       enum: [awaiting_pix, held, failed, captured, released]
-      description: '`held`/`awaiting_pix`/`failed` vêm de `RentalBillingPort.holdDeposit`; `captured`/`released` no encerramento.'
+      description: |
+        `held`/`awaiting_pix`/`failed` vêm de `RentalBillingPort.holdDeposit`; `captured`/`released` no encerramento.
+        Caução do balcão: nasce `held`; quando o disponível (`amountCents` − `capturedCents` − `refundedCents`) chega a 0
+        vira `captured` (se houve abatimento) ou `released`; caução de balcão com valor 0 vira `released` no fechamento.
     RentalStartOutcome:
       type: string
       enum: [started, awaiting_deposit]
@@ -5625,10 +5837,19 @@ components:
     PaymentKind:
       type: string
       enum: [rental, deposit, top_up, subscription, fee, debt_settlement]
-      description: '`debt_settlement`: quitação de uma dívida pelo cliente (`POST /payments/{id}/retry`), com `settlesPaymentId`.'
+      description: '`debt_settlement`: quitação de uma dívida pelo cliente (`POST /payments/{id}/retry`) ou no balcão (`POST /payments/{id}/counter-settle`), com `settlesPaymentId`.'
     PaymentMethod:
       type: string
-      enum: [card, pix, wallet]
+      enum: [card, pix, wallet, counter_card, counter_pix, cash]
+      description: '`counter_card` (maquininha), `counter_pix` (Pix no balcão) e `cash` (dinheiro): registrados pelo atendente no balcão, sem gateway; jobs de cobrança e retentativa ignoram esses métodos.'
+    CounterPaymentMethod:
+      type: string
+      enum: [counter_card, counter_pix, cash]
+      description: 'Métodos de pagamento no balcão (subconjunto de `PaymentMethod` e `DepositMethod`): maquininha, Pix no balcão e dinheiro.'
+    CounterPlanCode:
+      type: string
+      enum: [day, weekly, monthly]
+      description: 'Planos vendidos no balcão (subconjunto de `PlanCode`), pré-pagos pelo período: dia = 24 h, semana = 7 dias, mês = 30 dias. Não renovam sozinhos.'
     TopUpMethod:
       type: string
       enum: [card, pix]
@@ -5784,6 +6005,18 @@ components:
       required: [contentType]
       properties:
         contentType: { $ref: '#/components/schemas/UploadContentType' }
+    HandoverUploadPurpose:
+      type: string
+      enum: [photo, contract]
+      description: '`photo`: foto da vistoria (`handovers/`); `contract`: foto do contrato assinado no balcão (`contracts/`).'
+    HandoverUploadRequest:
+      type: object
+      required: [contentType]
+      properties:
+        contentType: { $ref: '#/components/schemas/UploadContentType' }
+        purpose:
+          $ref: '#/components/schemas/HandoverUploadPurpose'
+          default: photo
 
     # ───────────── health ─────────────
     HealthStatus:
@@ -6166,8 +6399,9 @@ components:
     ReservationCreate:
       type: object
       description: |
-        Só `vehicleId` = reserva de rua (fluxo antigo, 15 min). Com `depotId` = reserva de retirada no galpão: exige
-        `pickupMode`, `planCode`, `coverage` e `depositMethod` (`400`), e `pickupAt` em `scheduled`.
+        Só `vehicleId` = reserva de rua (fluxo antigo, 15 min). Com `depotId` = pré-reserva de retirada no galpão: exige
+        `pickupMode` (`400`) e `pickupAt` em `scheduled`. `planCode`, `coverage`, `depositMethod`, `cardId` e
+        `couponCode` são aceitos (apps antigos) e ignorados: plano, seguro e pagamento são escolhidos no balcão.
       required: [vehicleId]
       properties:
         vehicleId: { type: string, format: uuid }
@@ -6177,8 +6411,8 @@ components:
         planCode: { $ref: '#/components/schemas/PlanCode' }
         coverage: { $ref: '#/components/schemas/InsuranceCoverage' }
         depositMethod: { $ref: '#/components/schemas/DepositMethod' }
-        cardId: { type: string, format: uuid, description: 'Cartão da caução com `depositMethod: card` (ausente = cartão padrão).' }
-        couponCode: { type: string, maxLength: 40, description: Cupom aplicado ao plano na entrega. }
+        cardId: { type: string, format: uuid, description: 'Ignorado (apps antigos): a pré-reserva não tem caução.' }
+        couponCode: { type: string, maxLength: 40, description: 'Ignorado (apps antigos): cupom não vale no balcão nesta fase.' }
     Reservation:
       type: object
       required: [id, vehicleId, status, createdAt, expiresAt]
@@ -6257,6 +6491,8 @@ components:
         status: { $ref: '#/components/schemas/DepositStatus' }
         amountCents: { type: integer, minimum: 0, examples: [5000] }
         capturedCents: { type: integer, minimum: 0 }
+        refundedCents: { type: integer, minimum: 0, description: 'Caução do balcão: valor já devolvido ao cliente no balcão (`POST /payments/deposits/{id}/counter-refund`).' }
+        reference: { type: string, maxLength: 64, description: 'Caução do balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix).' }
         pix: { $ref: '#/components/schemas/PixCharge' }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -6281,7 +6517,7 @@ components:
       properties:
         code:
           type: string
-          description: '`unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`.'
+          description: '`unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`. Aluguel do balcão: `counter_plan` (plano pré-pago × quantidade), `excess_day` (excedente por dia iniciado depois de `prepaidUntil`), `insurance_<coverage>` e `counter_prepaid` ("Pago no balcão", negativo).'
           examples: [time]
         description: { type: string, examples: ['10 min x R$ 0,79'] }
         quantity: { type: integer, minimum: 0, description: 'Minutos, horas ou dias cobrados.' }
@@ -6324,7 +6560,13 @@ components:
         couponCode: { type: string }
         depositId: { type: string, format: uuid }
         insurancePolicyId: { type: string, format: uuid }
-        paymentId: { type: string, format: uuid, description: Pagamento da liquidação. }
+        paymentId: { type: string, format: uuid, description: 'Pagamento da liquidação. Aluguel do balcão: o pagamento pré-pago no balcão ou, com excedente no fechamento, o débito de balcão `pending`.' }
+        prepaidUntil:
+          type: string
+          format: date-time
+          description: |
+            Só aluguel do balcão: fim do período pré-pago (início + período × quantidade; pausa não estende). Depois disso
+            o aluguel continua e o excedente conta por dia iniciado, acertado no galpão. O app avisa 1 h antes.
         endZoneId: { type: string, format: uuid }
         returnPhotoObjectKey: { type: string }
         forceEndReason: { type: string, description: staff. }
@@ -6441,7 +6683,7 @@ components:
         endedAt: { type: string, format: date-time }
         durationSeconds: { type: integer, minimum: 0 }
         breakdown: { $ref: '#/components/schemas/PriceBreakdown' }
-        paymentId: { type: string, format: uuid, description: 'Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`).' }
+        paymentId: { type: string, format: uuid, description: 'Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`; aluguel do balcão: o débito acertado no galpão).' }
         paymentStatus: { $ref: '#/components/schemas/ReceiptPaymentStatus' }
         paymentMethod:
           $ref: '#/components/schemas/PaymentMethod'
@@ -6449,7 +6691,7 @@ components:
         cardLast4: { type: string, pattern: '^\d{4}$' }
         depositUsedCents: { type: integer, minimum: 1, description: 'Parte da caução usada para abater o valor (caução capturada). Ausente quando a caução não foi usada.' }
         depositReleasedCents: { type: integer, minimum: 0, description: 'Parte da caução devolvida/liberada ao cliente depois do fechamento.' }
-        amountDueCents: { type: integer, minimum: 1, description: 'Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento).' }
+        amountDueCents: { type: integer, minimum: 1, description: 'Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento). Aluguel do balcão: valor a acertar no galpão.' }
         pdfUrl: { type: string, format: uri, description: 'URL pré-assinada do PDF (expira em 15 min). Só com `paymentStatus` `paid`.' }
         invoiceNumber: { type: string, description: 'Número da NFS-e, quando emitida.' }
         track:
@@ -6461,8 +6703,9 @@ components:
       enum: [paid, pending, processing]
       description: |
         `paid`: recebido (cobrança aprovada, carteira/caução cobriram tudo ou dívida quitada pelo cliente ou pelo
-        financeiro); `pending`: dívida em aberto que o cliente paga no app (`amountDueCents`); `processing`: a cobrança
-        ainda está em andamento no gateway (retentativa ou análise), nada a pagar por enquanto.
+        financeiro, ou acertada no balcão); `pending`: dívida em aberto (`amountDueCents`) — balcão: acertada no galpão,
+        não no app; `processing`: a cobrança ainda está em andamento no gateway (retentativa ou análise), nada a pagar
+        por enquanto.
 
     # ───────────── pricing ─────────────
     PricingPlan:
@@ -6651,11 +6894,16 @@ components:
         outstandingCents:
           type: integer
           minimum: 0
-          description: Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida.
+          description: |
+            Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como
+            garantia − quitações pagas) ou de um débito de balcão `pending` (valor − carteira − Σ quitações
+            `debt_settlement` pagas). Ausente quando não há dívida.
         walletCents: { type: integer, minimum: 1, description: 'Aluguel: parte do `amountCents` (bruto) paga com a carteira no fechamento; o restante foi cobrado na caução/gateway. O estorno devolve primeiro a parte do gateway e depois credita a da carteira (lançamento `refund`). Ausente quando a carteira não foi usada.' }
         debtSettledAt: { type: string, format: date-time, description: Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro). }
         debtSettlement: { $ref: '#/components/schemas/DebtSettlementKind' }
         settlesPaymentId: { type: string, format: uuid, description: 'Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.' }
+        reference: { type: string, maxLength: 64, description: 'Pagamento de balcão: referência informada pelo atendente (NSU da maquininha, ID do Pix).' }
+        recordedBy: { type: string, format: uuid, description: 'staff. Atendente que registrou o pagamento no balcão.' }
         pix: { $ref: '#/components/schemas/PixCharge' }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -6671,6 +6919,101 @@ components:
           type: string
           enum: [card, pix]
         cardId: { type: string, format: uuid, description: 'Cartão salvo (padrão: o cartão padrão). Só `card`.' }
+    CounterPaymentInput:
+      type: object
+      required: [method, amountCents]
+      properties:
+        method: { $ref: '#/components/schemas/CounterPaymentMethod' }
+        amountCents: { type: integer, minimum: 1, description: 'Valor recebido no balcão, em centavos.' }
+        reference: { type: string, maxLength: 64, description: 'NSU da maquininha ou ID do Pix (opcional).' }
+    CounterDepositInput:
+      type: object
+      required: [method, amountCents]
+      properties:
+        method: { $ref: '#/components/schemas/CounterPaymentMethod' }
+        amountCents: { type: integer, minimum: 0, maximum: 1000000, description: 'Caução recebida no balcão, em centavos (0 = sem caução).' }
+        reference: { type: string, maxLength: 64 }
+    CounterCheckoutRequest:
+      type: object
+      required: [planCode, coverage, payment]
+      properties:
+        planCode: { $ref: '#/components/schemas/CounterPlanCode' }
+        quantity: { type: integer, minimum: 1, maximum: 30, default: 1, description: 'Quantidade do período: diária 1–30, semana 1–4, mês 1–3.' }
+        coverage: { $ref: '#/components/schemas/InsuranceCoverage' }
+        contractPhotoKeys:
+          type: array
+          maxItems: 4
+          description: 'Fotos do contrato assinado: 1 a 4 chaves de `POST /handovers/uploads` com `purpose: contract`. Nenhuma → `422` `contract-photos-required`.'
+          items: { type: string, pattern: '^contracts/', maxLength: 300 }
+        payment: { $ref: '#/components/schemas/CounterPaymentInput' }
+        deposit: { $ref: '#/components/schemas/CounterDepositInput' }
+    CounterQuote:
+      type: object
+      required: [planCode, quantity, coverage, planUnitCents, planCents, insuranceCents, totalCents, excessDayCents, periodDays]
+      properties:
+        planCode: { $ref: '#/components/schemas/CounterPlanCode' }
+        quantity: { type: integer, minimum: 1 }
+        coverage: { $ref: '#/components/schemas/InsuranceCoverage' }
+        planUnitCents: { type: integer, minimum: 0, description: Preço de uma unidade do plano. }
+        planCents: { type: integer, minimum: 0, description: '`planUnitCents` × `quantity`.' }
+        insuranceCents: { type: integer, minimum: 0, description: Prêmio único do seguro (não multiplica pela quantidade). }
+        totalCents: { type: integer, minimum: 0, description: '`planCents` + `insuranceCents`: o valor a receber no balcão.' }
+        excessDayCents: { type: integer, minimum: 0, description: 'Preço de cada dia iniciado depois do período pré-pago (diária do plano `day`).' }
+        periodDays: { type: integer, minimum: 0, description: 'Dias do período pré-pago (unidade × `quantity`).' }
+    CounterSettleRequest:
+      type: object
+      required: [amountCents]
+      description: 'Informe exatamente um entre `method` e `fromDepositId` (os dois ou nenhum → `400`).'
+      properties:
+        amountCents: { type: integer, minimum: 1 }
+        method: { $ref: '#/components/schemas/CounterPaymentMethod' }
+        fromDepositId: { type: string, format: uuid, description: Abater da caução de balcão do mesmo cliente. }
+        reference: { type: string, maxLength: 64 }
+    CounterRefundRequest:
+      type: object
+      required: [amountCents]
+      properties:
+        amountCents: { type: integer, minimum: 1 }
+        reference: { type: string, maxLength: 64 }
+    CounterDebt:
+      type: object
+      required: [paymentId, kind, status, method, outstandingCents, createdAt]
+      properties:
+        paymentId: { type: string, format: uuid }
+        rentalId: { type: string, format: uuid }
+        kind: { $ref: '#/components/schemas/PaymentKind' }
+        status: { $ref: '#/components/schemas/PaymentStatus' }
+        method: { $ref: '#/components/schemas/PaymentMethod' }
+        outstandingCents: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+    CounterDepositBalance:
+      type: object
+      required: [depositId, method, status, amountCents, capturedCents, refundedCents, availableCents]
+      properties:
+        depositId: { type: string, format: uuid }
+        rentalId: { type: string, format: uuid }
+        method: { $ref: '#/components/schemas/DepositMethod' }
+        status: { $ref: '#/components/schemas/DepositStatus' }
+        amountCents: { type: integer, minimum: 0 }
+        capturedCents: { type: integer, minimum: 0 }
+        refundedCents: { type: integer, minimum: 0 }
+        availableCents: { type: integer, minimum: 0, description: '`amountCents` − `capturedCents` − `refundedCents`.' }
+    CounterBalance:
+      type: object
+      required: [rentalId, customerId, rentalStatus, debtTotalCents, debts, deposits]
+      properties:
+        rentalId: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        customerFirstName: { type: string, description: Só o primeiro nome., examples: [Ana] }
+        rentalStatus: { $ref: '#/components/schemas/RentalStatus' }
+        debtTotalCents: { type: integer, minimum: 0, description: 'Soma de `outstandingCents` das dívidas em aberto.' }
+        debts:
+          type: array
+          items: { $ref: '#/components/schemas/CounterDebt' }
+        deposits:
+          type: array
+          description: Cauções de balcão do cliente com saldo disponível.
+          items: { $ref: '#/components/schemas/CounterDepositBalance' }
     DelinquencyClearRequest:
       type: object
       required: [reason]
@@ -7715,7 +8058,7 @@ components:
           items: { $ref: '#/components/schemas/Reservation' }
         handovers:
           type: array
-          description: Entregas do titular (fotos só como chaves, sem links).
+          description: Entregas do titular (fotos e fotos do contrato em `contractPhotoKeys` só como chaves, sem links).
           items: { $ref: '#/components/schemas/Handover' }
         stationSwaps:
           type: array
@@ -8388,7 +8731,7 @@ components:
     HandoverType:
       type: string
       enum: [pickup, return_depot]
-      description: '`pickup` = saída do galpão com aceite do cliente; `return_depot` = chegada no galpão (encerra o aluguel).'
+      description: '`pickup` = saída do galpão, concluída pelo checkout do balcão; `return_depot` = chegada no galpão (encerra o aluguel).'
     HandoverStatus:
       type: string
       enum: [pending_customer, accepted, disputed, canceled]
@@ -8437,7 +8780,7 @@ components:
         type: { $ref: '#/components/schemas/HandoverType' }
         depotId: { type: string, format: uuid }
         reservationId: { type: string, format: uuid }
-        rentalId: { type: string, format: uuid, description: Preenchido no aceite (`pickup`) ou desde a criação (`return_depot`). }
+        rentalId: { type: string, format: uuid, description: Preenchido no checkout do balcão (`pickup`) ou desde a criação (`return_depot`). }
         vehicleId: { type: string, format: uuid }
         vehicleCode: { type: string, examples: [VLT-0001] }
         operatorId: { type: string, format: uuid }
@@ -8454,14 +8797,18 @@ components:
           items: { type: string, format: uri }
         batteryPct: { type: integer, minimum: 0, maximum: 100 }
         batterySerial: { type: string }
+        contractPhotoKeys:
+          type: array
+          description: 'staff. Fotos do contrato assinado no balcão (chaves `contracts/`), gravadas no checkout do balcão. No export LGPD do titular, só as chaves.'
+          items: { type: string }
         status: { $ref: '#/components/schemas/HandoverStatus' }
-        lastError: { type: string, description: 'Slug do último erro do aceite (ex.: `payment-declined`); some quando o aceite dá certo.', examples: [payment-declined] }
+        lastError: { type: string, description: 'Slug do último erro do checkout do balcão (ex.: `vehicle-offline`) ou do aceite antigo; some quando dá certo.', examples: [vehicle-offline] }
         disputeReason: { type: string }
         cancelReason: { type: string, description: 'staff. Motivo do cancelamento (`POST /handovers/{id}/cancel`), lido do AuditLog.' }
         canceledAt: { type: string, format: date-time, description: staff. Quando foi cancelada. }
         canceledByName: { type: string, description: staff. Nome de quem cancelou. }
         createdAt: { type: string, format: date-time }
-        respondedAt: { type: string, format: date-time, description: Aceite ou disputa do cliente. }
+        respondedAt: { type: string, format: date-time, description: Checkout do balcão (ou aceite antigo) ou disputa do cliente. }
     HandoverPage:
       type: object
       required: [items]

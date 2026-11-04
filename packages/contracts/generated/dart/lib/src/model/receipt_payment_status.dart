@@ -9,7 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'receipt_payment_status.g.dart';
 
-/// `paid`: recebido (cobrança aprovada, carteira/caução cobriram tudo ou dívida quitada pelo cliente ou pelo financeiro); `pending`: dívida em aberto que o cliente paga no app (`amountDueCents`); `processing`: a cobrança ainda está em andamento no gateway (retentativa ou análise), nada a pagar por enquanto.
+/// `paid`: recebido (cobrança aprovada, carteira/caução cobriram tudo ou dívida quitada pelo cliente ou pelo financeiro, ou acertada no balcão); `pending`: dívida em aberto (`amountDueCents`) — balcão: acertada no galpão, não no app; `processing`: a cobrança ainda está em andamento no gateway (retentativa ou análise), nada a pagar por enquanto.
 class ReceiptPaymentStatus extends EnumClass {
   @BuiltValueEnumConst(wireName: r'paid')
   static const ReceiptPaymentStatus paid = _$paid;
