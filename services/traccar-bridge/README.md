@@ -44,7 +44,10 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   conta entre posições **boas** (sem `sat` ou com ≥ 5) da mesma cadeia: > 20 m entre duas seguidas ou desde a âncora (primeira boa
   da cadeia; pega o arrasto lento). A cadeia recomeça (a primeira boa **reancora**, sem comparar) com o corte não confirmado,
   posição fraca, posição nova sem fix, heartbeat com o GPS desligado ou mais de 60 s (`LOCK_ANCHOR_MAX_GAP_MS`) desde a boa
-  anterior: o salto do GPS que volta do modo de economia não é movimento. Outros alarmes:
+  anterior: o salto do GPS que volta do modo de economia não é movimento. Mas a **última posição boa travada** (`lastGoodLocked`)
+  não se perde (só some com status de corte solto): a primeira boa depois da quebra e toda posição fraca comparam com ela a
+  150 m (`LOCK_REANCHOR_ALARM_M`, erro do primeiro fix depois de lacuna; fraca alarma uma vez a cada 150 m) — moto levada com o
+  GPS dormindo, numa van ou arrastada com fix ruim ainda gera `movimento_sem_aluguel`. Outros alarmes:
   log `alarm_ignored`. Os alarmes vêm de `position.attributes.alarm` (sem Notification no Traccar o WebSocket não traz
   `events`); se houver Notification, o mesmo alarme por `events` é deduplicado pelo id da posição. Replay de conexão não gera alarme.
 - **Mensagem retida:** delta, `get/accepted` ou comando entregue como **retido** (`packet.retain`, no SUBSCRIBE e de novo a cada

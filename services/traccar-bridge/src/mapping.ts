@@ -20,9 +20,18 @@ export interface DeviceMemory {
   /**
    * Cadeia de posições boas com o corte ativo (deslocamento > 20 m travada → `movimento_sem_aluguel`): `lat`/`lng` = âncora
    * (primeira posição boa da cadeia), `prev` = última posição boa. Some com o corte não confirmado, posição fraca, posição sem
-   * fix e heartbeat com o GPS desligado; posição boa a mais de `LOCK_ANCHOR_MAX_GAP_MS` da anterior reancora.
+   * fix e heartbeat com o GPS desligado; posição boa a mais de `LOCK_ANCHOR_MAX_GAP_MS` da anterior reancora (comparando com
+   * `lastGoodLocked` a `LOCK_REANCHOR_ALARM_M`).
    */
   lockAnchor?: { lat: number; lng: number; prev: { lat: number; lng: number; fixTime: number } };
+  /**
+   * Última posição BOA vista com o corte ativo (revisão de segurança, 2026-11-04). Não some em lacuna, posição fraca, sem fix,
+   * GPS desligado, reconexão nem comando: só com status dizendo corte solto (`currentBlocked === false`). Depois de uma quebra da
+   * cadeia, a primeira boa e toda fraca comparam com ela a `LOCK_REANCHOR_ALARM_M` — a moto levada com o GPS fora ainda alarma.
+   */
+  lastGoodLocked?: { lat: number; lng: number };
+  /** Posição fraca do último alarme por posição fraca: outra fraca só alarma a mais de `LOCK_REANCHOR_ALARM_M` dela. */
+  weakAlarmAt?: { lat: number; lng: number };
   /**
    * Byte terminal info do último status GT06 (`attributes.status` cru do Traccar): hora (min(serverTime, ingestão)), bit 6
    * (rastreamento GPS ligado) e bit 1 (ACC). Base de `gpsSleepOf`.
@@ -59,6 +68,13 @@ export const RELAY_REPLY_SETTLE_MS = 5_000;
 export const COMMAND_ACK_GRACE_MS = 5_000;
 
 export const MOVED_WHILE_LOCKED_M = 20;
+
+/**
+ * Limiar do alarme de movimento travada fora da cadeia contínua: primeira posição boa depois de uma lacuna/quebra (GPS dormindo,
+ * sem fix, fraca) e posição fraca, ambas contra `lastGoodLocked`. Maior que os 20 m porque o primeiro fix depois de uma lacuna
+ * (e o fix fraco) erra dezenas de metros com a moto parada (bancada do J16: ~40 m); menor que o deslocamento de um furto.
+ */
+export const LOCK_REANCHOR_ALARM_M = 150;
 
 /**
  * Bancada do J16 (2026-11-04): ao voltar de um período sem fix (modo de economia, `Slp:1`), a primeira posição salta dezenas de
@@ -260,6 +276,11 @@ export function applyPosition(
   }
   const blocked = telemetryBlocked(next, now);
   if (blocked !== true) next.lockAnchor = undefined;
+  if (currentBlocked(next) === false) {
+    // Corte solto dito pelo aparelho (status ou "RELAY 0 OK"): a referência do furto acaba.
+    next.lastGoodLocked = undefined;
+    next.weakAlarmAt = undefined;
+  }
   const none = { telemetry: null, invalid: false, movedWhileLocked: false, relayReply, staleAfterReply, memory: next };
   const fixTime = Date.parse(p.fixTime);
   const newer = !Number.isFinite(fixTime) || next.lastFixTime === undefined || fixTime > next.lastFixTime;
@@ -308,14 +329,22 @@ export function applyPosition(
   // movimento vale (também só dificulta).
   next.last = weak && speedKmh < 3 ? undefined : { fixTime: Math.min(fixTime, now), speedKmh, lat: p.latitude, lng: p.longitude };
   let movedWhileLocked = false;
+  const farFrom = (ref: { lat: number; lng: number } | undefined, m: number) => ref !== undefined && haversineM(ref, { lat: p.latitude, lng: p.longitude }) > m;
   if (blocked === true && weak) {
-    // Posição fraca não entra no alerta e quebra a cadeia: a próxima boa reancora.
+    // Posição fraca quebra a cadeia (não entra nos 20 m), mas nunca suprime: deslocamento grande da última boa travada alarma
+    // (uma vez a cada `LOCK_REANCHOR_ALARM_M`: moto numa van com o GPS ruim).
     next.lockAnchor = undefined;
+    if (farFrom(next.lastGoodLocked, LOCK_REANCHOR_ALARM_M) && (next.weakAlarmAt === undefined || farFrom(next.weakAlarmAt, LOCK_REANCHOR_ALARM_M))) {
+      movedWhileLocked = true;
+      next.weakAlarmAt = { lat: p.latitude, lng: p.longitude };
+    }
   } else if (blocked === true) {
     const here = { lat: p.latitude, lng: p.longitude, fixTime };
     const chain = next.lockAnchor;
     if (!chain || fixTime - chain.prev.fixTime > LOCK_ANCHOR_MAX_GAP_MS) {
-      // Primeira posição boa da cadeia (corte recém-visto, ou depois de um período sem fix, fraco ou com o GPS desligado).
+      // Primeira posição boa da cadeia (corte recém-visto, ou depois de um período sem fix, fraco ou com o GPS desligado): reancora,
+      // mas compara com a última boa travada a 150 m (erro do primeiro fix depois da lacuna; o furto com o GPS fora alarma).
+      if (farFrom(next.lastGoodLocked, LOCK_REANCHOR_ALARM_M)) movedWhileLocked = true;
       next.lockAnchor = { lat: here.lat, lng: here.lng, prev: here };
     } else if (haversineM(chain.prev, here) > MOVED_WHILE_LOCKED_M || haversineM(chain, here) > MOVED_WHILE_LOCKED_M) {
       // Duas posições boas seguidas a mais de 20 m, ou o acumulado desde a âncora na mesma cadeia (arrasto lento).
@@ -324,6 +353,8 @@ export function applyPosition(
     } else {
       next.lockAnchor = { ...chain, prev: here };
     }
+    next.lastGoodLocked = { lat: here.lat, lng: here.lng };
+    next.weakAlarmAt = undefined;
   }
   if (blocked === undefined) return { ...none, held: 'awaiting_status', memory: next };
   if (next.batteryPct === undefined) return { ...none, movedWhileLocked, held: 'awaiting_battery', memory: next };

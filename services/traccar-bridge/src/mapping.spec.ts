@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cutRefusal } from './delta';
 import { MIN_GPS_SATELLITES } from './contract';
-import { applyPosition, BLOCKED_FRESH_MS, COMMAND_ACK_GRACE_MS, currentBlocked, freshBlocked, GPS_STATUS_FRESH_MS, gpsSleepOf, LOCK_ANCHOR_MAX_GAP_MS, markCommandSent, markReconnected, parseRelayReply, RELAY_REPLY_SETTLE_MS, toDeviceEvents, type DeviceMemory } from './mapping';
+import { applyPosition, BLOCKED_FRESH_MS, COMMAND_ACK_GRACE_MS, currentBlocked, freshBlocked, GPS_STATUS_FRESH_MS, gpsSleepOf, LOCK_ANCHOR_MAX_GAP_MS, LOCK_REANCHOR_ALARM_M, markCommandSent, markReconnected, parseRelayReply, RELAY_REPLY_SETTLE_MS, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { TraccarEvent, TraccarPosition } from './traccar/types';
 
 const schema = (name: string) => JSON.parse(readFileSync(join(__dirname, '../../../packages/contracts/schemas', name), 'utf8'));
@@ -625,6 +625,68 @@ describe('qualidade do GPS: satélites, modo de economia e âncora do movimento 
       [fix(T + 10_000, north(30)), T + 10_000],
     ]);
     expect(on[2].movedWhileLocked).toBe(true);
+  });
+
+  describe('furto com o GPS fora (revisão de segurança): a última posição boa travada não se perde', () => {
+    it('limiar de 150 m depois de lacuna/quebra da cadeia (erro do primeiro fix) e para posição fraca', () => {
+      expect(LOCK_REANCHOR_ALARM_M).toBe(150);
+    });
+
+    it('furto durante o sono: âncora, GPS desliga 30 min, volta 600 m adiante → alarme', () => {
+      const steps: Array<[TraccarPosition, number]> = [[fix(T, north(0)), T]];
+      for (let ms = T + 60_000; ms <= T + 1_800_000; ms += 60_000) steps.push([hb(ms, 0x84), ms]);
+      steps.push([fix(T + 1_810_000, north(600), 9), T + 1_810_000]);
+      const r = run(steps);
+      expect(r[r.length - 1].movedWhileLocked).toBe(true);
+      expect(r.filter((x) => x.movedWhileLocked).length).toBe(1);
+    });
+
+    it('furto em van: fixes fracos e inválidos até 2 km adiante → alarme por fraca > 150 m (uma vez a cada 150 m) e no primeiro fix bom', () => {
+      const steps: Array<[TraccarPosition, number]> = [[fix(T, north(0)), T]];
+      steps.push([pos({ valid: false, fixTime: at(T + 10_000), serverTime: at(T + 10_000), attributes: { blocked: true } }), T + 10_000]);
+      steps.push([fix(T + 20_000, north(100), 3), T + 20_000]); // fraca a 100 m: nada
+      steps.push([fix(T + 30_000, north(400), 3), T + 30_000]); // fraca a 400 m: alarme
+      steps.push([fix(T + 40_000, north(450), 2), T + 40_000]); // 50 m da fraca do alarme: não repete
+      steps.push([pos({ valid: false, fixTime: at(T + 50_000), serverTime: at(T + 50_000), attributes: { blocked: true } }), T + 50_000]);
+      steps.push([fix(T + 600_000, north(2_000), 9), T + 600_000]); // primeiro bom no destino
+      const r = run(steps);
+      expect(r.map((x) => x.movedWhileLocked)).toEqual([false, false, false, true, false, false, true]);
+    });
+
+    it('arrasto a pé com fix fraco intermitente: boa, fraca, boa… a 150+ m da última boa → alarme', () => {
+      const r = run([
+        [fix(T, north(0)), T],
+        [fix(T + 10_000, north(15), 3), T + 10_000],
+        [fix(T + 80_000, north(160)), T + 80_000], // lacuna > 60 s e quebra pela fraca: compara com a última boa (0 m) a 150 m
+      ]);
+      expect(r.map((x) => x.movedWhileLocked)).toEqual([false, false, true]);
+    });
+
+    it('bancada: lacuna de 1 h, volta 40 m adiante → sem alarme (menos de 150 m)', () => {
+      const steps: Array<[TraccarPosition, number]> = [[fix(T, north(0)), T]];
+      for (let ms = T + 60_000; ms < T + 3_600_000; ms += 60_000) steps.push([hb(ms, 0x84), ms]);
+      steps.push([fix(T + 3_600_000, north(40)), T + 3_600_000]);
+      expect(run(steps).some((x) => x.movedWhileLocked)).toBe(false);
+    });
+
+    it('destravou: status com o corte solto limpa a última posição boa; travar de novo longe não alarma', () => {
+      const unlocked = pos({ outdated: true, fixTime: at(T - 3_600_000), serverTime: at(T + 60_000), attributes: { blocked: false } });
+      const relocked = (ms: number, lat: number) => fix(ms, lat);
+      const r = run([
+        [fix(T, north(0)), T],
+        [unlocked, T + 60_000],
+        [relocked(T + 600_000, north(5_000)), T + 600_000],
+      ]);
+      expect(r[1].memory.lastGoodLocked).toBeUndefined();
+      expect(r[2].movedWhileLocked).toBe(false);
+    });
+
+    it('reconexão ou comando não apagam a última posição boa travada (só o corte solto)', () => {
+      const [a] = run([[fix(T, north(0)), T]]);
+      expect(a.memory.lastGoodLocked).toMatchObject({ lat: north(0) });
+      expect(markReconnected(a.memory).lastGoodLocked).toEqual(a.memory.lastGoodLocked);
+      expect(markCommandSent(a.memory, T, 'stop').lastGoodLocked).toEqual(a.memory.lastGoodLocked);
+    });
   });
 
   it('arrasto lento na mesma cadeia (12 m a cada 10 s, todas boas) ainda alerta pelo acumulado desde a âncora', () => {
