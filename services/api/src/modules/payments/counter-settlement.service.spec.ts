@@ -187,8 +187,26 @@ describe('CounterSettlementService.settle', () => {
     ]);
     expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const rejected = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')!;
-    expect((rejected.reason as ProblemException).getStatus()).toBe(409);
+    expect([(rejected.reason as ProblemException).getStatus(), (rejected.reason as ProblemException).slug]).toEqual([409, 'debt-not-payable']);
     expect(await db.payment.count({ where: { kind: 'debt_settlement' } })).toBe(1);
+  });
+
+  it('assinatura ainda em cobrança automática (past_due) → 409 debt-in-collection, nada gravado', async () => {
+    const { db, svc } = await setup();
+    const sub = await db.subscription.create({ data: { customerId: CUSTOMER, planCode: 'weekly', status: 'past_due' } });
+    const debt = await db.payment.create({ data: { customerId: CUSTOMER, subscriptionId: sub.id, kind: 'subscription', method: 'card', status: 'failed', amountCents: 5000, failureReason: 'cc_rejected' } });
+    const err = await problem(svc.settle(staff, debt.id, { amountCents: 5000, method: 'cash' }));
+    expect([err.getStatus(), err.slug]).toEqual([409, 'debt-in-collection']);
+    expect(await db.payment.count({ where: { kind: 'debt_settlement' } })).toBe(0);
+  });
+
+  it('débito de aluguel failed quita mesmo com outra liquidação do cliente em retentativa', async () => {
+    const { db, svc } = await setup();
+    const retrying = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'rental', method: 'card', status: 'pending', amountCents: 2000 } });
+    await db.settlementProgress.create({ data: { paymentId: retrying.id, attempts: 2 } });
+    const debt = await db.payment.create({ data: { customerId: CUSTOMER, rentalId: RENTAL, kind: 'rental', method: 'card', status: 'failed', amountCents: 3000, failureReason: 'cc_rejected' } });
+    const out = await svc.settle(staff, debt.id, { amountCents: 3000, method: 'cash' });
+    expect(out).toMatchObject({ status: 'failed', debtSettlement: 'payment', outstandingCents: 0 });
   });
 });
 

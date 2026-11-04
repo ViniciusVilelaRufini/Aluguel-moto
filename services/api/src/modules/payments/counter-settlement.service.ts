@@ -148,9 +148,10 @@ export class CounterSettlementService {
       await tx.$queryRaw`SELECT "id" FROM "Payment" WHERE "id" = ${paymentId}::uuid FOR UPDATE`;
       const debt = (await tx.payment.findUnique({ where: { id: paymentId } }))!;
       if (!isOpenDebt(debt)) throw conflict('debt-not-payable', 'Este pagamento não tem dívida em aberto.');
-      // Débito do gateway ainda em retentativa automática: quitar no balcão cobraria duas vezes.
-      if (!isCounterMethod(debt.method) && (await debtInCollection(tx, debt.customerId, debt))) {
-        throw conflict('debt-in-collection', 'Ainda há uma cobrança automática em andamento para este débito. Aguarde o resultado.');
+      // Assinatura `past_due` (ou cancelamento no gateway pendente): o gateway ainda retenta a recorrência e quitar no
+      // balcão cobraria duas vezes. Débito de aluguel `failed` é terminal (o gateway não o retenta): sempre quita.
+      if (debt.kind === 'subscription' && (await debtInCollection(tx, debt.customerId, debt))) {
+        throw conflict('debt-in-collection', 'Há uma cobrança automática em andamento no cartão do cliente. Aguarde o resultado antes de registrar a quitação.');
       }
       const before = (await this.delinquency.outstandingMap([debt], tx)).get(debt.id) ?? 0;
       if (dto.amountCents > before) throw amountMismatch(`O valor passa do saldo do débito (${before}).`);

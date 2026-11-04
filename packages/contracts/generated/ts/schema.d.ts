@@ -2261,6 +2261,9 @@ export interface paths {
          *     débito de balcão `pending` (excedente do período, multa de zona, dano) ou um débito antigo `failed`. Informe
          *     exatamente um entre `method` (pagamento no balcão) e `fromDepositId` (abater da caução de balcão do mesmo
          *     cliente); os dois ou nenhum → `400` `validation-error`. Não é dívida em aberto → `409` `debt-not-payable`.
+         *     Débito de assinatura com cobrança automática ainda em andamento no gateway (assinatura `past_due` ou cancelamento
+         *     no gateway pendente) → `409` `debt-in-collection` ("Há uma cobrança automática em andamento no cartão do cliente.
+         *     Aguarde o resultado antes de registrar a quitação."); débito de aluguel `failed` sempre pode ser quitado.
          *     `amountCents` ≤ saldo do débito, e com `fromDepositId` também ≤ disponível da caução; senão `422`
          *     `counter-amount-mismatch`. Cada parte vira um `Payment` `debt_settlement` `paid` (`settlesPaymentId` = este id,
          *     `recordedBy` = atendente; com caução, `depositId` e `capturedCents` da caução somados). Saldo do débito de balcão = valor −
@@ -10576,7 +10579,15 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
+            /** @description `debt-not-payable` (não é dívida em aberto), `debt-in-collection` (assinatura ainda em cobrança automática) ou `conflict` (caução que não é do balcão). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
             422: components["responses"]["Unprocessable"];
         };
     };
