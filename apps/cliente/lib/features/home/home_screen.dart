@@ -1142,11 +1142,16 @@ class _ActiveRideCardState extends ConsumerState<_ActiveRideCard> {
           Semantics(header: true, child: Text(l.rentalInProgress, style: VoltiTypography.title)),
           const SizedBox(height: VoltiSpacing.s4),
           // Fonte grande: placa, tempo e valor quebram em vez de estourar.
-          Wrap(spacing: VoltiSpacing.s12, runSpacing: VoltiSpacing.s4, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            Text(r.vehicleCode, style: VoltiTypography.caption),
-            Text(clock(_elapsed()), key: const Key('home-ride-elapsed'), style: figure),
-            Text(money(r.costCents), key: const Key('home-ride-cost'), style: figure),
-          ]),
+          // Leitor de tela: um nó só com contexto ("custo acumulado"), sem liveRegion no tempo.
+          Semantics(
+            label: '${r.vehicleCode}, ${clock(_elapsed())}, ${l.accumulatedCost} ${money(r.costCents)}',
+            excludeSemantics: true,
+            child: Wrap(spacing: VoltiSpacing.s12, runSpacing: VoltiSpacing.s4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              Text(r.vehicleCode, style: VoltiTypography.caption),
+              Text(clock(_elapsed()), key: const Key('home-ride-elapsed'), style: figure),
+              Text(money(r.costCents), key: const Key('home-ride-cost'), style: figure),
+            ]),
+          ),
           const SizedBox(height: VoltiSpacing.s12),
           VoltiButton(
             key: const Key('home-back-to-ride'),
