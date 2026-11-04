@@ -129,6 +129,25 @@ String formatCentsPerMinute(int cents) {
   return 'R\$ $reais,$c/min';
 }
 
+/// "R$ 1.075,50" (dinheiro em centavos inteiros).
+String formatBrl(int cents) {
+  final reais = _group(cents.abs() ~/ 100);
+  final c = (cents.abs() % 100).toString().padLeft(2, '0');
+  return '${cents < 0 ? '-' : ''}R\$ $reais,$c';
+}
+
+final _reais = RegExp(r'^(\d{1,3}(\.\d{3})+|\d+)(,\d{1,2})?$');
+
+/// Valor digitado em reais ("60", "60,5", "1.075,50") -> centavos inteiros; `null` se invalido.
+int? parseReaisToCents(String text) {
+  final s = text.trim().replaceAll('R\$', '').trim();
+  if (!_reais.hasMatch(s)) return null;
+  final parts = s.replaceAll('.', '').split(',');
+  final whole = int.parse(parts[0]);
+  final frac = parts.length > 1 ? int.parse(parts[1].padRight(2, '0')) : 0;
+  return whole * 100 + frac;
+}
+
 /// Fuso de exibicao do projeto (America/Sao_Paulo): UTC-3 fixo, sem horario de
 /// verao desde 2019 (mesma regra da API para as janelas de manutencao).
 const Duration saoPauloOffset = Duration(hours: -3);

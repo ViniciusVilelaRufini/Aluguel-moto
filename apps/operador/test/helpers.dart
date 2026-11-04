@@ -427,7 +427,100 @@ class FakeFieldRepository implements FieldRepository {
     }
     return v;
   }
+
+  // ── Balcao: contrato e pagamento ──
+
+  /// Total da cotacao (`totalCents`) devolvido pelo fake.
+  int quoteTotalCents = 7500;
+  final quoteQueries = <(String, CounterPlanCode, InsuranceCoverage, int)>[];
+  final contractUploads = <String>[];
+  final checkouts = <({String handoverId, CounterCheckoutRequest request, String key})>[];
+  final checkoutKeys = <String>[];
+
+  /// Recusa do `counter-checkout` (consumida na primeira tentativa).
+  RepositoryException? checkoutRejectOnce;
+
+  /// Segura o `counter-checkout` ate o teste completar (duplo toque).
+  Completer<void>? checkoutGate;
+
+  @override
+  Future<CounterQuote> getCounterQuote(String handoverId,
+      {required CounterPlanCode plan,
+      required InsuranceCoverage coverage,
+      required int quantity}) async {
+    _check();
+    quoteQueries.add((handoverId, plan, coverage, quantity));
+    return CounterQuote((b) => b
+      ..planCode = plan
+      ..quantity = quantity
+      ..coverage = coverage
+      ..planUnitCents = quoteTotalCents
+      ..planCents = quoteTotalCents
+      ..insuranceCents = 0
+      ..totalCents = quoteTotalCents
+      ..excessDayCents = 6000
+      ..periodDays = 1);
+  }
+
+  @override
+  Future<String> uploadContractPhoto(String path) async {
+    _check();
+    contractUploads.add(path);
+    return 'contracts/${contractUploads.length}.jpg';
+  }
+
+  @override
+  Future<Rental> counterCheckout(String handoverId, CounterCheckoutRequest request,
+      {required String idempotencyKey}) async {
+    _check();
+    checkoutKeys.add(idempotencyKey);
+    if (checkoutGate != null) await checkoutGate!.future;
+    final reject = checkoutRejectOnce;
+    if (reject != null) {
+      checkoutRejectOnce = null;
+      throw reject;
+    }
+    // Mesma chave nao duplica (como a API).
+    if (checkouts.every((c) => c.key != idempotencyKey)) {
+      checkouts.add((handoverId: handoverId, request: request, key: idempotencyKey));
+    }
+    final h = handovers[handoverId];
+    if (h != null) {
+      handovers[handoverId] = h.rebuild((b) => b
+        ..status = HandoverStatus.accepted
+        ..rentalId = 'rental-1'
+        ..lastError = null);
+    }
+    final now = DateTime.utc(2026, 11, 4, 13);
+    return Rental((b) => b
+      ..id = 'rental-1'
+      ..customerId = 'cust-1'
+      ..vehicleId = 'veh-7'
+      ..vehicleCode = 'VLT-0007'
+      ..planCode = PlanCode.valueOf(request.planCode.name)
+      ..coverage = request.coverage
+      ..status = RentalStatus.active
+      ..startedAt = now
+      ..elapsedSeconds = 0
+      ..pausedSeconds = 0
+      ..costCents = 0
+      ..depositId = 'dep-1'
+      ..createdAt = now
+      ..updatedAt = now);
+  }
 }
+
+Handover fakePendingHandover({String id = 'ho-1'}) => Handover((b) => b
+  ..id = id
+  ..type = HandoverType.pickup
+  ..depotId = 'depot-1'
+  ..reservationId = reservationUuid
+  ..vehicleId = 'veh-7'
+  ..vehicleCode = 'VLT-0007'
+  ..operatorId = 'op-1'
+  ..batteryPct = 98
+  ..status = HandoverStatus.pendingCustomer
+  ..createdAt = DateTime.utc(2026, 11, 4, 12));
 
 const reservationUuid = '6c1f0a52-8f3e-4b8e-9d55-0d6a7f1e2c11';
 

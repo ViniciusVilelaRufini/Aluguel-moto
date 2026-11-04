@@ -1471,7 +1471,7 @@ abstract class AppLocalizations {
   /// No description provided for @pickupStatusHandover.
   ///
   /// In pt, this message translates to:
-  /// **'Aguardando o cliente'**
+  /// **'Contrato e pagamento'**
   String get pickupStatusHandover;
 
   /// No description provided for @pickupStatusConverted.
@@ -1806,7 +1806,7 @@ abstract class AppLocalizations {
   /// No description provided for @handoverAccepted.
   ///
   /// In pt, this message translates to:
-  /// **'Aceito — moto liberada'**
+  /// **'Aluguel iniciado — moto liberada'**
   String get handoverAccepted;
 
   /// No description provided for @handoverAcceptedBody.
@@ -2479,6 +2479,276 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Bateria descarregada na estação {name}.'**
   String unloadedStation(String name);
+
+  /// No description provided for @counterTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Contrato e pagamento'**
+  String get counterTitle;
+
+  /// No description provided for @counterBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'Registre o contrato assinado e o pagamento recebido no balcão para iniciar o aluguel.'**
+  String get counterBody;
+
+  /// No description provided for @counterPlan.
+  ///
+  /// In pt, this message translates to:
+  /// **'Plano'**
+  String get counterPlan;
+
+  /// No description provided for @counterPlanDay.
+  ///
+  /// In pt, this message translates to:
+  /// **'Diária'**
+  String get counterPlanDay;
+
+  /// No description provided for @counterPlanWeekly.
+  ///
+  /// In pt, this message translates to:
+  /// **'Semanal'**
+  String get counterPlanWeekly;
+
+  /// No description provided for @counterPlanMonthly.
+  ///
+  /// In pt, this message translates to:
+  /// **'Mensal'**
+  String get counterPlanMonthly;
+
+  /// No description provided for @counterQuantity.
+  ///
+  /// In pt, this message translates to:
+  /// **'Quantidade'**
+  String get counterQuantity;
+
+  /// No description provided for @counterQuantityDays.
+  ///
+  /// In pt, this message translates to:
+  /// **'{n, plural, =1{1 dia} other{{n} dias}}'**
+  String counterQuantityDays(int n);
+
+  /// No description provided for @counterQuantityWeeks.
+  ///
+  /// In pt, this message translates to:
+  /// **'{n, plural, =1{1 semana} other{{n} semanas}}'**
+  String counterQuantityWeeks(int n);
+
+  /// No description provided for @counterQuantityMonths.
+  ///
+  /// In pt, this message translates to:
+  /// **'{n, plural, =1{1 mês} other{{n} meses}}'**
+  String counterQuantityMonths(int n);
+
+  /// No description provided for @counterQuantityLess.
+  ///
+  /// In pt, this message translates to:
+  /// **'Diminuir a quantidade'**
+  String get counterQuantityLess;
+
+  /// No description provided for @counterQuantityMore.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aumentar a quantidade'**
+  String get counterQuantityMore;
+
+  /// No description provided for @counterCoverage.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seguro'**
+  String get counterCoverage;
+
+  /// No description provided for @counterCoverageBasic.
+  ///
+  /// In pt, this message translates to:
+  /// **'Básico'**
+  String get counterCoverageBasic;
+
+  /// No description provided for @counterCoverageBasicNote.
+  ///
+  /// In pt, this message translates to:
+  /// **'Obrigatório'**
+  String get counterCoverageBasicNote;
+
+  /// No description provided for @counterCoverageFull.
+  ///
+  /// In pt, this message translates to:
+  /// **'Completo'**
+  String get counterCoverageFull;
+
+  /// No description provided for @counterCoverageFullNote.
+  ///
+  /// In pt, this message translates to:
+  /// **'Opcional'**
+  String get counterCoverageFullNote;
+
+  /// No description provided for @counterTotal.
+  ///
+  /// In pt, this message translates to:
+  /// **'Total a receber'**
+  String get counterTotal;
+
+  /// No description provided for @counterQuoteBreakdown.
+  ///
+  /// In pt, this message translates to:
+  /// **'Plano {plan} + seguro {insurance}'**
+  String counterQuoteBreakdown(String plan, String insurance);
+
+  /// No description provided for @counterQuoteLoading.
+  ///
+  /// In pt, this message translates to:
+  /// **'Calculando o valor…'**
+  String get counterQuoteLoading;
+
+  /// No description provided for @counterQuoteError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível calcular o valor.'**
+  String get counterQuoteError;
+
+  /// No description provided for @counterQuoteRetry.
+  ///
+  /// In pt, this message translates to:
+  /// **'Calcular de novo'**
+  String get counterQuoteRetry;
+
+  /// No description provided for @counterContractPhotos.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fotos do contrato'**
+  String get counterContractPhotos;
+
+  /// No description provided for @counterContractPhotosHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fotografe o contrato assinado (1 a 4 fotos).'**
+  String get counterContractPhotosHint;
+
+  /// No description provided for @counterContractPhotoAdd.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fotografar o contrato'**
+  String get counterContractPhotoAdd;
+
+  /// No description provided for @counterMethod.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagamento recebido'**
+  String get counterMethod;
+
+  /// No description provided for @counterMethodCard.
+  ///
+  /// In pt, this message translates to:
+  /// **'Maquininha (cartão)'**
+  String get counterMethodCard;
+
+  /// No description provided for @counterMethodPix.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix no balcão'**
+  String get counterMethodPix;
+
+  /// No description provided for @counterMethodCash.
+  ///
+  /// In pt, this message translates to:
+  /// **'Dinheiro'**
+  String get counterMethodCash;
+
+  /// No description provided for @counterReference.
+  ///
+  /// In pt, this message translates to:
+  /// **'Referência (NSU ou ID do Pix)'**
+  String get counterReference;
+
+  /// No description provided for @counterReferenceHelp.
+  ///
+  /// In pt, this message translates to:
+  /// **'Opcional. Nunca digite os dados do cartão.'**
+  String get counterReferenceHelp;
+
+  /// No description provided for @counterDeposit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Caução (opcional)'**
+  String get counterDeposit;
+
+  /// No description provided for @counterDepositAmount.
+  ///
+  /// In pt, this message translates to:
+  /// **'Valor da caução (R\$)'**
+  String get counterDepositAmount;
+
+  /// No description provided for @counterDepositReference.
+  ///
+  /// In pt, this message translates to:
+  /// **'Referência da caução'**
+  String get counterDepositReference;
+
+  /// No description provided for @counterAmountInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Digite um valor válido, como 150,00.'**
+  String get counterAmountInvalid;
+
+  /// No description provided for @counterStart.
+  ///
+  /// In pt, this message translates to:
+  /// **'Iniciar aluguel'**
+  String get counterStart;
+
+  /// No description provided for @counterMissing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Para iniciar: {parts}.'**
+  String counterMissing(String parts);
+
+  /// No description provided for @counterMissingPhoto.
+  ///
+  /// In pt, this message translates to:
+  /// **'fotografe o contrato'**
+  String get counterMissingPhoto;
+
+  /// No description provided for @counterMissingMethod.
+  ///
+  /// In pt, this message translates to:
+  /// **'escolha o pagamento'**
+  String get counterMissingMethod;
+
+  /// No description provided for @counterMissingDepositMethod.
+  ///
+  /// In pt, this message translates to:
+  /// **'escolha o método da caução'**
+  String get counterMissingDepositMethod;
+
+  /// No description provided for @counterMissingQuote.
+  ///
+  /// In pt, this message translates to:
+  /// **'aguarde o valor'**
+  String get counterMissingQuote;
+
+  /// No description provided for @counterAmountChanged.
+  ///
+  /// In pt, this message translates to:
+  /// **'O valor mudou. Confira e toque de novo.'**
+  String get counterAmountChanged;
+
+  /// No description provided for @counterConsentRequired.
+  ///
+  /// In pt, this message translates to:
+  /// **'Peça ao cliente para permitir a localização no app'**
+  String get counterConsentRequired;
+
+  /// No description provided for @counterOffline.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem conexão. Contrato e pagamento precisam de rede.'**
+  String get counterOffline;
+
+  /// No description provided for @handoverCounterCheckout.
+  ///
+  /// In pt, this message translates to:
+  /// **'Contrato e pagamento'**
+  String get handoverCounterCheckout;
 }
 
 class _AppLocalizationsDelegate

@@ -18,8 +18,9 @@ enum _SubmitError { offline, invalidCode, other }
 
 /// Checklist de saida: freios, luzes, pneus, buzina, painel, carenagem,
 /// bateria (% e serie), fotos de frente, tras e lados (minimo 4). Envia a
-/// entrega (`POST /handovers`, `pickup`) e abre o estado ao vivo. Sem rede o
-/// rascunho fica guardado: o cliente precisa aceitar com o servidor.
+/// entrega (`POST /handovers`, `pickup`) e abre o estado ao vivo com "Contrato e
+/// pagamento" por cima. Sem rede o rascunho fica guardado: o aluguel so comeca
+/// com o servidor.
 class PickupChecklistPage extends ConsumerStatefulWidget {
   const PickupChecklistPage({super.key, required this.pickupCode, this.reservation, this.scanSerial});
 
@@ -120,7 +121,8 @@ class _PickupChecklistPageState extends ConsumerState<PickupChecklistPage> {
       _drafts.clear(widget.pickupCode);
       VoltiHaptics.success();
       await Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
-          builder: (_) => HandoverStatusPage(handoverId: handover.id, initial: handover)));
+          builder: (_) =>
+              HandoverStatusPage(handoverId: handover.id, initial: handover, openCounterCheckout: true)));
     } on RepositoryException catch (e) {
       if (!mounted) return;
       // Resposta perdida: a entrega ja existe. Recarrega a agenda e abre o estado.
@@ -130,7 +132,7 @@ class _PickupChecklistPageState extends ConsumerState<PickupChecklistPage> {
         if (handoverId != null) {
           _drafts.clear(widget.pickupCode);
           await Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
-              builder: (_) => HandoverStatusPage(handoverId: handoverId)));
+              builder: (_) => HandoverStatusPage(handoverId: handoverId, openCounterCheckout: true)));
           return;
         }
       }
