@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -10,6 +11,7 @@ import 'package:volti_cliente/core/launcher.dart';
 import 'package:volti_cliente/core/router.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
+import 'package:volti_cliente/features/home/depot_providers.dart';
 import 'package:volti_cliente/features/pickup/pickup_screen.dart';
 import 'package:volti_cliente/features/reservation/depot_reservation_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
@@ -110,6 +112,37 @@ void main() {
       await tapText(t, 'Escolher moto');
       expect(find.textContaining('VLT-009'), findsWidgets);
       expect(find.textContaining('VLT-001'), findsNothing);
+    });
+
+    testWidgets('"Escolher moto" abre o galpao que a home mostra, mesmo se a ordem dos galpoes mudar depois', (t) async {
+      // Emulador (2026-11-04): a home mostrava Vila Sao Luiz (mais perto) e a lista abriu Pinheiros — a localizacao
+      // relida sem resposta reordena os galpoes pela ordem da API.
+      phone(t);
+      final b = GalpaoBackend(
+        depots: [
+          depotFixture(id: 'far', name: 'Galpão Volti — Mooca', district: 'Mooca', count: 1, distanceM: 9000),
+          depotFixture(id: 'dep1', distanceM: 1200),
+        ],
+        vehicles: {
+          'dep1': [bike('v1', 'VLT-001', 'Volti Urbana')],
+          'far': [bike('v9', 'VLT-009', 'Volti Touring', depotId: 'far')],
+        },
+      );
+      await pumpApp(t, b);
+      expect(find.text('Galpão Volti · Pinheiros · 3 motos disponíveis'), findsOneWidget);
+      await tapText(t, 'Escolher moto');
+      expect(find.textContaining('VLT-001'), findsWidgets);
+      // A lista de galpoes volta sem distancia (outra ordem): a tela continua no galpao escolhido.
+      b.depotList
+        ..clear()
+        ..addAll([
+          depotFixture(id: 'far', name: 'Galpão Volti — Mooca', district: 'Mooca', count: 1),
+          depotFixture(id: 'dep1'),
+        ]);
+      ProviderScope.containerOf(t.element(find.textContaining('VLT-001').first)).invalidate(depotsProvider);
+      await settle(t);
+      expect(find.textContaining('VLT-001'), findsWidgets);
+      expect(find.textContaining('VLT-009'), findsNothing);
     });
 
     testWidgets('sabado depois das 18h: fechado com a proxima abertura (segunda)', (t) async {

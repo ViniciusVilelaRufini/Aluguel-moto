@@ -789,7 +789,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                             size: VoltiButtonSize.lg,
                             fullWidth: true,
                             shine: true,
-                            onPressed: () => context.push('/pick'),
+                            // Fixa o galpao que o cliente esta vendo: a lista nao pode trocar de galpao se a
+                            // ordem "mais perto primeiro" mudar depois (localizacao relida sem resposta).
+                            onPressed: () {
+                              ref.read(selectedDepotIdProvider.notifier).select(current.id);
+                              context.push('/pick');
+                            },
                           ),
                         ),
                       ),
