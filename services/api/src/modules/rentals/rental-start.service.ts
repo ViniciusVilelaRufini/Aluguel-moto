@@ -155,6 +155,9 @@ export class RentalStartService {
         type: 'unlock',
         reason: 'Início do aluguel',
         actor: user,
+        // Sempre autoridade de cliente, mesmo com o atendente do balcão como ator (admin/operacao teriam `staff`): trava da
+        // equipe/sistema ou modo roubada gravados depois da pré-checagem recusam o unlock (`locked_by_staff`) em vez de apagá-los.
+        authority: 'customer',
         context: { rentalId, purpose: 'rental_start' },
         auditAction: 'rental.unlock',
       });

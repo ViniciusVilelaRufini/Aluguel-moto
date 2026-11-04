@@ -58,6 +58,12 @@ export interface DispatchInput {
   context?: Pick<CommandPayload, 'rentalId' | 'fieldTaskId' | 'purpose'>;
   /** Ação de auditoria (padrão `vehicle.command.<type>`). */
   auditAction?: string;
+  /**
+   * Autoridade do comando quando não é a do ator (padrão `authorityOf(actor)`). Ex.: o unlock do início do aluguel no balcão
+   * é pedido pelo atendente (auditoria e `requestedBy`), mas com autoridade de cliente: trava da equipe/sistema e modo roubada
+   * continuam recusando o unlock (`locked_by_staff`).
+   */
+  authority?: CommandAuthority;
 }
 
 /**
@@ -133,7 +139,7 @@ export class CommandsService {
       return created;
     });
 
-    const authority = authorityOf(input.actor);
+    const authority = input.authority ?? authorityOf(input.actor);
     // Rastreador só relé (spec GT06 §3.3): sem limite de velocidade nem buzina — recusado sem tocar no shadow.
     const unsupported = controlMode === 'relay_only' && (input.type === 'speed_limit' || input.type === 'horn');
     // Modo roubada no cadastro: unlock de cliente/campo recusado sem chamar o gateway (nada é publicado).

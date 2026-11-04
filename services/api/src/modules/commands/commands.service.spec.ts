@@ -134,6 +134,29 @@ describe('Comandos remotos', () => {
       service = new CommandsService(h.prisma as any, audit as unknown as AuditService, iot, new EventEmitter2());
     });
 
+    describe('autoridade explícita (início do aluguel no balcão)', () => {
+      const admin: Principal = { ...operator, groups: ['admin'] };
+
+      it('unlock de admin com authority customer → gateway recebe customer; auditoria e requestedBy ficam com o atendente', async () => {
+        await service.dispatch({ vehicleId: VEHICLE_ID, type: 'unlock', reason: 'Início do aluguel', actor: admin, authority: 'customer' });
+        expect(iot.unlock).toHaveBeenCalledWith(expect.objectContaining({ authority: 'customer' }));
+        expect(h.prisma.vehicleCommand.create).toHaveBeenCalledWith({ data: expect.objectContaining({ requestedById: STAFF_ID, requestedByType: 'staff' }) });
+        expect(audit.record.mock.calls[0][0]).toMatchObject({ actor: admin, action: 'vehicle.command.unlock' });
+      });
+
+      it('moto em modo roubada: unlock de admin com authority customer → failed/locked_by_staff sem chamar o gateway', async () => {
+        h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, stolenMode: true } as any);
+        const out = await service.dispatch({ vehicleId: VEHICLE_ID, type: 'unlock', reason: 'Início do aluguel', actor: admin, authority: 'customer' });
+        expect(out).toMatchObject({ status: 'failed', statusReason: 'locked_by_staff' });
+        expect(iot.unlock).not.toHaveBeenCalled();
+      });
+
+      it('sem authority, admin continua com autoridade staff (comando do painel)', async () => {
+        await service.dispatch({ vehicleId: VEHICLE_ID, type: 'unlock', reason: 'Desbloqueio manual', actor: admin });
+        expect(iot.unlock).toHaveBeenCalledWith(expect.objectContaining({ authority: 'staff' }));
+      });
+    });
+
     it.each([
       ['lock', {}],
       ['unlock', {}],

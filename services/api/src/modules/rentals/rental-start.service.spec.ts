@@ -737,6 +737,48 @@ describe('Início do aluguel (POST /rentals)', () => {
       expect(released).not.toHaveBeenCalled();
     });
 
+    describe('fix 1: o unlock do balcão tem autoridade de cliente (as guardas de trava da equipe/modo roubada valem)', () => {
+      const admin = { ...operator, groups: ['admin'] };
+      // Simula o CommandsService/gateway: com autoridade de cliente, trava da equipe/sistema ou modo roubada recusa o unlock.
+      const lockedUnlock = () =>
+        commands.dispatch.mockImplementation(async (i: any) =>
+          i.type === 'unlock' && i.authority !== 'staff' ? { id: 'cmd-u', status: 'failed', statusReason: 'locked_by_staff' } : { id: 'cmd-x', status: 'confirmed' },
+        );
+
+      it('(c) checkout normal de admin: o unlock sai com authority customer e o atendente como ator; o aluguel começa', async () => {
+        const r = await svc().start(admin, dto, `counter:${HO_ID}`, { fromHandover, counter });
+        expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'unlock', actor: admin, authority: 'customer' }));
+        expect(r.status).toBe(201);
+      });
+
+      it('(a) trava da equipe gravada depois da pré-checagem → unlock recusado locked_by_staff: nada gravado, moto volta a reserved', async () => {
+        lockedUnlock();
+        await expect(svc().start(admin, dto, `counter:${HO_ID}`, { fromHandover, counter })).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+        expect(h.prisma.rental.create).not.toHaveBeenCalled();
+        expect(h.prisma.payment.create).not.toHaveBeenCalled();
+        expect(h.prisma.deposit.create).not.toHaveBeenCalled();
+        expect(h.prisma.handover.updateMany).not.toHaveBeenCalled();
+        expect(h.prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'reserved' } });
+        expect(insurance.cancel).toHaveBeenCalledWith(POLICY_ID);
+      });
+
+      it('(b) moto em modo roubada → recusada no checkout sem destravar nem gravar', async () => {
+        h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'reserved', depotId: DEPOT_ID, stolenMode: true } as any);
+        commands.isLockedByStaff.mockImplementation(async (v: any) => !!v.stolenMode);
+        await expect(svc().start(admin, dto, `counter:${HO_ID}`, { fromHandover, counter })).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+        expect(commands.dispatch).not.toHaveBeenCalled();
+        expect(h.prisma.rental.create).not.toHaveBeenCalled();
+        expect(h.prisma.payment.create).not.toHaveBeenCalled();
+      });
+
+      it('(b) modo roubada ligado entre a pré-checagem e o unlock → unlock recusado, nada gravado', async () => {
+        lockedUnlock();
+        await expect(svc().start(admin, dto, `counter:${HO_ID}`, { fromHandover, counter })).rejects.toMatchObject({ slug: 'vehicle-unavailable' });
+        expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'unlock', authority: 'customer' }));
+        expect(h.prisma.payment.create).not.toHaveBeenCalled();
+      });
+    });
+
     it('counter sem fromHandover → erro de programação, nada reivindicado', async () => {
       await expect(svc().start(operator, dto, 'counter:x', { counter })).rejects.toThrow();
       expect(h.prisma.vehicle.updateMany).not.toHaveBeenCalled();
