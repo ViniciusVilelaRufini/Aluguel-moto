@@ -354,8 +354,12 @@ done
     expect(mounts[0].startsWith(`${slash(panelTmp)}/volti-panel.`)).toBe(true);
     expect(calls).toEqual(expect.arrayContaining(['mount-has-admin', 'mount-has-contracts']));
     for (const bad of ['mount-has-git', 'mount-has-deploy', 'mount-has-services']) expect(calls).not.toContain(bad);
-    const sync = calls.find((c) => c.startsWith('aws s3 sync '))!;
-    expect(sync).toBe(`aws s3 sync ${mounts[0]}/apps/admin/out s3://painel --delete`);
+    // Static com hash primeiro e sem --delete (quem tem a versão anterior aberta não perde os chunks); depois o resto.
+    const syncs = calls.filter((c) => c.startsWith('aws s3 sync '));
+    expect(syncs).toEqual([
+      `aws s3 sync ${mounts[0]}/apps/admin/out/_next/static s3://painel/_next/static`,
+      `aws s3 sync ${mounts[0]}/apps/admin/out s3://painel --delete --exclude _next/static/*`,
+    ]);
     // The build output never lands in the repo and the copy is gone.
     expect(existsSync(join(f.repo, 'apps', 'admin', 'out'))).toBe(false);
     expect(readdirSync(panelTmp)).toEqual([]);
