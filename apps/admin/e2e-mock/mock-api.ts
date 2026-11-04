@@ -354,6 +354,7 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
   }
   if (method === 'POST' && match(/^\/payments\/[^/]+\/counter-settle$/)) {
     const debt = db.counter.debts.find((x) => x.paymentId === id); if (!debt) return notFound();
+    if (db.counter.settledByOtherOnce) { db.counter.settledByOtherOnce = false; debt.outstandingCents = 0; debt.status = 'paid'; return { status: 409, json: problem(409, 'Este débito não pode mais ser pago.', 'debt-not-payable') }; }
     const amount = Number(b.amountCents);
     if (amount > debt.outstandingCents) return { status: 422, json: problem(422, `O valor passa do saldo do débito (${debt.outstandingCents}).`, 'counter-amount-mismatch') };
     if (b.fromDepositId) {

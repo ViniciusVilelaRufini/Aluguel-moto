@@ -310,6 +310,8 @@ export function makeCounterState() {
     checkoutError: undefined as { status: number; slug: string; title: string } | undefined,
     /** O próximo acerto é registrado e a resposta "se perde" (500), como um timeout depois do commit. */
     failAfterApplyOnce: false,
+    /** O próximo acerto responde 409 porque outra pessoa já quitou o débito (ele some do saldo). */
+    settledByOtherOnce: false,
     /** Respostas de sucesso do acerto por `Idempotency-Key` (replay como na API). */
     idempotent: new Map<string, { status?: number; json: unknown }>(),
   };

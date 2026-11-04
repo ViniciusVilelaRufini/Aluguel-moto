@@ -7,7 +7,7 @@ import { formatBRL } from '@/lib/format';
 import { toReais } from '@/lib/money';
 import { DEPOSIT_METHOD, PAYMENT_KIND, PAYMENT_METHOD } from '@/lib/labels';
 import { useSubmitGuard } from '@/lib/submit-guard';
-import { COUNTER_METHODS, COUNTER_METHOD_LABEL, counterKeys, isRentalOpen, reaisToCents, type CounterMethod } from '@/lib/counter';
+import { COUNTER_METHODS, COUNTER_METHOD_LABEL, counterKeys, isLostResponse, isRentalOpen, reaisToCents, type CounterMethod } from '@/lib/counter';
 import type { S } from '@/lib/types';
 import { ErrorNote, Field, Modal, PanelSkeleton, SectionTitle, Select, TextInput, useToast } from './ui';
 import { Alert } from '@/ds/Alert';
@@ -66,6 +66,7 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
   const [fieldError, setFieldError] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [otherSettled, setOtherSettled] = useState<string | null>(null);
 
   // Sempre do servidor ao abrir (sem o staleTime padrão): o valor sugerido nunca vem de um saldo antigo.
   const balance = useQuery({
@@ -98,6 +99,7 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
     setFieldError(undefined);
     setError(null);
     setNotice(null);
+    setOtherSettled(null);
   };
 
   const limit = (): { cents: number; text: string } => {
@@ -134,15 +136,20 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
       counterKeys.clear(signature);
       setAction(null);
     } catch (e) {
-      // Resposta perdida: lê o saldo do servidor. Se o alvo da ação já não está lá, o acerto foi registrado por inteiro.
+      // Só rede/timeout/5xx pode ter registrado: relê o saldo e, se o alvo sumiu, o acerto foi por inteiro.
+      // Um 4xx é recusa da API (ex.: outra pessoa já quitou): mostra o erro, sem dizer que o acerto foi registrado.
       const fresh = await balance.refetch().then((r) => r.data, () => undefined);
-      const settled = fresh && (action.kind === 'refund'
+      const gone = fresh && (action.kind === 'refund'
         ? !fresh.deposits.some((d) => d.depositId === action.depositId)
         : !fresh.debts.some((d) => d.paymentId === action.paymentId));
-      if (settled) {
+      if (gone && isLostResponse(e)) {
         counterKeys.clear(signature);
         setAction(null);
         setNotice(action.kind === 'refund' ? 'Devolução registrada. A caução já estava devolvida por inteiro; confira o saldo.' : 'Acerto registrado. O valor já estava quitado por inteiro; confira o saldo.');
+      } else if (gone) {
+        counterKeys.clear(signature);
+        setAction(null);
+        setOtherSettled(action.kind === 'refund' ? 'Esta caução já foi devolvida por outra pessoa.' : 'Este débito já foi quitado por outra pessoa.');
       } else {
         setError(errorText(e));
       }
@@ -166,6 +173,7 @@ export function CounterSettleDialog({ rentalId, onClose }: { rentalId: string; o
         </div>
       )}
       {notice && <Alert tone="success" testId="counter-settle-notice">{notice}</Alert>}
+      {otherSettled && <Alert tone="info" testId="counter-settle-other">{otherSettled}</Alert>}
       {b && !waiting && (
         <>
           {b.customerFirstName && <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Cliente: <strong style={{ color: 'var(--text-primary)' }}>{b.customerFirstName}</strong></div>}
