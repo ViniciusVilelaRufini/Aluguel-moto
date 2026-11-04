@@ -400,6 +400,11 @@ export interface Pager {
   failed?: boolean;
 }
 
+/** Classe do contêiner de rolagem: cabeçalho fixo (`sticky`) só enquanto a tabela cabe; ao transbordar, rola na horizontal com sombras nas bordas. */
+export function tableScrollClass(sticky?: boolean, overflowing?: boolean): string {
+  return ['table-scroll', sticky ? 'table-sticky' : '', overflowing ? 'table-overflow' : ''].filter(Boolean).join(' ');
+}
+
 export function DataTable<T extends object>({
   columns, rows, rowKey = 'id', selectedKey, onRowClick, dense, loading, empty = 'Nada por aqui ainda.', emptyIcon = 'Search', emptyHint, emptyAction, pager, testId, rowClassName, label, sticky,
 }: {
@@ -415,9 +420,23 @@ export function DataTable<T extends object>({
   const get = (r: T, k: string) => (r as Record<string, unknown>)[k];
   const skeleton = loading && rows.length === 0;
   const refetching = !!pager?.loading && rows.length > 0;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const check = () => setOverflowing(el.scrollWidth > el.clientWidth + 1);
+    check();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    const t = el.firstElementChild;
+    if (t) ro.observe(t);
+    return () => ro.disconnect();
+  }, [columns.length, rows.length]);
   return (
     <div data-testid={testId} className="dt" style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
-      <div className={sticky ? 'table-scroll table-sticky' : 'table-scroll'}>
+      <div ref={scrollRef} className={tableScrollClass(sticky, overflowing)} data-overflowing={overflowing || undefined} tabIndex={overflowing ? 0 : undefined} role={overflowing ? 'region' : undefined} aria-label={overflowing && label ? `${label} (role para o lado para ver mais colunas)` : undefined}>
         <table aria-label={label} aria-busy={skeleton || refetching || undefined} style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 14, fontWeight: 500 }}>
           <thead>
             <tr>

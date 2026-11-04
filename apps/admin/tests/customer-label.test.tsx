@@ -25,3 +25,12 @@ describe('identidade do cliente', () => {
     expect(html).not.toContain('sem-email');
   });
 });
+
+describe('tabela larga', () => {
+  it('classe de rolagem: sticky e transbordo', async () => {
+    const { tableScrollClass } = await import('@/components/ui');
+    expect(tableScrollClass(true, false)).toBe('table-scroll table-sticky');
+    expect(tableScrollClass(true, true)).toBe('table-scroll table-sticky table-overflow');
+    expect(tableScrollClass(false, true)).toBe('table-scroll table-overflow');
+  });
+});

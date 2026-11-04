@@ -18,6 +18,7 @@ import { WalletAdjustDialog } from '@/components/WalletAdjustDialog';
 import { DelinquencyClearDialog } from '@/components/DelinquencyClearDialog';
 import { delinquencySummary } from '@/lib/admin-forms';
 import { canSeeFullPixKey, displayPixKey } from '@/lib/pix';
+import { useNarrow } from '@/lib/use-narrow';
 import { useRealtime } from '@/lib/realtime';
 import { SUBSCRIPTION_STATUS } from '@/lib/labels';
 import { customerLabel, realEmail } from '@/lib/customer-label';
@@ -80,6 +81,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
     mq.addEventListener('change', sync);
     return () => mq.removeEventListener('change', sync);
   }, []);
+  const compact = useNarrow(1300);
   const full = canSeeFullCpf(groups);
   useEffect(() => { const t = setTimeout(() => setDebounced(q), 300); return () => clearTimeout(t); }, [q]);
   useEffect(() => { const v = params.get('q'); if (v) setQ(v); }, [params]);
@@ -127,7 +129,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
                 {r.restricted && <Pill tone="danger">Restrição</Pill>}
               </div>
             ) },
-          ] as Column<S<'Customer'>>[]).filter((c) => !(selected && ['cpf', 'plan', 'rentals'].includes(c.key)))}
+          ] as Column<S<'Customer'>>[]).filter((c) => !(selected && ['cpf', 'plan', 'rentals'].includes(c.key)) && !(compact && ['cpf', 'plan'].includes(c.key)))}
         />
         </div>
       </Page>
