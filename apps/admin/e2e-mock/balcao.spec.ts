@@ -218,3 +218,15 @@ test('Acertar no balcão: resposta perdida com o débito quitado por inteiro avi
   await expect(page.getByTestId('counter-settle-error')).toHaveCount(0);
   await expect(page.getByTestId('counter-settle-dialog')).toContainText('Nenhum valor a acertar');
 });
+
+test('Acertar no balcão: 409 com o débito quitado por outra pessoa não diz que o acerto foi registrado', async ({ page }) => {
+  const mock = await loginMocked(page, { group: 'admin' });
+  mock.db.counter.settledByOtherOnce = true;
+  await page.goto('/customers?tab=rentals&rental=rent-002');
+  await page.getByTestId('rental-counter-settle').click();
+  await page.getByTestId('counter-debt-receive').click();
+  await page.getByTestId('counter-action-confirm').click();
+  await expect(page.getByTestId('counter-settle-other')).toContainText('quitado por outra pessoa');
+  await expect(page.getByTestId('counter-settle-notice')).toHaveCount(0);
+  await expect(page.getByText('Acerto registrado')).toHaveCount(0);
+});

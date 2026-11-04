@@ -109,3 +109,11 @@ export class IdempotencyKeys {
 
 /** Chaves do acerto e do checkout do balcão; no módulo, para sobreviver a fechar e reabrir o diálogo. */
 export const counterKeys = new IdempotencyKeys();
+
+/**
+ * A resposta do acerto pode ter se perdido depois do registro só em erro de rede/timeout ou 5xx. Um 4xx (409, 403, 422)
+ * é recusa explícita da API: o acerto desta pessoa não foi registrado.
+ */
+export function isLostResponse(e: unknown): boolean {
+  return !(e instanceof ApiError) || e.status >= 500;
+}

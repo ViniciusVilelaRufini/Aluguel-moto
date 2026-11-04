@@ -3,7 +3,7 @@ import { can } from '@/lib/permissions';
 import { AUDIT_ACTION_LABEL } from '@/lib/audit-labels';
 import { ApiError, problemMessage } from '@/lib/api';
 import {
-  COUNTER_METHOD_LABEL, COUNTER_PLAN_LABEL, COUNTER_QUANTITY_MAX, IDEMPOTENCY_KEY_TTL_MS, IdempotencyKeys, checkoutErrorMessage, clampQuantity, reaisToCents, isRentalOpen, isGatewayRefundable,
+  COUNTER_METHOD_LABEL, COUNTER_PLAN_LABEL, COUNTER_QUANTITY_MAX, IDEMPOTENCY_KEY_TTL_MS, IdempotencyKeys, isLostResponse, checkoutErrorMessage, clampQuantity, reaisToCents, isRentalOpen, isGatewayRefundable,
 } from '@/lib/counter';
 
 describe('balcão no painel (Task 13)', () => {
@@ -101,4 +101,13 @@ describe('chaves de idempotência com prazo', () => {
     expect(keys.keyFor('x')).not.toBe(b);
   });
   it('prazo de 24 h', () => { expect(IDEMPOTENCY_KEY_TTL_MS).toBe(86_400_000); });
+});
+
+describe('reconciliação do acerto só com resposta perdida', () => {
+  it('rede/timeout e 5xx podem ter registrado; 4xx é recusa', () => {
+    expect(isLostResponse(new Error('Failed to fetch'))).toBe(true);
+    expect(isLostResponse(new ApiError(500, 'x'))).toBe(true);
+    expect(isLostResponse(new ApiError(503, 'x'))).toBe(true);
+    for (const st of [403, 409, 422]) expect(isLostResponse(new ApiError(st, 'x'))).toBe(false);
+  });
 });
