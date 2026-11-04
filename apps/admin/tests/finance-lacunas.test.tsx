@@ -44,7 +44,14 @@ describe('pagamentos', () => {
   it('filtros cobrem todos os status e tipos do contrato', () => {
     expect(PAYMENT_STATUS_OPTIONS.map((o) => o.value).slice(1)).toEqual(Object.keys(PAYMENT_STATUS));
     expect(PAYMENT_KIND_OPTIONS.map((o) => o.value).slice(1)).toEqual(Object.keys(PAYMENT_KIND));
-    expect(PAYMENT_METHOD).toEqual({ card: 'Cartão', pix: 'Pix', wallet: 'Carteira' });
+    expect(PAYMENT_METHOD).toEqual({
+      card: 'Cartão',
+      pix: 'Pix',
+      wallet: 'Carteira',
+      counter_card: 'Maquininha (cartão)',
+      counter_pix: 'Pix no balcão',
+      cash: 'Dinheiro',
+    });
   });
   it('colunas mostram valor em reais e fuso de São Paulo', () => {
     const p = { id: 'p1', customerId: 'c1', kind: 'rental', method: 'pix', status: 'paid', amountCents: 12345, refundedCents: 0, createdAt: '2026-10-24T02:30:00.000Z', updatedAt: '2026-10-24T02:30:00.000Z' } as never;
