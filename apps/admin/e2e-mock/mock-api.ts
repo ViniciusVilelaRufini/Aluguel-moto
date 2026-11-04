@@ -87,6 +87,8 @@ export async function installMockApi(page_: Page, opts: MockOptions = {}): Promi
     const method = req.method();
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
     if (url.pathname.startsWith('/socket.io')) return route.fulfill({ status: 404, headers: CORS });
+    // Links pré-assinados dos arquivos do KYC (GET /customers/{id}/kyc-files): imagem 1x1.
+    if (method === 'GET' && url.pathname.startsWith('/files/')) return route.fulfill({ status: 200, headers: CORS, contentType: 'image/png', body: PNG_1PX });
     let body: unknown;
     try { body = req.postDataJSON(); } catch { body = undefined; }
     mock.calls.push({ method, path: url.pathname, query: url.searchParams, body });
