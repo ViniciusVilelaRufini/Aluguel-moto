@@ -17,6 +17,7 @@ import { BatteryPill } from '@/ds/BatteryPill';
 import { Button } from '@/ds/Button';
 import { FleetStatus } from '@/ds/FleetStatus';
 import { VehicleFormModal } from '../VehicleFormModal';
+import { CollectArrival } from '../depots/CollectArrival';
 import { ErrorNote, Field, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, Select, SidePanel, TextArea, useToast } from '../ui';
 import { ModelCell } from './VehiclesTable';
 
@@ -68,6 +69,7 @@ export function VehicleDetailPanel({ vehicleId, depots, models, onClose }: {
           {can(groups, 'vehicle.transfer') && (
             <Button size="sm" variant="secondary" icon="Truck" testId="vehicle-transfer" disabled={!!blocked} onClick={() => setDialog('transfer')}>Transferir de galpão</Button>
           )}
+          <CollectArrival vehicle={v} testId="vehicle-detail-collect-arrive" />
           {can(groups, 'vehicle.status') && targets.length > 0 && (
             <Button size="sm" variant="secondary" icon={v.status === 'free' ? 'Wrench' : 'CircleCheck'} testId="vehicle-status-change" onClick={() => setDialog('status')}>
               {v.status === 'free' ? 'Colocar em manutenção' : 'Liberar para uso'}
@@ -77,7 +79,7 @@ export function VehicleDetailPanel({ vehicleId, depots, models, onClose }: {
             <Link href={`/fleet?vehicle=${v.id}`} data-testid="vehicle-on-map" style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-link)' }}>Ver no mapa</Link>
           )}
         </div>
-        {blocked && can(groups, 'vehicle.transfer') && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }} data-testid="transfer-blocked">{blocked} A transferência fica disponível quando ela estiver livre ou em manutenção.</div>}
+        {blocked && can(groups, 'vehicle.transfer') && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }} data-testid="transfer-blocked">{blocked} {v.status === 'awaiting_pickup' ? 'Quando ela chegar ao galpão, use "Recebida no galpão"; depois a transferência fica disponível.' : 'A transferência fica disponível quando ela estiver livre ou em manutenção.'}</div>}
         {targets.length === 0 && can(groups, 'vehicle.status') && (
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>A situação só alterna entre Livre e Manutenção; agora ela está {STATUS_LABEL[v.status].toLowerCase()}.</div>
         )}

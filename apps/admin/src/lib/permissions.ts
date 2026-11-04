@@ -77,6 +77,7 @@ export type Action =
   | 'subscription.assignVehicle'
   | 'vehicle.edit'
   | 'vehicle.transfer'
+  | 'collect.arrive'
   | 'depot.edit'
   | 'depot.deactivate'
   | 'handover.cancel'
@@ -123,6 +124,7 @@ const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'subscription.assignVehicle': ['admin', 'operacao'], // PUT /payments/subscriptions/{id}/vehicle
   'vehicle.edit': ['admin', 'operacao'], // PATCH /vehicles/{id}
   'vehicle.transfer': ['admin', 'operacao'], // POST /vehicles/{id}/transfer-depot
+  'collect.arrive': ['admin', 'operacao'], // POST /field-tasks/{id}/start e /complete (tarefa collect, com o galpão)
   'depot.edit': ['admin', 'operacao'],
   // Não há DELETE no contrato: "desativar" (PATCH active=false) fica só com o admin.
   'depot.deactivate': ['admin'],

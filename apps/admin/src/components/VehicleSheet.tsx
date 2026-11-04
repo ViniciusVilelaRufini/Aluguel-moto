@@ -26,6 +26,10 @@ import { auditHref, auditTime, commandSentMessage, signalLabel, stolenModeDescri
 import { MAINTENANCE_STATUS, RENTAL_STATUS } from '@/lib/labels';
 import { SERVICE_STATUS, formatHours, formatKm, maintenanceOrigin, nextServiceLabel } from '@/lib/maintenance';
 import { ForceEndRentalDialog } from './ForceEndRentalDialog';
+import { CounterSettleDialog } from './CounterSettleDialog';
+import { ReturnHandoverDialog } from './depots/ReturnHandoverDialog';
+import { CollectArrival } from './depots/CollectArrival';
+import { canReceiveAtDepot } from '@/lib/return-handover';
 import { SubscriptionVehicleDialog } from './SubscriptionVehicleDialog';
 import { VehicleFormModal } from './VehicleFormModal';
 import { Field, FieldError, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, Skeleton, TextInput, Select, DataTable, useToast } from './ui';
@@ -52,6 +56,9 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   const [editing, setEditing] = useState(false);
   /** Aluguel do "Encerrar à força" aberto (guardado no clique: a ficha relida perde o `currentRentalId` ao encerrar). */
   const [forceEnd, setForceEnd] = useState<string | null>(null);
+  /** "Receber no galpão" e, depois dele, o "Acertar no balcão" do mesmo aluguel (guardados no clique, como acima). */
+  const [receiving, setReceiving] = useState<string | null>(null);
+  const [settling, setSettling] = useState<string | null>(null);
 
   // P3: ao reabrir a ficha, o comando ainda em curso volta (lido do histórico de comandos), em vez de sumir.
   const restored = useRef<string | null>(null);
@@ -247,9 +254,20 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
       )}
 
       {/* A moto que não trava (ex.: sem GPS em local coberto) prende o aluguel em "encerrando": a saída fica aqui, sem abrir o aluguel. */}
-      {v.currentRentalId && can(groups, 'rental.forceEnd') && (
-        <Button size="sm" variant="danger" icon="Square" testId="vehicle-force-end" style={{ alignSelf: 'flex-start' }} onClick={() => setForceEnd(v.currentRentalId ?? null)}>Encerrar aluguel à força</Button>
+      {/* O cliente devolve no balcão: o atendente registra a chegada (checklist, fotos, bateria) e o aluguel encerra. */}
+      {v.currentRentalId && (canReceiveAtDepot(groups, v) || can(groups, 'rental.forceEnd')) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {canReceiveAtDepot(groups, v) && (
+            <Button size="sm" variant="secondary" icon="PackageCheck" testId="vehicle-receive-depot" onClick={() => setReceiving(v.currentRentalId ?? null)}>Receber no galpão</Button>
+          )}
+          {can(groups, 'rental.forceEnd') && (
+            <Button size="sm" variant="danger" icon="Square" testId="vehicle-force-end" onClick={() => setForceEnd(v.currentRentalId ?? null)}>Encerrar aluguel à força</Button>
+          )}
+        </div>
       )}
+
+      {/* Cliente devolveu fora do galpão: a equipe trouxe a moto e o atendente conclui o recolhimento aqui. */}
+      <CollectArrival vehicle={v} />
 
       {(can(groups, 'vehicle.command') || groups.includes('suporte')) && (
         <div style={{ display: 'flex', gap: 8 }}>
@@ -291,6 +309,9 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
       {dialog && <CommandDialog type={dialog} vehicle={v} mode={mode} moving={moving} speedUnknown={pos.stale || v.speedKmh == null} onClose={() => setDialog(null)} onSend={send} />}
       {moveFixed && v.assignedSubscriptionId && <SubscriptionVehicleDialog subscriptionId={v.assignedSubscriptionId} currentCode={v.code} onClose={() => setMoveFixed(false)} />}
       {forceEnd && <ForceEndRentalDialog rentalId={forceEnd} vehicleId={vehicleId} open onClose={() => setForceEnd(null)} />}
+      {receiving && <ReturnHandoverDialog rentalId={receiving} vehicle={v} onClose={() => setReceiving(null)}
+        onDone={(r) => { setReceiving(null); if (r.settle) setSettling(r.rentalId); }} />}
+      {settling && <CounterSettleDialog rentalId={settling} onClose={() => setSettling(null)} />}
       {editing && <VehicleFormModal vehicle={v} onClose={() => setEditing(false)} />}
       {history && <HistoryModal vehicleId={vehicleId} code={v.code} groups={groups} onClose={() => setHistory(false)} />}
     </SidePanel>

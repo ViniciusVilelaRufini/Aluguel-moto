@@ -66,6 +66,9 @@ function makeDb(group: NonNullable<MockOptions['group']>) {
     reservations: F.makeReservations(),
     counter: F.makeCounterState(),
     uploadSeq: 1,
+    /** A próxima chegada (`return_depot`) responde 422 `vehicle-not-at-depot`. */
+    returnNotAtDepot: false,
+    collectLockedByStaff: false,
   };
 }
 
@@ -267,9 +270,33 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
     // `completedSince` não filtra aqui: as datas das fixtures são fixas (2026-10-26) e o painel pede "últimos 7 dias" do relógio real.
     const st = q.get('status'); const active = q.get('active') === 'true';
     const open = ['open', 'assigned', 'in_progress'];
-    return ok(page(db.fieldTasks.filter((t) => (st ? t.status === st : !active || open.includes(t.status))), q));
+    const vid = q.get('vehicleId'); const ty = q.get('type');
+    return ok(page(db.fieldTasks.filter((t) => (st ? t.status === st : !active || open.includes(t.status)) && (!vid || t.vehicleId === vid) && (!ty || t.type === ty)), q));
   }
   if (method === 'POST' && p === '/field-tasks') { const t = { ...db.fieldTasks[0]!, ...b, id: `ft-${db.fieldTasks.length + 1}`, status: 'open', createdAt: now, updatedAt: now }; db.fieldTasks.push(t as never); return ok(t, 201); }
+  // Recolhimento (2026-11-04): iniciar passa a tarefa sem responsável ao usuário; concluir `collect` com `depotId` devolve a moto
+  // ao galpão como livre (sem galpão, 422; tarefa `open`, 409). `db.collectLockedByStaff` imita a moto travada pela equipe (409).
+  if (method === 'POST' && match(/^\/field-tasks\/[^/]+\/start$/)) {
+    const t = find(db.fieldTasks); if (!t) return notFound();
+    if (t.status !== 'open' && t.status !== 'assigned') return { status: 409, json: problem(409, 'A tarefa não pode ser iniciada neste estado.', 'conflict') };
+    Object.assign(t, { status: 'in_progress', assigneeId: t.assigneeId ?? db.me.id, startedAt: now });
+    return ok(t);
+  }
+  if (method === 'POST' && match(/^\/field-tasks\/[^/]+\/complete$/)) {
+    const t = find(db.fieldTasks); if (!t) return notFound();
+    if (t.status === 'open' || t.status === 'canceled') return { status: 409, json: problem(409, 'A tarefa não pode ser concluída neste estado.', 'conflict') };
+    const v = db.vehicles.find((x) => x.id === t.vehicleId);
+    if (t.type === 'collect' && v?.status === 'awaiting_pickup') {
+      if (!b.depotId) return { status: 422, json: problem(422, 'Informe o galpão onde a moto chegou.', 'validation-error') };
+      const depot = db.depots.find((d) => d.id === b.depotId);
+      if (!depot) return notFound();
+      if (!depot.active) return { status: 422, json: problem(422, 'Este galpão está desativado; escolha outro galpão.', 'depot-inactive') };
+      if (db.collectLockedByStaff) return { status: 409, json: problem(409, 'A moto está bloqueada pela equipe; libere-a antes de devolver à frota.', 'vehicle-unavailable') };
+      Object.assign(v, { status: 'free', depotId: depot.id, lat: depot.lat, lng: depot.lng });
+    }
+    Object.assign(t, { status: 'done', completionNotes: b.notes, completedAt: now });
+    return ok(t);
+  }
   if (method === 'PATCH' && match(/^\/field-tasks\/[^/]+$/)) { const t = find(db.fieldTasks); if (!t) return notFound(); Object.assign(t, b); return ok(t); }
   if (method === 'GET' && p === '/maintenance/tasks') return ok(page(db.maintenance, q));
   if (method === 'POST' && p === '/maintenance/tasks') { const t = { ...b, id: `mt-${db.maintenance.length + 1}`, status: 'scheduled', source: 'staff', createdAt: now, updatedAt: now }; db.maintenance.push(t as never); return ok(t, 201); }
@@ -327,6 +354,27 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
     };
     db.handovers.push(h as never);
     Object.assign(r, { status: 'handover', handoverId: h.id });
+    return ok(h, 201);
+  }
+  // Chegada no galpão pelo painel (2026-11-04): como a API, encerra o aluguel e põe a moto no galpão (ou em manutenção
+  // com algum item `ok: false`); `db.returnNotAtDepot` imita a moto a mais de 150 m (422 `vehicle-not-at-depot`).
+  if (method === 'POST' && p === '/handovers' && b.type === 'return_depot') {
+    if (!b.rentalId || !b.depotId) return { status: 400, json: problem(400, 'Informe o aluguel e o galpão.', 'validation-error') };
+    const depot = db.depots.find((d) => d.id === b.depotId && d.active);
+    if (!depot) return notFound();
+    const r = db.rentals.find((x) => x.id === b.rentalId);
+    const v = db.vehicles.find((x) => x.currentRentalId === b.rentalId);
+    if (!r || !v) return notFound();
+    if (db.returnNotAtDepot) return { status: 422, json: problem(422, 'A moto não está no galpão. Use o encerramento forçado pelo suporte.', 'vehicle-not-at-depot') };
+    const issue = (b.checklist as { ok: boolean }[]).some((i) => !i.ok);
+    const h = {
+      id: `ho-${db.handovers.length + 1}`, type: 'return_depot', depotId: depot.id, rentalId: r.id, vehicleId: v.id, vehicleCode: v.code,
+      operatorId: db.me.id, operatorFirstName: 'Equipe Volti', checklist: b.checklist, photoKeys: b.photoKeys, batteryPct: b.batteryPct, status: 'accepted', createdAt: now, respondedAt: now,
+    };
+    db.handovers.unshift(h as never);
+    Object.assign(r, { status: 'ended', endedAt: now });
+    Object.assign(v, { status: issue ? 'maintenance' : 'free', currentRentalId: undefined, depotId: depot.id });
+    db.counter.rentalStatus = 'ended';
     return ok(h, 201);
   }
   if (method === 'GET' && match(/^\/handovers\/[^/]+\/counter-quote$/)) {

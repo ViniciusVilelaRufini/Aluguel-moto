@@ -1325,3 +1325,26 @@ Contexto: com a pré-reserva no app, o painel não tinha como entregar a moto. "
 - **Correção:** nos perfis `single` e `data`, o bucket ganhou CORS só de `PUT`, só para a origem do painel (e as extras do dev), com o cabeçalho `content-type`. O `GET` não entrou porque as fotos aparecem por `<img>`, que não precisa de CORS. Os buckets de KYC, relatórios e anexos continuam sem CORS. A impressão `volti-prod-data` foi regenerada de propósito.
 - **No dev:** a mesma regra foi aplicada direto no bucket `volti-dev-<conta>-single-fotos-devolucao` (`put-bucket-cors`), igual à do CDK, para não esperar um deploy da stack.
 - **CI (pendente, dono):** o job `deploy (dev)` do `infra.yml` passou a rodar depois da correção do teste API→infra e falha em `configure-aws-credentials`, porque o repositório não tem `AWS_DEPLOY_ROLE_ARN_DEV`. Nada é implantado. Ele faz deploy do perfil de vários stacks (ECS/RDS), não do `single`. Decidir entre configurar a role, se esse perfil for o alvo, ou desligar o job enquanto o dev for o `single`.
+
+## 2026-11-04 · Testes do dia a dia: chegada pelo painel e período do balcão com data (branches `fix/painel-chegada`, `fix/app-periodo`) · status: aplicada (sem mudança de contrato)
+
+1. **"Receber no galpão" pelo painel.** O painel não registrava a chegada da moto no galpão: só o app do operador criava `POST /handovers` `return_depot`. Agora há duas entradas, ambas para `admin` e `operacao`:
+   - "Receber no galpão" na ficha da moto com aluguel em andamento;
+   - "Registrar chegada" em Entregas, com busca pelo código da moto.
+
+   O fluxo tem os mesmos itens de checklist do operador (freios, pneus, luzes, carenagem), de 1 a 12 fotos e a bateria. Depois, se houver saldo, abre o "Acertar no balcão". A vistoria (checklist, fotos, bateria) virou componente comum da saída e da chegada. O `POST /handovers` não aceita `Idempotency-Key`: uma chegada repetida devolve a já registrada, e o botão fica travado durante o envio. A busca de "Registrar chegada" olha as primeiras 50 motos que casam com o texto.
+2. **Período do balcão.** No mesmo dia de São Paulo, mostra só a hora ("Período até 13:46"). Em outro dia, mostra data e hora ("Período até 11/11 13:46"). Os avisos de fim ("termina em" e "terminou em") seguem a mesma regra.
+3. **Achados para decidir (dono):**
+   - O desbloqueio da equipe com a corrida pausada solta o relé, mas mantém a corrida "pausada". No plano por minuto, o cliente andaria pagando a tarifa de pausa.
+   - A "Receita do dia" conta só aluguéis encerrados. Falta um "recebido hoje no balcão" por forma de pagamento.
+   - O "Reportar problema" do app vira Ocorrência no Suporte, sem alerta nem tarefa para a operação, mesmo em "Freio".
+4. **J16 (bancada).** Com a ignição desligada, o GPS liga por ~5 min e desliga por 10 a 70 min (modo de economia `Slp:1`). Por isso a trava falhava parada. Enviado `SZCS#GPS_DISSLP=1`, e o aparelho respondeu `SETOK: GPS_DISSLP=1, SZCS`. Falta confirmar com a ignição desligada por mais de 5 min. `SZCS#SLPDISCONNECT` não foi enviado, porque desligaria o heartbeat com a ignição desligada.
+
+## 2026-11-04 · "Recebida no galpão": recolhimento concluído pelo painel (branch `fix/painel-recolhimento`) · status: aplicada (sem mudança de contrato)
+
+Moto devolvida fora do galpão fica `awaiting_pickup` com uma tarefa `collect`. Antes, só o app do operador concluía o recolhimento; agora o painel também conclui, para `admin` e `operacao`. A ação aparece em três lugares:
+- ficha da moto no mapa;
+- detalhe da moto em Motos;
+- cartão da tarefa em Operação.
+
+Com a tarefa `open`, o painel chama `POST /field-tasks/{id}/start`, que atribui a tarefa ao próprio usuário, e depois `/complete` com `depotId` e a nota. A moto volta a `free` no galpão. Sem tarefa `collect` aberta, o painel só mostra um aviso. Os erros 409 e 422 aparecem com o texto da API. No cartão de Operação, o galpão só vem pré-selecionado quando há um único galpão ativo, porque `FieldTask` não traz `depotId`.

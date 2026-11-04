@@ -1524,6 +1524,10 @@
   "ridePrepaidOver": "Seu período terminou às {time}. O excedente é acertado no galpão.",
   "@ridePrepaidOver": {"placeholders": {"time": {"type": "String"}}},
   "rideCounterDueLabel": "A acertar no galpão",
+  "ridePrepaidEndingOn": "Seu período termina em {time}. O excedente é acertado no galpão.",
+  "@ridePrepaidEndingOn": {"placeholders": {"time": {"type": "String"}}},
+  "ridePrepaidOverOn": "Seu período terminou em {time}. O excedente é acertado no galpão.",
+  "@ridePrepaidOverOn": {"placeholders": {"time": {"type": "String"}}},
   "ridePrepaidLabel": "Pago no balcão",
   "rideCounterDue": "A acertar no galpão: {amount}",
   "@rideCounterDue": {"placeholders": {"amount": {"type": "String"}}}
