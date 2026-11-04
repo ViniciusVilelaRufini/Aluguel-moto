@@ -247,3 +247,26 @@ describe('TelemetryService: rastreador não cadastrado', () => {
     }
   });
 });
+
+describe('TelemetryService: poda do limite de log de rastreador desconhecido', () => {
+  it('o mapa não passa de 1000 entradas: vencidas saem; sem vencidas, saem as mais antigas', async () => {
+    const { svc, clock } = setup();
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const map = (svc as any).unknownLoggedAt as Map<string, number>;
+      for (let i = 0; i < 1000; i++) await svc.telemetry(`ghost-${i}`, msg());
+      expect(map.size).toBe(1000);
+      // Nenhuma vencida: entra a 1001ª e sai a mais antiga.
+      await svc.telemetry('ghost-new', msg());
+      expect(map.size).toBe(1000);
+      expect(map.has('ghost-0')).toBe(false);
+      expect(map.has('ghost-new')).toBe(true);
+      // Tudo vencido: poda as vencidas antes de inserir.
+      await clock.advance(5 * 60_000);
+      await svc.telemetry('ghost-late', msg());
+      expect([...map.keys()]).toEqual(['ghost-late']);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

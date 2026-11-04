@@ -523,3 +523,14 @@ describe('DelinquencyService — quitação manual de débito do balcão', () =>
     expect(receipts.issueForPayment).toHaveBeenCalledWith(gateway.id);
   });
 });
+
+describe('DelinquencyService — clearManually emite payment.updated', () => {
+  it('emite uma vez por débito quitado, sem mudar status', async () => {
+    const { db, svc, state } = await setup();
+    const spy = jest.spyOn(state, 'emitUpdated');
+    const counter = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'rental', method: 'cash', status: 'pending', amountCents: 6000 } });
+    await svc.clearManually(STAFF, CUSTOMER, 'Pago por fora');
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith(expect.objectContaining({ id: counter.id, status: 'pending' }));
+  });
+});

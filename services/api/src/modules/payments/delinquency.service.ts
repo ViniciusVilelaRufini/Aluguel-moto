@@ -339,6 +339,8 @@ export class DelinquencyService {
       );
     });
     this.logger.log({ msg: 'delinquency_cleared_manually', customerId, payments: settled.length });
+    // Status e valores não mudam (só `debtSettledAt`): avisa o painel/app que o saldo zerou.
+    for (const d of debts) if (settled.includes(d.id)) this.state.emitUpdated(d);
     await this.issueReceipts(settled);
   }
 }

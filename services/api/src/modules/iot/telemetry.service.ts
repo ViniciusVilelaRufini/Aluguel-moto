@@ -13,6 +13,8 @@ import type { InboundHandler, ReportedMeta, ReportedState } from './shadow-trans
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Intervalo mínimo entre dois logs `telemetry_unknown_thing` do mesmo thingName. */
 const UNKNOWN_THING_LOG_INTERVAL_MS = 5 * 60_000;
+/** Teto de thingNames lembrados para o limite do log (o mapa é podado ao chegar aqui). */
+const UNKNOWN_THING_MAP_MAX = 1000;
 
 export interface TelemetryOptions {
   trackRetentionDays: number;
@@ -100,6 +102,15 @@ export class TelemetryService implements InboundHandler {
     const now = this.clock.now();
     const last = this.unknownLoggedAt.get(thingName);
     if (last !== undefined && now - last < UNKNOWN_THING_LOG_INTERVAL_MS) return;
+    if (this.unknownLoggedAt.size >= UNKNOWN_THING_MAP_MAX) {
+      // Poda: vencidas primeiro; se ainda estourar, as mais antigas (o Map guarda na ordem de inserção = ordem do tempo).
+      for (const [k, at] of this.unknownLoggedAt) if (now - at >= UNKNOWN_THING_LOG_INTERVAL_MS) this.unknownLoggedAt.delete(k);
+      for (const k of this.unknownLoggedAt.keys()) {
+        if (this.unknownLoggedAt.size < UNKNOWN_THING_MAP_MAX) break;
+        this.unknownLoggedAt.delete(k);
+      }
+    }
+    this.unknownLoggedAt.delete(thingName);
     this.unknownLoggedAt.set(thingName, now);
     this.logger.warn({ msg: 'telemetry_unknown_thing', thingName });
   }
