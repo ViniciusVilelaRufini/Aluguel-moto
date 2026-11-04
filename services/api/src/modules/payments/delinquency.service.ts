@@ -55,14 +55,15 @@ export class DelinquencyService {
    * Saldo devedor de cada pagamento com dívida em aberto (os demais ficam fora do mapa): valor − carteira − caução capturada
    * como garantia − Σ quitações (`debt_settlement`) pagas dele. Débito do balcão (preflight C1): a caução capturada **não**
    * entra — o abatimento da caução no galpão já é um `debt_settlement` pago e seria contado duas vezes.
+   * `db`: a transação de quem chama (acerto no balcão lê o saldo com o débito travado).
    */
-  async outstandingMap(payments: Payment[]): Promise<Map<string, number>> {
+  async outstandingMap(payments: Payment[], db: Pick<Prisma.TransactionClient, 'deposit' | 'payment'> = this.prisma): Promise<Map<string, number>> {
     const debts = payments.filter(isOpenDebt);
     if (!debts.length) return new Map();
     const depositIds = [...new Set(debts.map((p) => (p.kind === 'rental' && !isCounterMethod(p.method) ? p.depositId : null)).filter((x): x is string => !!x))];
-    const deposits = depositIds.length ? await this.prisma.deposit.findMany({ where: { id: { in: depositIds } }, select: { id: true, status: true, capturedCents: true } }) : [];
+    const deposits = depositIds.length ? await db.deposit.findMany({ where: { id: { in: depositIds } }, select: { id: true, status: true, capturedCents: true } }) : [];
     const captured = new Map(deposits.map((d) => [d.id, d.status === 'captured' ? (d.capturedCents ?? 0) : 0]));
-    const settlements = await this.prisma.payment.findMany({
+    const settlements = await db.payment.findMany({
       where: { kind: 'debt_settlement', status: 'paid', settlesPaymentId: { in: debts.map((p) => p.id) } },
       select: { settlesPaymentId: true, amountCents: true },
     });

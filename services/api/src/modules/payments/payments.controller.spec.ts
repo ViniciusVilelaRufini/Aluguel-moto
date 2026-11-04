@@ -12,6 +12,7 @@ import { FakePaymentProvider } from './provider/fake-payment-provider';
 import { PAYMENT_PROVIDER, PaymentProviderError, RefundRejectedError } from './provider/payment-provider';
 import { ProviderCustomersService } from './provider-customers.service';
 import { SubscriptionsService } from './subscriptions.service';
+import { CounterSettlementService } from './counter-settlement.service';
 import { createInMemoryPrisma } from './testing/in-memory-prisma';
 import { reverseTopUpRefund } from '../wallet/top-up-refund';
 import { returnRentalPackageMinutes } from '../wallet/rental-minutes-return';
@@ -27,6 +28,7 @@ describe('PaymentsController (HTTP)', () => {
   let h: Harness;
   const queue = { publish: jest.fn().mockResolvedValue(undefined), subscribe: jest.fn() };
   const customers = { addCard: jest.fn() };
+  const counter = { balance: jest.fn(async (id: string) => ({ rentalId: id })), settle: jest.fn(async () => ({ id: 'debt' })), refund: jest.fn(async () => ({ id: 'dep' })) };
 
   beforeAll(async () => {
     h = await createHarness({
@@ -39,11 +41,45 @@ describe('PaymentsController (HTTP)', () => {
         { provide: PaymentStateService, useValue: {} },
         { provide: SubscriptionsService, useValue: {} },
         { provide: OBJECT_STORAGE, useValue: {} },
+        { provide: CounterSettlementService, useValue: counter },
       ],
     });
   });
   afterAll(async () => h.app.close());
   beforeEach(() => jest.clearAllMocks());
+
+  describe('acerto no balcão', () => {
+    const ID = '0b1c6c39-6d0a-4c39-9a4f-4f8f1a1f2e11';
+
+    it('counter-refund cai na rota literal da caução (não em payments/:id) e responde 200', async () => {
+      const token = await staffToken(['campo']);
+      await request(h.app.getHttpServer()).post(`/payments/deposits/${ID}/counter-refund`).set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'k-counter-refund-1')
+        .send({ amountCents: 6000, reference: 'PIX1' }).expect(200);
+      expect(counter.refund).toHaveBeenCalledWith(expect.objectContaining({ pool: 'staff' }), ID, { amountCents: 6000, reference: 'PIX1' });
+    });
+
+    it('counter-settle: 200 com Idempotency-Key; sem a chave → 400; método fora do balcão → 400', async () => {
+      const token = await staffToken(['operacao']);
+      await request(h.app.getHttpServer()).post(`/payments/${ID}/counter-settle`).set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'k-counter-settle-1')
+        .send({ amountCents: 2000, method: 'cash' }).expect(200);
+      expect(counter.settle).toHaveBeenCalledWith(expect.anything(), ID, { amountCents: 2000, method: 'cash' });
+      await request(h.app.getHttpServer()).post(`/payments/${ID}/counter-settle`).set('Authorization', `Bearer ${token}`).send({ amountCents: 2000, method: 'cash' }).expect(400);
+      await request(h.app.getHttpServer()).post(`/payments/${ID}/counter-settle`).set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'k-counter-settle-2')
+        .send({ amountCents: 2000, method: 'card' }).expect(400);
+      await request(h.app.getHttpServer()).post(`/payments/${ID}/counter-settle`).set('Authorization', `Bearer ${token}`).set('Idempotency-Key', 'k-counter-settle-3')
+        .send({ amountCents: 0, fromDepositId: ID }).expect(400);
+      expect(counter.settle).toHaveBeenCalledTimes(1);
+    });
+
+    it('financeiro lê o saldo, mas não quita no balcão; cliente não lê o saldo', async () => {
+      const fin = await staffToken(['financeiro']);
+      await request(h.app.getHttpServer()).get(`/rentals/${ID}/counter-balance`).set('Authorization', `Bearer ${fin}`).expect(200, { rentalId: ID });
+      await request(h.app.getHttpServer()).post(`/payments/${ID}/counter-settle`).set('Authorization', `Bearer ${fin}`).set('Idempotency-Key', 'k-counter-settle-4')
+        .send({ amountCents: 2000, method: 'cash' }).expect(403);
+      await request(h.app.getHttpServer()).get(`/rentals/${ID}/counter-balance`).set('Authorization', `Bearer ${await customerToken()}`).expect(403);
+      expect(counter.settle).not.toHaveBeenCalled();
+    });
+  });
 
   const body = { id: 12345, type: 'payment', action: 'payment.updated', live_mode: false, data: { id: '999' } };
 

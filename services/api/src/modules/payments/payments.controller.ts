@@ -2,6 +2,8 @@ import { Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe,
 import { SkipThrottle } from '@nestjs/throttler';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, CustomerOnly, CustomerOrStaff, Principal, Public, StaffOnly } from '../auth/principal';
+import { CounterRefundDto, CounterSettleDto } from './counter-settlement.dto';
+import { CounterSettlementService } from './counter-settlement.service';
 import { DebtPaymentDto, ListDepositsQuery, ListPaymentsQuery, MercadoPagoWebhookDto, PaymentCardCreateDto, RefundDto, SubscriptionCreateDto, SubscriptionPauseDto, SubscriptionVehicleDto } from './payments.dto';
 import { PaymentsService } from './payments.service';
 import { SubscriptionsService } from './subscriptions.service';
@@ -12,6 +14,7 @@ export class PaymentsController {
   constructor(
     private readonly payments: PaymentsService,
     private readonly subscriptions: SubscriptionsService,
+    private readonly counter: CounterSettlementService,
   ) {}
 
   @Get('payments/cards')
@@ -52,6 +55,22 @@ export class PaymentsController {
   @CustomerOrStaff('admin', 'financeiro', 'suporte')
   getDeposit(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: Principal) {
     return this.payments.getDeposit(u, id);
+  }
+
+  /** Balcão: devolução da caução (rota literal antes de `payments/:id/...`). */
+  @Post('payments/deposits/:id/counter-refund')
+  @HttpCode(200)
+  @StaffOnly('admin', 'operacao', 'campo')
+  @Idempotent({ required: true })
+  counterRefund(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CounterRefundDto, @CurrentUser() u: Principal) {
+    return this.counter.refund(u, id, dto);
+  }
+
+  /** Balcão: saldo a acertar (dívidas em aberto e cauções de balcão do cliente do aluguel). */
+  @Get('rentals/:id/counter-balance')
+  @StaffOnly('admin', 'operacao', 'campo', 'financeiro')
+  counterBalance(@Param('id', ParseUUIDPipe) id: string) {
+    return this.counter.balance(id);
   }
 
   @Get('payments/subscriptions')
@@ -118,6 +137,15 @@ export class PaymentsController {
   @Idempotent({ required: true })
   refund(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RefundDto, @CurrentUser() u: Principal, @Headers('idempotency-key') idempotencyKey?: string) {
     return this.payments.refund(u, id, dto, idempotencyKey);
+  }
+
+  /** Balcão: quitação (total ou parcial) de uma dívida em aberto, com `method` ou `fromDepositId`. */
+  @Post('payments/:id/counter-settle')
+  @HttpCode(200)
+  @StaffOnly('admin', 'operacao', 'campo')
+  @Idempotent({ required: true })
+  counterSettle(@Param('id', ParseUUIDPipe) id: string, @Body() dto: CounterSettleDto, @CurrentUser() u: Principal) {
+    return this.counter.settle(u, id, dto);
   }
 
   /** Task 14: o cliente quita a dívida (saldo devedor) de um pagamento `failed`. */

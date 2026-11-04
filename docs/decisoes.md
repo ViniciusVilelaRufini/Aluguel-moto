@@ -1224,3 +1224,9 @@ Spec: `docs/superpowers/specs/2026-11-04-volti-pre-reserva-balcao-design.md` (de
 
 - Consentimento revogado depois da pré-reserva: `counter-checkout` responde `422 location-consent-required` ("Peça ao cliente para permitir a localização no app.") — `422` e não `403`, porque quem chama é o atendente (decisão 15).
 - **Risco da decisão 17 (produção):** assinaturas semanais/mensais e saldo de carteira/pacotes já pagos no app **não são migrados**. O dev só tem dados de teste; em produção, cliente com assinatura ativa ou saldo de carteira veria as telas só-leitura ("Fale com o galpão para usar ou cancelar") e o acerto seria manual no balcão/financeiro. Antes de ligar o balcão em produção com clientes pagantes, decidir o tratamento (consumir, estornar ou converter).
+- **Acerto no balcão (Task 7), escolhas de implementação:**
+  - "Quitado" é só `debtSettledAt`. A quitação manual do financeiro (`clearManually`) grava `debtSettledAt` e mantém o débito do balcão `pending`. Esse débito sai do `counter-balance` e o `counter-settle` responde `409 debt-not-payable`. O `pending` que sobra é só histórico.
+  - Débito `failed` antigo com cobrança automática ainda em retentativa (`debtInCollection`) → `409 debt-in-collection` no `counter-settle`, como em `clearManually`, para não cobrar duas vezes.
+  - Caução de outro cliente em `fromDepositId` → `404` (não revela a caução). Caução que não é do balcão → `409 conflict` "Esta caução não é do balcão.".
+  - A `reference` da devolução vai só para o AuditLog `deposit.counter_refund`. `Deposit.reference` continua sendo a referência do recebimento no checkout.
+  - Travas: `Payment` antes de `Deposit` (`SELECT ... FOR UPDATE`). A devolução só trava a `Deposit`.
