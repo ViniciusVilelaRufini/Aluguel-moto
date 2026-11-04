@@ -371,7 +371,7 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - Comando substituído por um mais novo (`supersede`, unlock que cancela a trava) termina `failed` com `statusReason: superseded` (migração `20261103160000_command_reason_superseded`) e **não** abre `command_failed`; os demais alertas de comando têm mensagem em pt-BR.
 - Ocupação: moto ocupada = aluguel em aberto (`active`, `paused`, `ending`), inclusive sem sinal (dashboard). `GET /reports/occupancy` é ponderado pelo tempo (tempo alugado ÷ tempo de frota, cortado em `from`/`to`/agora; `occupancyBuckets` em `reports.service.ts`) e devolve `occupancyPct` do intervalo inteiro.
 - `GET /customers` traz `stats` por cliente (lote). `GET /customers/{id}/kyc-files` (`admin`, `suporte`): links pré-assinados de 5 min do documento e da selfie (só chaves `kyc/{id}/`), AuditLog `customer.kyc_files_view` sem as chaves.
-- `Vehicle.positionAt` (staff): hora da medição da posição (também da sobreposição do Redis). `FieldTask.vehicleBatteryPct` ausente e `Battery.chargeKnown: false` quando a moto não tem leitura de bateria. `GET /field-tasks?active=true&completedSince=`.
+- `Vehicle.positionAt`: hora da medição da posição (também da sobreposição do Redis). Para cliente, só junto com a posição visível (devolução sem GPS, 2026-11-04); `GET /vehicles/by-code/{code}` usa o estado ao vivo do Redis como o `GET /vehicles/{id}`. `FieldTask.vehicleBatteryPct` ausente e `Battery.chargeKnown: false` quando a moto não tem leitura de bateria. `GET /field-tasks?active=true&completedSince=`.
 
 ## Regras que nunca mudam
 

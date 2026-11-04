@@ -23,6 +23,7 @@ import 'galpao_fixtures.dart' show bike, GalpaoBackend;
 import 'galpao_flow_test.dart' as galpao show phone, pumpApp, settle;
 import 'handover_test.dart' show problem;
 import 'helpers.dart';
+import 'zone_fixtures.dart' show zoneAround;
 
 PricingPlan _plan({int pause = 20}) => PricingPlan((b) => b
   ..id = 'p1'
@@ -315,7 +316,8 @@ void main() {
       await pumpReturn(t, _EndB());
       await takeAndEnd(t);
       expect(find.text('Aguardando a moto travar'), findsOneWidget);
-      expect(find.text('Deixe a moto parada. Costuma levar menos de 1 minuto.'), findsOneWidget);
+      expect(find.text('Deixe a moto parada, em lugar aberto. O GPS da moto confirma a parada antes de travar.'), findsOneWidget);
+      expect(find.byKey(const Key('lock-no-gps')), findsNothing, reason: 'sem a hora da posicao (API antiga) nao avisa');
       await t.pump(const Duration(seconds: 12));
       expect(find.byKey(const Key('lock-elapsed')), findsOneWidget);
       expect(find.textContaining('12 s'), findsOneWidget);
@@ -566,6 +568,106 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
 
+    group('moto sem GPS (2026-11-04)', () {
+      Vehicle at(DateTime positionAt) => sampleVehicle().rebuild((b) => b
+        ..status = VehicleStatus.rented
+        ..positionAt = positionAt.toUtc());
+
+      Future<_EndB> pumpGps(WidgetTester t, Vehicle v, {Duration gpsPoll = const Duration(seconds: 10)}) async {
+        tallScreen(t);
+        final b = _EndB()
+          ..vehicle = v
+          ..zoneList = [zoneAround(-23.56, -46.65)];
+        await t.pumpWidget(testApp(ReturnScreen(rentalId: 'r1', pollInterval: const Duration(seconds: 2), gpsPollInterval: gpsPoll), overrides: [
+          backendProvider.overrideWithValue(b),
+          photoPickerProvider.overrideWithValue(FakePhotoPicker()),
+        ]));
+        await t.pumpAndSettle();
+        return b;
+      }
+
+      Future<void> takeAndEndInZone(WidgetTester t) async {
+        await t.tap(find.byType(PhotoCapture));
+        await t.pumpAndSettle();
+        await t.tap(find.widgetWithText(VoltiButton, 'Travar e encerrar'));
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 50));
+      }
+
+      testWidgets('formulario avisa antes de encerrar quando a ultima posicao e velha', (t) async {
+        await pumpGps(t, at(DateTime.now().subtract(const Duration(minutes: 5))));
+        expect(find.byKey(const Key('return-no-gps')), findsOneWidget);
+        expect(find.text('Sem sinal de GPS da moto'), findsOneWidget);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      testWidgets('formulario sem aviso com GPS em dia', (t) async {
+        await pumpGps(t, at(DateTime.now().subtract(const Duration(seconds: 8))));
+        expect(find.byKey(const Key('return-no-gps')), findsNothing);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      testWidgets('espera: aviso sem GPS desde o inicio; desfeita, diz o que fazer em vez da mensagem do servidor', (t) async {
+        final b = await pumpGps(t, at(DateTime.now().subtract(const Duration(minutes: 5))));
+        b.events = [_sysEvent('A moto não parou; pare e peça o encerramento de novo.')];
+        await takeAndEndInZone(t);
+        expect(find.text('Aguardando a moto travar'), findsOneWidget);
+        expect(find.byKey(const Key('lock-no-gps')), findsOneWidget, reason: 'nao espera 45 s');
+        expect(find.byKey(const Key('lock-gps-hint')), findsNothing);
+        b.status = RentalStatus.active;
+        await t.pump(const Duration(seconds: 2));
+        await t.pump(const Duration(milliseconds: 100));
+        await t.pump(const Duration(milliseconds: 100));
+        expect(find.text('Aguardando a moto travar'), findsNothing);
+        expect(find.textContaining('porque está sem sinal de GPS'), findsOneWidget);
+        expect(find.text('A moto não parou; pare e peça o encerramento de novo.'), findsNothing);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      testWidgets('espera: o GPS voltou (ficha relida) tira o aviso', (t) async {
+        final b = await pumpGps(t, at(DateTime.now().subtract(const Duration(minutes: 5))), gpsPoll: const Duration(seconds: 3));
+        await takeAndEndInZone(t);
+        expect(find.byKey(const Key('lock-no-gps')), findsOneWidget);
+        b.vehicle = at(DateTime.now());
+        await t.pump(const Duration(seconds: 3));
+        await t.pump(const Duration(milliseconds: 100));
+        expect(find.byKey(const Key('lock-no-gps')), findsNothing);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      testWidgets('espera: posicao nova pelo tempo real tira o aviso na hora', (t) async {
+        tallScreen(t);
+        final b = _EndB()
+          ..vehicle = at(DateTime.now().subtract(const Duration(minutes: 5)))
+          ..zoneList = [zoneAround(-23.56, -46.65)];
+        late StreamController<RealtimeEvent> bus;
+        await t.pumpWidget(testApp(const ReturnScreen(rentalId: 'r1'), overrides: [
+          backendProvider.overrideWithValue(b),
+          photoPickerProvider.overrideWithValue(FakePhotoPicker()),
+          rideEventBusProvider.overrideWith((ref) {
+            bus = StreamController<RealtimeEvent>.broadcast();
+            ref.onDispose(bus.close);
+            return bus;
+          }),
+        ]));
+        await t.pumpAndSettle();
+        await takeAndEndInZone(t);
+        expect(find.byKey(const Key('lock-no-gps')), findsOneWidget);
+        bus.add(const VehiclePositionEvent(lat: -23.56, lng: -46.65, speedKmh: 0, batteryPct: 0, speedLimitKmh: 32));
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 50));
+        expect(find.byKey(const Key('lock-no-gps')), findsNothing);
+        await t.pumpWidget(const SizedBox());
+      });
+
+      test('vehicleGpsStale: null sem a hora; 60 s de folga', () {
+        final now = DateTime.utc(2026, 11, 4, 12);
+        expect(vehicleGpsStale(sampleVehicle(), now), isNull);
+        expect(vehicleGpsStale(at(now.subtract(const Duration(seconds: 60))), now), isFalse);
+        expect(vehicleGpsStale(at(now.subtract(const Duration(seconds: 61))), now), isTrue);
+      });
+    });
+
     test('texto da espera nao promete 30 s (a espera vai ate 150 s)', () {
       final l = lookupAppLocalizations(const Locale('pt'));
       expect(l.waitingLockText, isNot(contains('30 s')));
@@ -660,11 +762,18 @@ class _EndB extends FakeBackend {
     return sampleRental(status: status);
   }
 
-  // Sem posicao da moto: a tela pede confirmacao e o servidor decide o ponto verde.
+  /// Sem moto (padrao): a tela pede confirmacao e o servidor decide o ponto verde.
+  Vehicle? vehicle;
+  List<GeoZone> zoneList = [];
   @override
-  Future<Vehicle> vehicleByCode(String code) async => throw AppFailure(kind: FailureKind.network);
+  Future<Vehicle> vehicleByCode(String code) async {
+    final v = vehicle;
+    if (v == null) throw AppFailure(kind: FailureKind.network);
+    return v;
+  }
+
   @override
-  Future<List<GeoZone>> zones() async => [];
+  Future<List<GeoZone>> zones() async => zoneList;
   @override
   Future<PresignedUpload> returnPhotoUpload(String rentalId) async {
     uploads++;

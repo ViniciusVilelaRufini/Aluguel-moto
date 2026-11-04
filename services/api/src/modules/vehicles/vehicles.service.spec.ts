@@ -233,6 +233,21 @@ describe('Cadastro no painel (2026-10-25): galpão no cadastro, bateria livre e 
     });
   });
 
+  it('devolução sem GPS (2026-11-04): by-code usa a posição ao vivo (Redis) e leva positionAt para o cliente da própria moto', async () => {
+    const s = setup();
+    const posAt = Date.now() - 5_000;
+    (s.service as any).redis = {
+      hgetall: jest.fn().mockResolvedValue({ lastSeenAt: new Date().toISOString(), lat: '-21.1', lng: '-48.9', positionAt: String(posAt) }),
+    };
+    jest.spyOn(s.service as any, 'ownVehicleIds').mockResolvedValue(new Set([VEHICLE_ID]));
+    s.prisma.vehicle.findUnique.mockResolvedValue({
+      id: VEHICLE_ID, code: 'VLT-0059', thingName: 'moto-0059', model: 'Volti S1', status: 'rented', lat: -21.2, lng: -48.8, positionAt: new Date(posAt - 3_600_000),
+      batteryPct: 0, batteryKnown: false, speedLimitKmh: 32, odometerKm: 0, usageHours: 0, lastSeenAt: new Date(posAt - 3_600_000),
+    } as any);
+    const v: any = await s.service.byCode(customer, 'VLT-0059');
+    expect(v).toMatchObject({ lat: -21.1, lng: -48.9, positionAt: new Date(posAt).toISOString() });
+  });
+
   it('lista: filtros por galpão e modelo e busca também pelo QR', async () => {
     const s = setup();
     (s.service as any).redis = { hgetall: jest.fn().mockResolvedValue({}) };

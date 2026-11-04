@@ -814,7 +814,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get waitingLockText =>
-      'Deixe a moto parada. Costuma levar menos de 1 minuto.';
+      'Deixe a moto parada, em lugar aberto. O GPS da moto confirma a parada antes de travar.';
 
   @override
   String get wallet => 'Carteira';
@@ -3435,7 +3435,19 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get waitingLockGpsHint =>
-      'Ainda sem confirmação. Em local coberto o GPS da moto pode demorar: mantenha-a parada.';
+      'Ainda sem confirmação. Em local coberto o GPS não confirma a parada: leve a moto para um lugar aberto e mantenha-a parada.';
+
+  @override
+  String get waitingLockNoGps =>
+      'Sem GPS a moto não trava. Leve-a para um lugar aberto, com céu visível, e mantenha-a parada.';
+
+  @override
+  String get returnNoGps =>
+      'Ela só trava quando o GPS confirma que está parada. Leve a moto para um lugar aberto, com céu visível, antes de encerrar.';
+
+  @override
+  String get endRevertedNoGps =>
+      'A moto não travou porque está sem sinal de GPS. Leve-a para um lugar aberto, com céu visível, e encerre de novo. Se não der, fale com o suporte.';
 
   @override
   String get retryEnd => 'Tentar encerrar de novo';

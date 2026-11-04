@@ -12,6 +12,7 @@ import { toCents } from '@/lib/money';
 import { isGatewayRefundable } from '@/lib/counter';
 import type { S } from '@/lib/types';
 import { CounterSettleDialog } from './CounterSettleDialog';
+import { ForceEndRentalDialog } from './ForceEndRentalDialog';
 import { DataTable, ErrorNote, Field, KV, Page, Pill, ReasonDialog, SectionTitle, Select, SidePanel, TextInput, usePagedQuery, useToast } from './ui';
 import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
@@ -131,20 +132,7 @@ function RentalDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </>
       )}
       {settle && <CounterSettleDialog rentalId={id} onClose={() => setSettle(false)} />}
-      <ReasonDialog
-        open={forceEnd}
-        title="Encerrar aluguel à força"
-        description="O aluguel é encerrado e liquidado agora. Fora da zona de devolução só o admin pode encerrar, e a taxa de encerramento forçado é somada."
-        confirmLabel="Encerrar aluguel"
-        danger
-        onClose={() => setForceEnd(false)}
-        onConfirm={async (reason) => {
-          await unwrap(api.POST('/rentals/{id}/force-end', { params: { path: { id } }, body: { reason } }));
-          toast('Aluguel encerrado');
-          qc.invalidateQueries({ queryKey: ['rental', id] });
-          qc.invalidateQueries({ queryKey: ['rentals'] });
-        }}
-      />
+      <ForceEndRentalDialog rentalId={id} vehicleId={r?.vehicleId} open={forceEnd} onClose={() => setForceEnd(false)} />
       <ReasonDialog
         open={refund}
         title="Estornar pagamento"

@@ -147,8 +147,10 @@ export class VehiclesService {
   async byCode(user: Principal, code: string) {
     const normalized = parseVehicleCode(code);
     if (!normalized) throw notFound('Moto não encontrada.');
-    const v = await this.prisma.vehicle.findUnique({ where: { code: normalized }, include: VEHICLE_INCLUDE });
-    if (!v) throw notFound('Moto não encontrada.');
+    const row = await this.prisma.vehicle.findUnique({ where: { code: normalized }, include: VEHICLE_INCLUDE });
+    if (!row) throw notFound('Moto não encontrada.');
+    // Como o `get`: posição e `positionAt` ao vivo (o Postgres grava a cada 30 s) — a devolução do app decide "sem GPS" por elas.
+    const [v] = await withLiveState(this.redis, [row]);
     const rental = isStaff(user) ? await this.currentRentalId(v.id) : undefined;
     return (await this.enrich([v], isStaff(user), rental ? new Map([[v.id, rental]]) : undefined, user.customerId))[0];
   }

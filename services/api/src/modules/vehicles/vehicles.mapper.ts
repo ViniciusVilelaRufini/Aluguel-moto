@@ -123,7 +123,9 @@ export function toVehicle(
   const address = { address: v.addressLabel ?? null, addressUpdatedAt: v.addressLabel ? (iso(v.addressUpdatedAt) ?? null) : null };
   // Fix round 1 (I5): moto em uso por outra pessoa — posição oculta para o cliente (endereço ausente).
   if (!opts.staff && opts.hideLocation) return compact({ ...base, lat: 0, lng: 0, address: undefined as string | undefined, addressUpdatedAt: undefined as string | undefined, locationHidden: true });
-  if (!opts.staff) return { ...compact(base), ...address };
+  // Devolução sem GPS (2026-11-04): a hora da posição vai junto com a posição visível — o app avisa que a moto está sem GPS e
+  // por isso não trava. Com a posição oculta, não vem (o `compact` acima já tira; aqui ela nunca entra).
+  if (!opts.staff) return { ...compact({ ...base, positionAt: iso(v.positionAt) }), ...address };
   const staffView = compact({
     ...base,
     thingName: v.thingName,

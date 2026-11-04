@@ -31,7 +31,7 @@ Name | Type | Description | Notes
 **stolenMode** | **bool** | staff. | [optional] 
 **firmwareVersion** | **String** | staff. Versão do firmware do rastreador vinculado (`Tracker.firmwareVersion`); sem ela, a gravada na moto. Ausente = desconhecida. | [optional] 
 **lastSeenAt** | [**DateTime**](DateTime.md) | staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s. | [optional] 
-**positionAt** | [**DateTime**](DateTime.md) | staff. Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a posição atual e a velocidade dela não é a atual.  | [optional] 
+**positionAt** | [**DateTime**](DateTime.md) | Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a posição atual e a velocidade dela não é a atual. Para cliente, vem só junto com a posição visível (moto livre ou da própria reserva/aluguel; nunca com `locationHidden`): a devolução do app avisa que a moto está sem GPS e por isso não trava (a trava só relé espera a parada confirmada pelo GPS).  | [optional] 
 **currentRentalId** | **String** | staff. | [optional] 
 **vehicleModelId** | **String** |  | [optional] 
 **categoryLabel** | **String** |  | [optional] 

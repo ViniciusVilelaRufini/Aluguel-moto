@@ -1615,7 +1615,7 @@ abstract class AppLocalizations {
   /// No description provided for @waitingLockText.
   ///
   /// In pt, this message translates to:
-  /// **'Deixe a moto parada. Costuma levar menos de 1 minuto.'**
+  /// **'Deixe a moto parada, em lugar aberto. O GPS da moto confirma a parada antes de travar.'**
   String get waitingLockText;
 
   /// No description provided for @wallet.
@@ -5833,8 +5833,26 @@ abstract class AppLocalizations {
   /// No description provided for @waitingLockGpsHint.
   ///
   /// In pt, this message translates to:
-  /// **'Ainda sem confirmação. Em local coberto o GPS da moto pode demorar: mantenha-a parada.'**
+  /// **'Ainda sem confirmação. Em local coberto o GPS não confirma a parada: leve a moto para um lugar aberto e mantenha-a parada.'**
   String get waitingLockGpsHint;
+
+  /// No description provided for @waitingLockNoGps.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem GPS a moto não trava. Leve-a para um lugar aberto, com céu visível, e mantenha-a parada.'**
+  String get waitingLockNoGps;
+
+  /// No description provided for @returnNoGps.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ela só trava quando o GPS confirma que está parada. Leve a moto para um lugar aberto, com céu visível, antes de encerrar.'**
+  String get returnNoGps;
+
+  /// No description provided for @endRevertedNoGps.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto não travou porque está sem sinal de GPS. Leve-a para um lugar aberto, com céu visível, e encerre de novo. Se não der, fale com o suporte.'**
+  String get endRevertedNoGps;
 
   /// No description provided for @retryEnd.
   ///

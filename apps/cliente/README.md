@@ -53,6 +53,8 @@ keyPassword=...
 
 Sem esse arquivo o build continua funcionando, assinado com a chave **debug**, e o Gradle imprime `WARNING: android/key.properties ausente`; esse APK serve para emulador e testes, nunca para a loja. APK para o emulador x86_64: `flutter build apk --target-platform android-x64 --split-per-abi --dart-define=API_BASE_URL=http://10.0.2.2:3001` — o build funciona, mas o APK é release e na inicialização exige `SUPPORT_PHONE`: acrescente `--dart-define=SUPPORT_PHONE=+5511999990000` (qualquer número que não seja o de exemplo). O `applicationId`/bundle id segue `br.com.volti.volti_cliente` (a decisão dos IDs de loja é do dono do produto).
 
+**Devolução sem GPS (2026-11-04, `docs/decisoes.md`).** A trava só relé só corta com a parada confirmada pelo GPS. Na devolução, posição da moto (`Vehicle.positionAt`) com mais de 60 s mostra "Sem sinal de GPS da moto" no formulário e, desde o início, na espera da trava (some com uma `vehicle.position` ou com a ficha relida a cada 10 s); encerramento desfeito sem GPS explica como resolver. Sem `positionAt` (API antiga) não avisa. Testes: grupo "moto sem GPS" em `test/bancada_test.dart`.
+
 **Outros ajustes.** Nome na tela inicial "Volti" (Android e iOS); orientação só retrato (`setPreferredOrientations`, `android:screenOrientation` e `Info.plist`); texto de localização do iOS no modelo galpão (durante o aluguel: segurança, limites de velocidade e devolução). O SOS ganhou "Ligar 192 (SAMU)" e "Ligar 190 (Polícia)" ao lado do suporte (`tel:` pelo lançador existente, com rótulo de leitor de tela). Mensagem de câmera negada no leitor de QR fica dentro da moldura (rola a 200% de texto) e Enter no campo de código digitado envia.
 
 ## Mapas (tiles)

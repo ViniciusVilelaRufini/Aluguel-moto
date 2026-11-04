@@ -25,6 +25,7 @@ import { commandOutcome, restoredCommand } from '@/lib/command-steps';
 import { auditHref, auditTime, commandSentMessage, signalLabel, stolenModeDescription, toAuditRows } from '@/lib/fleet-copy';
 import { MAINTENANCE_STATUS, RENTAL_STATUS } from '@/lib/labels';
 import { SERVICE_STATUS, formatHours, formatKm, maintenanceOrigin, nextServiceLabel } from '@/lib/maintenance';
+import { ForceEndRentalDialog } from './ForceEndRentalDialog';
 import { SubscriptionVehicleDialog } from './SubscriptionVehicleDialog';
 import { VehicleFormModal } from './VehicleFormModal';
 import { Field, FieldError, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, Skeleton, TextInput, Select, DataTable, useToast } from './ui';
@@ -49,6 +50,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   const [history, setHistory] = useState(false);
   const [moveFixed, setMoveFixed] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [forceEnd, setForceEnd] = useState(false);
 
   // P3: ao reabrir a ficha, o comando ainda em curso volta (lido do histórico de comandos), em vez de sumir.
   const restored = useRef<string | null>(null);
@@ -243,6 +245,11 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         <Alert tone="info" icon="Info">Seu perfil não envia comandos para a moto.</Alert>
       )}
 
+      {/* A moto que não trava (ex.: sem GPS em local coberto) prende o aluguel em "encerrando": a saída fica aqui, sem abrir o aluguel. */}
+      {v.currentRentalId && can(groups, 'rental.forceEnd') && (
+        <Button size="sm" variant="danger" icon="Square" testId="vehicle-force-end" style={{ alignSelf: 'flex-start' }} onClick={() => setForceEnd(true)}>Encerrar aluguel à força</Button>
+      )}
+
       {(can(groups, 'vehicle.command') || groups.includes('suporte')) && (
         <div style={{ display: 'flex', gap: 8 }}>
           {can(groups, 'vehicle.command') && <Button size="sm" variant="ghost" icon="Play" style={{ paddingLeft: 0 }} testId="replay-toggle" onClick={onReplay}>{replayActive ? 'Fechar replay' : 'Replay de trajeto'}</Button>}
@@ -282,6 +289,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
 
       {dialog && <CommandDialog type={dialog} vehicle={v} mode={mode} moving={moving} speedUnknown={pos.stale || v.speedKmh == null} onClose={() => setDialog(null)} onSend={send} />}
       {moveFixed && v.assignedSubscriptionId && <SubscriptionVehicleDialog subscriptionId={v.assignedSubscriptionId} currentCode={v.code} onClose={() => setMoveFixed(false)} />}
+      {v.currentRentalId && <ForceEndRentalDialog rentalId={v.currentRentalId} vehicleId={vehicleId} open={forceEnd} onClose={() => setForceEnd(false)} />}
       {editing && <VehicleFormModal vehicle={v} onClose={() => setEditing(false)} />}
       {history && <HistoryModal vehicleId={vehicleId} code={v.code} groups={groups} onClose={() => setHistory(false)} />}
     </SidePanel>

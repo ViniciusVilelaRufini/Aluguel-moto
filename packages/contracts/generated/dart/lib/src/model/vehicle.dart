@@ -38,7 +38,7 @@ part 'vehicle.g.dart';
 /// * [stolenMode] - staff.
 /// * [firmwareVersion] - staff. Versão do firmware do rastreador vinculado (`Tracker.firmwareVersion`); sem ela, a gravada na moto. Ausente = desconhecida.
 /// * [lastSeenAt] - staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s.
-/// * [positionAt] - staff. Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a posição atual e a velocidade dela não é a atual.
+/// * [positionAt] - Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a posição atual e a velocidade dela não é a atual. Para cliente, vem só junto com a posição visível (moto livre ou da própria reserva/aluguel; nunca com `locationHidden`): a devolução do app avisa que a moto está sem GPS e por isso não trava (a trava só relé espera a parada confirmada pelo GPS).
 /// * [currentRentalId] - staff.
 /// * [vehicleModelId]
 /// * [categoryLabel]
@@ -144,7 +144,7 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   @BuiltValueField(wireName: r'lastSeenAt')
   DateTime? get lastSeenAt;
 
-  /// staff. Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a posição atual e a velocidade dela não é a atual.
+  /// Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a posição atual e a velocidade dela não é a atual. Para cliente, vem só junto com a posição visível (moto livre ou da própria reserva/aluguel; nunca com `locationHidden`): a devolução do app avisa que a moto está sem GPS e por isso não trava (a trava só relé espera a parada confirmada pelo GPS).
   @BuiltValueField(wireName: r'positionAt')
   DateTime? get positionAt;
 

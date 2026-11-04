@@ -12,9 +12,9 @@ const fleetCopy: S<'Vehicle'> = {
   estimatedRangeKm: 0, speedLimitKmh: 32, online: true, locked: false, lastSeenAt: new Date().toISOString(), trackerControlMode: 'relay_only',
 };
 
-const state: { detail: S<'Vehicle'> | undefined; live: S<'Vehicle'>[] } = { detail: undefined, live: [fleetCopy] };
+const state: { detail: S<'Vehicle'> | undefined; live: S<'Vehicle'>[]; groups: string[] } = { detail: undefined, live: [fleetCopy], groups: ['admin'] };
 
-vi.mock('@/lib/auth', () => ({ useAuth: () => ({ groups: ['admin'] }) }));
+vi.mock('@/lib/auth', () => ({ useAuth: () => ({ groups: state.groups }) }));
 vi.mock('@/lib/realtime', () => ({ useRealtime: () => ({ vehicles: state.live }), useRealtimeEvent: () => {} }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace() {}, push() {} }), useSearchParams: () => new URLSearchParams() }));
 vi.mock('@tanstack/react-query', async (orig) => {
@@ -68,6 +68,25 @@ describe('VehicleSheet — primeira pintura (L4)', () => {
     const btn = html.match(/<button[^>]*data-testid="cmd-lock"[^>]*>/)?.[0] ?? '';
     expect(btn).toContain('title="A moto já consta como travada"');
     expect(btn).not.toContain('disabled=""');
+  });
+});
+
+describe('VehicleSheet — encerrar aluguel à força (2026-11-04)', () => {
+  beforeEach(() => { state.live = [fleetCopy]; state.groups = ['admin']; });
+
+  it('moto com aluguel em andamento: admin e suporte veem "Encerrar aluguel à força" na ficha', async () => {
+    state.detail = { ...fleetCopy, currentRentalId: '44444444-4444-4444-8444-444444444444' };
+    expect((await render()).html).toContain('data-testid="vehicle-force-end"');
+    state.groups = ['suporte'];
+    expect((await render()).html).toContain('data-testid="vehicle-force-end"');
+  });
+
+  it('sem aluguel, ou perfil sem permissão (operação): sem o botão', async () => {
+    state.detail = { ...fleetCopy, status: 'free' };
+    expect((await render()).html).not.toContain('vehicle-force-end');
+    state.detail = { ...fleetCopy, currentRentalId: '44444444-4444-4444-8444-444444444444' };
+    state.groups = ['operacao'];
+    expect((await render()).html).not.toContain('vehicle-force-end');
   });
 });
 

@@ -84,11 +84,17 @@ describe('bancada do J16 (2026-11-03): bateria desconhecida, endereço da posiç
 });
 
 describe('painel de bancada (2026-11-03): hora da posição (positionAt)', () => {
-  it('staff recebe positionAt (hora da medição de lat/lng); cliente não; sem a coluna, ausente', () => {
+  it('staff recebe positionAt (hora da medição de lat/lng); sem a coluna, ausente', () => {
     const at = ago(5 * 60_000);
     expect(toVehicle(row({ positionAt: at }), { staff: true, now: NOW })).toMatchObject({ positionAt: at.toISOString() });
-    expect(toVehicle(row({ positionAt: at }), { staff: false, now: NOW })).not.toHaveProperty('positionAt');
     expect(toVehicle(row({ positionAt: null }), { staff: true, now: NOW })).not.toHaveProperty('positionAt');
+  });
+
+  it('devolução sem GPS (2026-11-04): cliente recebe positionAt junto com a posição visível; com a posição oculta, não', () => {
+    const at = ago(5 * 60_000);
+    expect(toVehicle(row({ positionAt: at }), { staff: false, now: NOW })).toMatchObject({ positionAt: at.toISOString() });
+    expect(toVehicle(row({ positionAt: null }), { staff: false, now: NOW })).not.toHaveProperty('positionAt');
+    expect(toVehicle(row({ positionAt: at }), { staff: false, hideLocation: true, now: NOW })).not.toHaveProperty('positionAt');
   });
 });
 

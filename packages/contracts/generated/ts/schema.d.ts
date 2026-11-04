@@ -4162,9 +4162,11 @@ export interface components {
             lastSeenAt?: string;
             /**
              * Format: date-time
-             * @description staff. Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat
+             * @description Hora da medição de `lat`/`lng` (e de `speedKmh`). Ausente = desconhecida. Diferente de `lastSeenAt`: o heartbeat
              *     do rastreador avança o último sinal sem posição nova (ex.: J16 sem GPS válido). Posição velha (mais de 30 s) não é a
-             *     posição atual e a velocidade dela não é a atual.
+             *     posição atual e a velocidade dela não é a atual. Para cliente, vem só junto com a posição visível (moto livre ou da
+             *     própria reserva/aluguel; nunca com `locationHidden`): a devolução do app avisa que a moto está sem GPS e por isso
+             *     não trava (a trava só relé espera a parada confirmada pelo GPS).
              */
             readonly positionAt?: string;
             /**
