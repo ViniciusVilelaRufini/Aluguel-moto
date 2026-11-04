@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { DASHBOARD_QUERY, useRealtime, type FleetVehicle } from '@/lib/realtime';
 import { STATUS_COLOR, STATUS_LABEL, VEHICLE_STATUSES } from '@/lib/status';
 import { formatBRL } from '@/lib/format';
+import { gpsMapNote, gpsState } from '@/lib/vehicle-live';
 import { UNKNOWN_BATTERY_HEX, anyMoved, batteryHex, interpolatePositions, positionsOf, type LngLat } from '@/lib/map-anim';
 import { easeInOutCubic, prefersReducedMotion, tween } from '@/lib/motion';
 import { dialogStack } from '@/lib/focus';
@@ -41,7 +42,7 @@ function toFeatures(list: FleetVehicle[]): GeoJSON.FeatureCollection {
     features: list.map((v) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
-      properties: { id: v.id, code: v.code, status: v.status, battery: v.batteryKnown === false ? null : v.batteryPct, batteryColor: v.batteryKnown === false ? UNKNOWN_BATTERY_HEX : batteryHex(v.batteryPct) },
+      properties: { id: v.id, code: v.code, status: v.status, battery: v.batteryKnown === false ? null : v.batteryPct, batteryColor: v.batteryKnown === false ? UNKNOWN_BATTERY_HEX : batteryHex(v.batteryPct), gps: gpsState(v), gpsNote: gpsMapNote(gpsState(v)) ?? null },
     })),
   };
 }
@@ -122,6 +123,9 @@ export default function FleetPage() {
     // Retirada em galpão: moto devolvida em ponto verde, esperando recolhimento, ganha um halo na cor do status.
     map.addLayer({ id: 'vehicles-awaiting-halo', type: 'circle', source: FLEET_SRC, filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'status'], 'awaiting_pickup']], paint: { 'circle-color': STATUS_COLOR.awaiting_pickup, 'circle-opacity': 0.22, 'circle-radius': 24, 'circle-stroke-color': STATUS_COLOR.awaiting_pickup, 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.8 } });
     map.addLayer({ id: 'vehicles-battery', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': ['get', 'batteryColor'] as never, 'circle-radius': 14.5, 'circle-opacity': 0.95 } });
+    // GPS fraco / dormindo / sem GPS: circle do MapLibre não tem traço, então vai um anel fino e discreto
+    // (mais claro com o GPS dormindo, que é esperado com a ignição desligada). Não mexe nas cores de status.
+    map.addLayer({ id: 'vehicles-gps-ring', type: 'circle', source: FLEET_SRC, filter: ['all', ['!', ['has', 'point_count']], ['in', ['get', 'gps'], ['literal', ['weak', 'sleep', 'no_gps']]]], paint: { 'circle-color': 'rgba(0,0,0,0)', 'circle-radius': 19.5, 'circle-stroke-color': '#15181A', 'circle-stroke-width': 1.5, 'circle-stroke-opacity': ['match', ['get', 'gps'], 'sleep', 0.35, 0.8] as never } });
     map.addLayer({ id: 'vehicles', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': colorExpr, 'circle-radius': 12, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5 } });
     map.addLayer({ id: 'vehicle-selected', type: 'circle', source: FLEET_SRC, filter: ['==', ['get', 'id'], ''], paint: { 'circle-color': colorExpr, 'circle-radius': 17, 'circle-stroke-color': '#15181A', 'circle-stroke-width': 3 } });
     map.addLayer({ id: 'vehicles-icon', type: 'symbol', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], layout: { 'icon-image': BIKE_ICON, 'icon-size': 0.5, 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
@@ -145,14 +149,14 @@ export default function FleetPage() {
       if (mapRef.current !== map) return;
       let popup: Popup | null = null;
       map.on('mouseenter', 'vehicles', (e) => {
-        const p = e.features?.[0]?.properties as { code?: string; status?: VehicleStatus; battery?: number | null } | undefined;
+        const p = e.features?.[0]?.properties as { code?: string; status?: VehicleStatus; battery?: number | null; gpsNote?: string | null } | undefined;
         if (!p?.code) return;
         const el = document.createElement('div');
         el.className = 'vt-tip';
         const strong = document.createElement('strong');
         strong.textContent = p.code;
         const span = document.createElement('span');
-        span.textContent = `${p.status ? STATUS_LABEL[p.status] : ''} · ${p.battery == null ? 'Bateria desconhecida' : `${p.battery}%`}`;
+        span.textContent = `${p.status ? STATUS_LABEL[p.status] : ''} · ${p.battery == null ? 'Bateria desconhecida' : `${p.battery}%`}${p.gpsNote ? ` · ${p.gpsNote}` : ''}`;
         el.append(strong, span);
         popup = new ml.Popup({ closeButton: false, closeOnClick: false, offset: 14, className: 'vt-popup' })
           .setLngLat((e.features![0].geometry as GeoJSON.Point).coordinates as [number, number]).setDOMContent(el).addTo(map);
@@ -308,6 +312,10 @@ export default function FleetPage() {
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <span aria-hidden style={{ width: 18, height: 18, borderRadius: 5, background: 'var(--ink-900)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="Warehouse" size={12} /></span>
             Galpão
+          </span>
+          <span data-testid="legend-gps" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span aria-hidden style={{ width: 18, height: 18, borderRadius: '50%', border: '1.5px solid var(--ink-900)', opacity: 0.8, boxSizing: 'border-box' }} />
+            GPS fraco, dormindo ou sem sinal
           </span>
           {/* P3: o item só aparece com moto esperando recolhimento (com 0 era ruído). */}
           {(counts.awaiting_pickup ?? 0) > 0 && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>

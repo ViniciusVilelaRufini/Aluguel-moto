@@ -83,6 +83,52 @@ export function positionView(v: Pick<Vehicle, 'positionAt' | 'speedKmh'>, now = 
   return { stale, note: stale ? `Posição de ${timeAgo(v.positionAt, now)} (sem GPS)` : undefined, speedText };
 }
 
+/**
+ * Menos satélites que isto = posição "fraca". Mesma regra da API (não usa posição fraca para confirmar parada nem para
+ * mudar cerca): manter igual ao limiar de satélites do serviço de posição em services/api.
+ */
+export const WEAK_GPS_SATELLITES = 5;
+
+export type GpsState = 'ok' | 'weak' | 'sleep' | 'no_gps' | 'unknown';
+
+/** Estado do GPS: dormindo (ignição desligada) > sem GPS (posição velha) > fraco (< 5 satélites) > bom; sem dado = desconhecido. */
+export function gpsState(v: Pick<Vehicle, 'gpsSatellites' | 'gpsSleep' | 'positionAt'>, now = Date.now()): GpsState {
+  if (v.gpsSleep === true) return 'sleep';
+  if (positionView({ positionAt: v.positionAt, speedKmh: undefined }, now).stale) return 'no_gps';
+  if (v.gpsSatellites == null) return 'unknown';
+  return v.gpsSatellites < WEAK_GPS_SATELLITES ? 'weak' : 'ok';
+}
+
+const satellitesText = (n: number) => `${n} ${n === 1 ? 'satélite' : 'satélites'}`;
+
+/** Texto da linha "GPS" da ficha: satélites (ou dormindo), combinado com a idade da posição quando ela é velha. */
+export function gpsView(v: Pick<Vehicle, 'gpsSatellites' | 'gpsSleep' | 'positionAt'>, now = Date.now()): { state: GpsState; text: string } {
+  const state = gpsState(v, now);
+  const sats = v.gpsSatellites == null ? undefined : satellitesText(v.gpsSatellites);
+  const age = timeAgo(v.positionAt, now);
+  switch (state) {
+    case 'sleep': return { state, text: 'Dormindo (ignição desligada)' };
+    case 'no_gps': return { state, text: sats ? `${sats} · posição de ${age}` : `Sem GPS · posição de ${age}` };
+    case 'weak': return { state, text: `${sats} (sinal fraco)` };
+    case 'ok': return { state, text: sats! };
+    case 'unknown': return { state, text: '—' };
+  }
+}
+
+/** Dica do marcador no mapa (só quando há algo a avisar). */
+export function gpsMapNote(state: GpsState): string | undefined {
+  switch (state) {
+    case 'weak': return 'GPS fraco';
+    case 'sleep': return 'GPS dormindo (ignição desligada)';
+    case 'no_gps': return 'Sem GPS recente';
+    default: return undefined;
+  }
+}
+
+/** Aviso do diálogo de Bloquear com o GPS dormindo. */
+export const GPS_SLEEP_LOCK_WARNING =
+  'O GPS da moto está dormindo (ignição desligada): a trava só confirma depois que o GPS voltar. Peça para ligar a ignição.';
+
 export interface BatteryView { known: boolean; pctText: string; rangeText: string }
 
 /** Bateria para exibir: sem leitura (`batteryKnown === false`) nunca vira "0%" nem "~0 km". */
