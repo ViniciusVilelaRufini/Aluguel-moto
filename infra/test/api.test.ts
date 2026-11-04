@@ -143,7 +143,9 @@ describe('ApiStack', () => {
       // Not task variables: CHANGE_ME is the placeholder value; DEV_JWT_SECRET only exists with AUTH_MODE=dev (refused in production);
       // ALLOW_TEST_HANDOVER is an opt-in flag (default off; only the `single` profile sets it), named in the guard that restricts it.
       // TRACCAR_ADMIN_PASSWORD belongs to the owner-run CLI cli/provision-gt06.ts (never a task variable).
-      const NOT_VARIABLES = ['CHANGE_ME', 'DEV_JWT_SECRET', 'ALLOW_TEST_HANDOVER', 'TRACCAR_ADMIN_PASSWORD'];
+      // CONFIRM_FLAG and RENTAL_PLANS are code identifiers interpolated into error messages of the owner-run CLI cli/dev-reset-bench.ts;
+      // VOLTI_ENV is the dev guard of that same CLI, which the owner sets when running it (the task does not need it).
+      const NOT_VARIABLES = ['CHANGE_ME', 'DEV_JWT_SECRET', 'ALLOW_TEST_HANDOVER', 'TRACCAR_ADMIN_PASSWORD', 'CONFIRM_FLAG', 'RENTAL_PLANS', 'VOLTI_ENV'];
       const required = new Set<string>();
       for (const f of files) {
         const text = readFileSync(f, 'utf8');
