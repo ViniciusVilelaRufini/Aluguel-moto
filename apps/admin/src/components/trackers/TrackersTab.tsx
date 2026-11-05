@@ -61,7 +61,7 @@ export function TrackersTab({ groups }: { groups: StaffGroup[] }) {
         <DataTable<TrackerDevice> label="Rastreadores" testId="trackers-table" columns={columns} rows={items} loading={list.isLoading}
           empty={filtered ? 'Nenhum rastreador encontrado.' : 'Nenhum rastreador cadastrado. Cadastre o primeiro para poder instalar nas motos.'} />
       )}
-      {creating && <CreateTrackerWizard onClose={() => setCreating(false)} onCreated={() => {}} />}
+      {creating && <CreateTrackerWizard groups={groups} onClose={() => setCreating(false)} onCreated={() => {}} />}
     </div>
   );
 }

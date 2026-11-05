@@ -27,6 +27,14 @@ describe('lib/trackers', () => {
     expect(trackerStatusLabel({ ...base, online: true, lastSeenAt: new Date(NOW - 60_000).toISOString() }, NOW)).toBe('Online');
     expect(trackerStatusLabel({ ...base, lastSeenAt: new Date(NOW - 5 * 60_000).toISOString() }, NOW)).toBe('Offline · último sinal há 5 min');
     expect(trackerStatusLabel(base, NOW)).toBe('Nunca conectou');
+    expect(trackerStatusLabel({ ...base, installed: true }, NOW)).toBe('Aguardando o primeiro sinal (até ~1 min)');
+  });
+  it('trackerRefetchInterval: 10 s só com o instalado offline', async () => {
+    const { trackerRefetchInterval } = await import('@/lib/trackers');
+    expect(trackerRefetchInterval({ ...base, installed: true })).toBe(10_000);
+    expect(trackerRefetchInterval({ ...base, installed: true, online: true })).toBe(false);
+    expect(trackerRefetchInterval(base)).toBe(false);
+    expect(trackerRefetchInterval(undefined)).toBe(false);
   });
   it('imeiLast4 devolve os 4 últimos dígitos', () => {
     expect(imeiLast4('869890080273430')).toBe('3430');
@@ -67,10 +75,32 @@ describe('TrackersTab', () => {
 describe('CreateTrackerWizard', () => {
   it('passo 1 mostra a ajuda do IMEI e o modelo J16', async () => {
     const { CreateTrackerWizard } = await import('@/components/trackers/CreateTrackerWizard');
-    const t = text(renderToStaticMarkup(<CreateTrackerWizard onClose={() => {}} onCreated={() => {}} />));
+    const t = text(renderToStaticMarkup(<CreateTrackerWizard groups={['admin']} onClose={() => {}} onCreated={() => {}} />));
     expect(t).toContain('1. Aparelho');
     expect(t).toContain('2. Chip');
     expect(t).toContain('15 números. Está na etiqueta do aparelho ou na resposta do comando PARAM#.');
     expect(t).toContain('J16');
+  });
+});
+
+describe('CreateTrackerWizard — chip novo só com simCard.manage (I4)', () => {
+  it('sem permissão: esconde "Cadastrar chip novo" e orienta', async () => {
+    const { ChipModePicker } = await import('@/components/trackers/CreateTrackerWizard');
+    const t = text(renderToStaticMarkup(<ChipModePicker mode="stock" onChange={() => {}} canCreateSim={false} />));
+    expect(t).not.toContain('Cadastrar chip novo');
+    expect(t).toContain('Escolher um chip do estoque');
+    expect(t).toContain('Pular — vincular depois');
+    expect(t).toContain('Peça ao admin para cadastrar o chip ou pule.');
+  });
+  it('admin: oferece "Cadastrar chip novo"', async () => {
+    const { ChipModePicker } = await import('@/components/trackers/CreateTrackerWizard');
+    const t = text(renderToStaticMarkup(<ChipModePicker mode="stock" onChange={() => {}} canCreateSim />));
+    expect(t).toContain('Cadastrar chip novo');
+    expect(t).not.toContain('Peça ao admin');
+  });
+  it('o assistente recebe os grupos (operação abre sem quebrar)', async () => {
+    const { CreateTrackerWizard } = await import('@/components/trackers/CreateTrackerWizard');
+    const t = text(renderToStaticMarkup(<CreateTrackerWizard groups={['operacao']} onClose={() => {}} onCreated={() => {}} />));
+    expect(t).toContain('1. Aparelho');
   });
 });

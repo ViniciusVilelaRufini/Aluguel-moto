@@ -3,7 +3,9 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
+import { can } from '@/lib/permissions';
 import type { TrackerDevice } from '@/lib/trackers';
+import type { StaffGroup } from '@/lib/types';
 import { Button } from '@/ds/Button';
 import { Field, Modal, Select, TextInput, ErrorNote } from '../ui';
 import { SIM_ICCID_RE, SIM_MSISDN_RE, simCardBody } from '../tracker/SimCardSection';
@@ -19,10 +21,32 @@ const CHIP_OPTIONS: { value: ChipMode; label: string }[] = [
 ];
 
 /**
+ * Escolha do chip no passo 2. "Cadastrar chip novo" só com `simCard.manage` (admin: `POST /sim-cards`); sem ela, a operação
+ * escolhe do estoque ou pula, e o texto orienta.
+ */
+export function ChipModePicker({ mode, onChange, canCreateSim }: { mode: ChipMode; onChange: (m: ChipMode) => void; canCreateSim: boolean }) {
+  const options = canCreateSim ? CHIP_OPTIONS : CHIP_OPTIONS.filter((o) => o.value !== 'new');
+  return (
+    <>
+      <div role="radiogroup" aria-label="Chip do rastreador" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {options.map((o) => (
+          <label key={o.value} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}>
+            <input type="radio" name="chip-mode" value={o.value} checked={mode === o.value} onChange={() => onChange(o.value)} data-testid={`chip-mode-${o.value}`} />
+            {o.label}
+          </label>
+        ))}
+      </div>
+      {!canCreateSim && <div style={{ fontSize: 13, color: 'var(--text-secondary)' }} data-testid="chip-new-hint">Peça ao admin para cadastrar o chip ou pule.</div>}
+    </>
+  );
+}
+
+/**
  * Cadastro de rastreador em 2 passos: 1. Aparelho (IMEI e modelo) e 2. Chip (do estoque, novo ou depois).
  * Se o chip novo é criado e o rastreador falha (ex.: IMEI repetido), o chip fica guardado e é reaproveitado na nova tentativa.
  */
-export function CreateTrackerWizard({ onClose, onCreated }: { onClose: () => void; onCreated: (t: TrackerDevice) => void }) {
+export function CreateTrackerWizard({ groups, onClose, onCreated }: { groups: StaffGroup[]; onClose: () => void; onCreated: (t: TrackerDevice) => void }) {
+  const canCreateSim = can(groups, 'simCard.manage');
   const qc = useQueryClient();
   const [step, setStep] = useState<1 | 2>(1);
   const [imei, setImei] = useState('');
@@ -47,7 +71,7 @@ export function CreateTrackerWizard({ onClose, onCreated }: { onClose: () => voi
   const iccidOk = SIM_ICCID_RE.test(iccid);
   const msisdnOk = msisdn === '' || SIM_MSISDN_RE.test(msisdn);
   const carrierOk = carrier.trim().length >= 1 && carrier.trim().length <= 40;
-  const chipOk = mode === 'skip' || (mode === 'stock' ? simId !== '' : iccidOk && msisdnOk && carrierOk);
+  const chipOk = mode === 'skip' || (mode === 'stock' ? simId !== '' : canCreateSim && iccidOk && msisdnOk && carrierOk);
 
   const save = useMutation({
     mutationFn: async () => {
@@ -96,17 +120,10 @@ export function CreateTrackerWizard({ onClose, onCreated }: { onClose: () => voi
         </>
       ) : (
         <>
-          <div role="radiogroup" aria-label="Chip do rastreador" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {CHIP_OPTIONS.map((o) => (
-              <label key={o.value} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}>
-                <input type="radio" name="chip-mode" value={o.value} checked={mode === o.value} onChange={() => setMode(o.value)} data-testid={`chip-mode-${o.value}`} />
-                {o.label}
-              </label>
-            ))}
-          </div>
+          <ChipModePicker mode={mode} onChange={setMode} canCreateSim={canCreateSim} />
           {mode === 'stock' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 200, overflow: 'auto' }} data-testid="chip-stock">
-              {freeChips.length === 0 && !stock.isLoading && <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Nenhum chip livre no estoque. Cadastre um chip novo.</div>}
+              {freeChips.length === 0 && !stock.isLoading && <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{canCreateSim ? 'Nenhum chip livre no estoque. Cadastre um chip novo.' : 'Nenhum chip livre no estoque.'}</div>}
               {freeChips.map((s) => (
                 <button key={s.id} type="button" data-testid="chip-option" aria-pressed={s.id === simId} onClick={() => setSimId(s.id)}
                   style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 'var(--radius-md)', border: `1.5px solid ${s.id === simId ? 'var(--border-focus)' : 'var(--border-subtle)'}`, background: 'var(--surface-card)', cursor: 'pointer' }}>
@@ -117,7 +134,7 @@ export function CreateTrackerWizard({ onClose, onCreated }: { onClose: () => voi
               {touched && !chipOk && <div style={{ fontSize: 12, color: 'var(--danger-ink)' }}>Escolha um chip ou use outra opção.</div>}
             </div>
           )}
-          {mode === 'new' && (
+          {mode === 'new' && canCreateSim && (
             <>
               <Field label="ICCID" hint="Número impresso no chip (18 a 22 números)." error={touched && !iccidOk ? 'Informe 18 a 22 dígitos' : undefined}><TextInput value={iccid} onChange={setIccid} testId="sim-iccid" /></Field>
               <Field label="Operadora" error={touched && !carrierOk ? 'Informe a operadora (até 40 caracteres)' : undefined}><TextInput value={carrier} onChange={setCarrier} testId="sim-carrier" /></Field>
