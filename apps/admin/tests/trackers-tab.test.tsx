@@ -36,6 +36,15 @@ describe('lib/trackers', () => {
     expect(trackerRefetchInterval(base)).toBe(false);
     expect(trackerRefetchInterval(undefined)).toBe(false);
   });
+  it('N3: depois de 5 min sem sinal desde a referência, "Sem sinal…" e sem refetch', async () => {
+    const { trackerRefetchInterval } = await import('@/lib/trackers');
+    const inst = { ...base, installed: true };
+    expect(trackerStatusLabel(inst, NOW, NOW - 5 * 60_000)).toBe('Aguardando o primeiro sinal (até ~1 min)');
+    expect(trackerStatusLabel(inst, NOW, NOW - 5 * 60_000 - 1)).toBe('Sem sinal. Confira se o aparelho está ligado e com chip.');
+    expect(trackerStatusLabel(base, NOW, NOW - 10 * 60_000)).toBe('Nunca conectou');
+    expect(trackerRefetchInterval(inst, NOW, NOW - 4 * 60_000)).toBe(10_000);
+    expect(trackerRefetchInterval(inst, NOW, NOW - 5 * 60_000 - 1)).toBe(false);
+  });
   it('imeiLast4 devolve os 4 últimos dígitos', () => {
     expect(imeiLast4('869890080273430')).toBe('3430');
   });
