@@ -25,6 +25,11 @@ export interface CommandRequest {
   lockOrigin?: LockOrigin | null;
   /** Estratégia do rastreador, lida do `Tracker` pelo `CommandsService`. Ausente = `speed_control` (comportamento de sempre). */
   controlMode?: TrackerControlMode;
+  /**
+   * Só `lock` só relé pedido depois de instalar o rastreador (`tracker_install`, N1): a moto desta id precisa continuar sem
+   * aluguel aberto e sem reserva em uso no instante do corte; senão o comando termina `superseded` sem travar.
+   */
+  freeVehicleId?: string;
 }
 
 export interface CommandOutcome {

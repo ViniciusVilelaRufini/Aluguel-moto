@@ -21,6 +21,8 @@ class _$UpdateSimCardRequest extends UpdateSimCardRequest {
   final String? notes;
   @override
   final String? vehicleId;
+  @override
+  final String? trackerId;
 
   factory _$UpdateSimCardRequest(
           [void Function(UpdateSimCardRequestBuilder)? updates]) =>
@@ -33,7 +35,8 @@ class _$UpdateSimCardRequest extends UpdateSimCardRequest {
       this.apn,
       this.status,
       this.notes,
-      this.vehicleId})
+      this.vehicleId,
+      this.trackerId})
       : super._();
   @override
   UpdateSimCardRequest rebuild(
@@ -54,7 +57,8 @@ class _$UpdateSimCardRequest extends UpdateSimCardRequest {
         apn == other.apn &&
         status == other.status &&
         notes == other.notes &&
-        vehicleId == other.vehicleId;
+        vehicleId == other.vehicleId &&
+        trackerId == other.trackerId;
   }
 
   @override
@@ -67,6 +71,7 @@ class _$UpdateSimCardRequest extends UpdateSimCardRequest {
     _$hash = $jc(_$hash, status.hashCode);
     _$hash = $jc(_$hash, notes.hashCode);
     _$hash = $jc(_$hash, vehicleId.hashCode);
+    _$hash = $jc(_$hash, trackerId.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -80,7 +85,8 @@ class _$UpdateSimCardRequest extends UpdateSimCardRequest {
           ..add('apn', apn)
           ..add('status', status)
           ..add('notes', notes)
-          ..add('vehicleId', vehicleId))
+          ..add('vehicleId', vehicleId)
+          ..add('trackerId', trackerId))
         .toString();
   }
 }
@@ -117,6 +123,10 @@ class UpdateSimCardRequestBuilder
   String? get vehicleId => _$this._vehicleId;
   set vehicleId(String? vehicleId) => _$this._vehicleId = vehicleId;
 
+  String? _trackerId;
+  String? get trackerId => _$this._trackerId;
+  set trackerId(String? trackerId) => _$this._trackerId = trackerId;
+
   UpdateSimCardRequestBuilder() {
     UpdateSimCardRequest._defaults(this);
   }
@@ -131,6 +141,7 @@ class UpdateSimCardRequestBuilder
       _status = $v.status;
       _notes = $v.notes;
       _vehicleId = $v.vehicleId;
+      _trackerId = $v.trackerId;
       _$v = null;
     }
     return this;
@@ -159,6 +170,7 @@ class UpdateSimCardRequestBuilder
           status: status,
           notes: notes,
           vehicleId: vehicleId,
+          trackerId: trackerId,
         );
     replace(_$result);
     return _$result;

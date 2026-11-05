@@ -171,6 +171,15 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(g).toMatch(/docker run --rm -i --network none --cap-drop ALL --read-only --user 0:0/);
   });
 
+  it('gt06.sh init: garante deviceReadonly:false e deviceLimit:-1 no usuário da ponte (PUT completo com o admin, idempotente, sem segredo na linha de comando)', () => {
+    const g = file('gt06.sh');
+    expect(g).toContain('"deviceReadonly":false');
+    expect(g).toContain('"deviceLimit":-1');
+    expect(g).toMatch(/if \[ "\$fixed" != "\$bridge_user" \]; then/); // só grava se mudou
+    expect(g).toMatch(/traccar_admin PUT "\/api\/users\/\$bridge_id" "\$fixed"/);
+    expect(g).not.toMatch(/curl[^\n]*\s-u\s/);
+  });
+
   it('gt06.sh init: GET /api/users com falha não vira admin duplicado; cadastro aberto do Traccar desligado', () => {
     const g = file('gt06.sh');
     // Só 401 (admin ainda não existe) leva à criação; 000/5xx tenta de novo e depois falha com mensagem.

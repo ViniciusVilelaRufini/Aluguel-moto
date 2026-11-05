@@ -10,11 +10,16 @@ import { STATUS_LABEL, VEHICLE_STATUSES } from '@/lib/status';
 import { EMPTY_FILTERS, vehicleListQuery, type VehicleFilters } from '@/lib/vehicles-admin';
 import type { VehicleStatus } from '@/lib/types';
 import { Button } from '@/ds/Button';
+import { SegmentedControl } from '@/ds/SegmentedControl';
+import { TrackersTab } from '@/components/trackers/TrackersTab';
 import { Input } from '@/ds/Input';
 import { VehicleFormModal } from '@/components/VehicleFormModal';
 import { VehicleDetailPanel } from '@/components/vehicles/VehicleDetailPanel';
 import { VehiclesTable } from '@/components/vehicles/VehiclesTable';
 import { ErrorNote, Page, PageHeader, Select, usePagedQuery } from '@/components/ui';
+
+type MotosTab = 'vehicles' | 'trackers';
+const TAB_OPTIONS: { value: MotosTab; label: string }[] = [{ value: 'vehicles', label: 'Motos' }, { value: 'trackers', label: 'Rastreadores' }];
 
 /**
  * Seção Motos (admin, operação): lista paginada com busca e filtros, cadastro com galpão, ficha com edição,
@@ -29,6 +34,7 @@ export default function VehiclesPage() {
   const [selected, setSelected] = useState<string | null>(params.get('vehicle'));
   const [creating, setCreating] = useState(params.get('new') === '1' && can(groups, 'vehicle.edit'));
   const savedRef = useRef(false);
+  const [tab, setTab] = useState<MotosTab>(params.get('tab') === 'rastreadores' ? 'trackers' : 'vehicles');
 
   // Busca com espera curta para não consultar a cada tecla.
   useEffect(() => {
@@ -52,10 +58,24 @@ export default function VehiclesPage() {
   const patch = (p: Partial<VehicleFilters>) => setFilters((f) => ({ ...f, ...p }));
   const filtered = !!(filters.q || filters.depotId || filters.status || filters.vehicleModelId);
 
+  const tabs = (
+    <SegmentedControl<MotosTab> label="Área de motos" options={TAB_OPTIONS} value={tab} style={{ width: 280 }}
+      onChange={(t) => { setTab(t); router.replace(t === 'trackers' ? '/motos?tab=rastreadores' : selected ? `/motos?vehicle=${selected}` : '/motos', { scroll: false }); }} />
+  );
+  if (tab === 'trackers') {
+    return (
+      <Page>
+        <PageHeader subtitle="Estoque de rastreadores: cadastre o aparelho e o chip, depois instale na moto pela ficha dela.">{tabs}</PageHeader>
+        <TrackersTab groups={groups} />
+      </Page>
+    );
+  }
+
   return (
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <Page>
         <PageHeader subtitle="Cadastro da frota: galpão, modelo, rastreador e bateria de cada moto.">
+          {tabs}
           {can(groups, 'vehicle.edit') && <Button size="sm" variant="dark" icon="Plus" testId="vehicle-create" onClick={() => setCreating(true)}>Cadastrar moto</Button>}
         </PageHeader>
         <div role="group" aria-label="Filtrar motos" style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 2fr) repeat(3, minmax(150px, 1fr))', gap: 10, alignItems: 'end' }} className="filters-grid">

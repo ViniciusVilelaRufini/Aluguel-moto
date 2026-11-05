@@ -420,6 +420,11 @@ emite um warning no synth. `-c traccarDesiredCount=1` liga as duas tasks (padrã
 `-c bridgeImageTag=<sha>` explícita (nunca `latest`). O JDBC do Traccar usa `?sslmode=require` (RDS PG16 com `rds.force_ssl`).
 Atenção LGPD: os logs do próprio Traccar contêm o IMEI (identificador do dispositivo) e vão ao mesmo log group `/volti/<env>/traccar`
 (mesma retenção); restrinja o acesso a ele e não o exporte.
+Estoque de rastreadores (2026-11-05, `docs/decisoes.md`): **antes de implantar esta stack**, a política IoT da ponte
+(`buildBridgePolicyDocument`) precisa de curingas por prefixo — `motos/gt06-*` e `motos/moto-*` (telemetria, eventos, comandos) e o
+shadow `$aws/things/gt06-*/shadow/...` e `$aws/things/moto-*/shadow/...` (update, get, delta, get/accepted) — porque o painel cria
+rastreadores no estoque (`gt06-<IMEI>`) e os instala em qualquer moto sem novo deploy. Com a lista fixa de things, o IoT Core
+derruba a conexão da ponte ao publicar num thing fora dela. O dev single (Mosquitto, ACL `motos/+`) já cobre.
 Retenção LGPD do banco `traccar`: `DATABASE_HISTORY_DAYS=90` (`database.historyDays`) faz o próprio Traccar apagar, numa tarefa
 diária, posições e eventos com mais de 90 dias (mesmo valor no `deploy/single/compose.yml` e no `docker-compose.yml`). A exclusão
 de dados da API não alcança esse banco: é essa retenção que cobre a expiração dos trajetos guardados pelo Traccar.

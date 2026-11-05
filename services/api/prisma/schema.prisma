@@ -617,6 +617,10 @@ model Tracker {
   controlMode     TrackerControlMode @default(speed_control)
   /// Protocolo de chegada quando não é MQTT direto (ex.: `gt06`).
   protocol        String?
+  /// Modelo do aparelho (`J16`); null em rastreadores `speed_control`.
+  model           String?
+  /// Último sinal do rastreador do estoque (sem moto); gravado no máximo a cada 15 s.
+  lastSeenAt      DateTime?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
   simCard         SimCard?

@@ -328,7 +328,10 @@ aws ssm start-session --target $IID --document-name AWS-StartPortForwardingSessi
 
 Provisionar a moto do emulador (IMEI padrão `860000000000901`) e rodar o e2e. O e2e é só com o emulador: com o Tracker em
 outro IMEI (um J16 real) ele sai 2 sem subir o emulador, que forjaria posições paradas do aparelho de verdade (o relê poderia
-cortar com a moto andando). J16 real: `gt06.sh provision` com o IMEI dele, `gt06.sh status` e o teste de bancada do guia abaixo.
+cortar com a moto andando). J16 real novo: cadastre-o no painel (Motos -> Rastreadores: modelo, IMEI e chip) e, com ele ligado, instale na moto pela ficha da
+moto; a ponte cria/renomeia o aparelho no Traccar sozinha (até ~1 min para aparecer online) e o `gt06.sh init` do update garante a
+permissão do usuário da ponte para isso. Não precisa mais de `gt06.sh provision`; ele continua documentado abaixo como alternativa
+(CLI/CloudShell, e para o emulador). Depois: `gt06.sh status` e o teste de bancada do guia abaixo.
 Depois de provisionar, o `provision` reinicia a `traccar-bridge` se ela estiver rodando (linha `traccar-bridge reiniciada ...`):
 na bancada do J16 a ponte só passou a receber o dispositivo recém-ligado a ela no Traccar depois de reiniciar (permissões da
 sessão do WebSocket). O reinício é seguro: a ponte esquece o bit de corte de todas as motos e espera status novo; um

@@ -29,9 +29,12 @@ const OFFLINE_REGRESSION: VehicleCommand['status'][] = ['pending', 'in_progress'
 /**
  * Travas de sistema que são só "estacionar" (fim de aluguel, chegada no galpão, rollback do início): não gravam origem nem
  * rebaixam uma existente. A chegada no galpão (`rental_depot_return`) também: com origem `system`, o fechamento mandaria a
- * moto para `maintenance` e o próximo início no balcão (`isLockedByStaff`) recusaria a moto.
+ * moto para `maintenance` e o próximo início no balcão (`isLockedByStaff`) recusaria a moto. A trava pedida depois de instalar
+ * um rastreador (`tracker_install`, I1) também: a moto livre fica travada e continua alugável.
  */
-const PARKING_LOCK_PURPOSES = new Set(['rental_end', 'rental_force_end', 'rental_depot_return', 'rental_start_rollback']);
+/** Trava pedida depois de instalar um rastreador (I1/N1). */
+export const TRACKER_INSTALL_PURPOSE = 'tracker_install';
+const PARKING_LOCK_PURPOSES = new Set(['rental_end', 'rental_force_end', 'rental_depot_return', 'rental_start_rollback', TRACKER_INSTALL_PURPOSE]);
 
 /**
  * Autoridade do ator: cliente → `customer`; staff com admin/operacao → `staff`; demais staff (ex.: só `campo`) → `field`;
@@ -151,7 +154,7 @@ export class CommandsService {
       ? { commandId: command.id, status: 'failed', reason: 'unsupported_by_tracker' }
       : input.type === 'unlock' && authority !== 'staff' && vehicle.stolenMode
         ? { commandId: command.id, status: 'failed', reason: 'locked_by_staff' }
-        : await this.callGateway(command.id, vehicle.thingName, input, authority, controlMode);
+        : await this.callGateway(command.id, vehicle.thingName, input, authority, controlMode, vehicle.id);
     const updated = await this.applyOutcome(command, outcome);
     if (updated.status === 'confirmed') await this.reflectOnVehicle(vehicle.id, input);
     return this.present([updated]).then(([c]) => c);
@@ -171,10 +174,12 @@ export class CommandsService {
     }
   }
 
-  private async callGateway(commandId: string, thingName: string, input: DispatchInput, authority: CommandAuthority, controlMode: TrackerControlMode): Promise<CommandOutcome> {
+  private async callGateway(commandId: string, thingName: string, input: DispatchInput, authority: CommandAuthority, controlMode: TrackerControlMode, vehicleId: string): Promise<CommandOutcome> {
     const req: CommandRequest = { commandId, thingName, authority };
     if (controlMode === 'relay_only') req.controlMode = 'relay_only';
     if (input.type === 'lock') req.lockOrigin = lockOriginOf(authority, input.context?.purpose);
+    // N1: a trava pedida depois de instalar só corta se a moto continuar livre (reconferido antes de gravar `travada: true`).
+    if (input.type === 'lock' && input.context?.purpose === TRACKER_INSTALL_PURPOSE) req.freeVehicleId = vehicleId;
     try {
       switch (input.type) {
         case 'lock':

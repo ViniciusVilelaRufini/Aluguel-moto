@@ -1,7 +1,7 @@
 import { ConsoleQueue, CONSOLE_TIMEOUT_MS, isRelayConsoleText, parseConsoleCommand, replyMatches } from './console';
 import { FIXED_LIMIT_KMH, TOPICS, thingOf, type DeviceEventMessage, type ReportedState } from './contract';
 import { CUT_FRESH_MS, cutRefusal, parseDelta, planDeltaFor, planReconnect, type BridgeAction } from './delta';
-import { maskImei, silentLogger, type Logger } from './log';
+import { maskImei, maskLogger, silentLogger, type Logger } from './log';
 import { applyPosition, currentBlocked, freshBlocked, gpsSleepOf, markCommandSent, markReconnected, parseRelayReply, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { MqttLike } from './mqtt';
 import type { TraccarDevice, TraccarEvent, TraccarPosition, TraccarSocketMessage } from './traccar/types';
@@ -18,6 +18,10 @@ export interface TraccarApi {
   sendCommand(deviceId: number, type: 'engineStop' | 'engineResume'): Promise<'sent' | 'queued'>;
   /** Comando de texto do console (`custom`, sempre `noQueue`): 202 = enfileirado pelo Traccar (`queued`); 400 = sem sessão (`offline`). */
   sendCustom(deviceId: number, data: string): Promise<'sent' | 'queued' | 'offline'>;
+  /** `POST /api/devices`: cria o aparelho (fica ligado ao usuário da ponte). */
+  createDevice(name: string, uniqueId: string): Promise<TraccarDevice>;
+  /** `PUT /api/devices/{id}` com o objeto completo e só o nome trocado. */
+  updateDeviceName(device: TraccarDevice, name: string): Promise<TraccarDevice>;
 }
 
 export interface Registry {
@@ -53,6 +57,8 @@ export const CONSOLE_SWEEP_MS = 5_000;
 export const UNDELIVERED_REOPEN_MS = 90_000;
 /** Reaberturas do WebSocket por dispositivo não entregue: no máximo uma neste intervalo (e uma por moto). */
 export const SOCKET_REOPEN_MIN_MS = 5 * 60_000;
+/** Reabertura do WebSocket por aparelho recém-criado: limite próprio e menor (cadastro seguido de outro não espera 5 min). */
+export const NEW_DEVICE_REOPEN_MIN_MS = 60_000;
 
 /** Corte conhecido e bateria ainda desconhecida há este tempo → telemetria sai com `bateria_pct: 0` (log `battery_unknown`). */
 export const BATTERY_UNKNOWN_CAP_MS = 5 * 60_000;
@@ -111,6 +117,11 @@ export class Bridge {
   private readonly reopenTried = new Set<string>();
   private socketOpenedAt?: number;
   private lastReopenAt = Number.NEGATIVE_INFINITY;
+  private lastNewDeviceReopenAt = Number.NEGATIVE_INFINITY;
+  /** Aparelho criado e ainda sem reabertura do WebSocket (limitada ou sem conexão): atendido na primeira releitura que puder. */
+  private newDeviceReopenPending = false;
+  /** IMEIs com `traccar_device_not_visible` já logado (uma vez por IMEI, até o aparelho aparecer). */
+  private readonly notVisibleLogged = new Set<string>();
   private readonly subscribed = new Set<string>();
   private readonly chains = new Map<string, Promise<void>>();
   private imeiToThing = new Map<string, string>();
@@ -139,7 +150,7 @@ export class Bridge {
     private readonly registry: Registry,
     private readonly opts: BridgeOptions,
   ) {
-    this.log = opts.log ?? silentLogger;
+    this.log = maskLogger(opts.log ?? silentLogger);
     this.now = opts.now ?? Date.now;
     this.publishTimeoutMs = opts.publishTimeoutMs ?? PUBLISH_TIMEOUT_MS;
     this.subscribeTimeoutMs = opts.subscribeTimeoutMs ?? SUBSCRIBE_TIMEOUT_MS;
@@ -309,11 +320,68 @@ export class Bridge {
       });
     }
     await this.subscribe([...this.thingToImei.keys()].filter((t) => !this.subscribed.has(t)));
+    await this.ensureTraccarDevices().catch((err: Error) => this.log.error({ msg: 'traccar_devices_sync_failed', error: err.message }));
     try {
       await this.checkUndelivered();
     } catch (err) {
       this.log.error({ msg: 'undelivered_check_failed', error: (err as Error).message });
     }
+  }
+
+  /**
+   * Rastreador cadastrado no painel (registro IMEI → thingName) vira aparelho no Traccar sem passo manual: IMEI sem aparelho
+   * visível ao usuário da ponte → `createDevice(thingName, imei)`; aparelho com nome diferente do thingName (rastreador instalado
+   * numa moto, trocado ou devolvido ao estoque) → `updateDeviceName`, sem duplicar. Falha em um aparelho é registrada (IMEI
+   * mascarado) e tentada de novo na próxima releitura. Criou algum → reabre o WebSocket (o aparelho novo só chega numa sessão
+   * nova), no máximo uma a cada `NEW_DEVICE_REOPEN_MIN_MS` (60 s); se limitada, o pedido fica pendente e é atendido na primeira releitura que puder.
+   */
+  async ensureTraccarDevices(): Promise<{ created: number; renamed: number }> {
+    const result = { created: 0, renamed: 0 };
+    if (!this.imeiToThing.size) return result;
+    // Só os aparelhos desta rodada (não o cache acumulado): aparelho apagado no Traccar é recriado. Sem reler /api/server.
+    const visible = await this.traccar.devices();
+    for (const d of visible) await this.updateDevice(d);
+    const byImei = new Map(visible.map((d) => [d.uniqueId, d]));
+    for (const imei of byImei.keys()) this.notVisibleLogged.delete(imei);
+    for (const [imei, thing] of this.imeiToThing) {
+      const existing = byImei.get(imei);
+      try {
+        if (!existing) {
+          await this.updateDevice(await this.traccar.createDevice(thing, imei));
+          result.created++;
+          this.log.info({ msg: 'traccar_device_created', thingName: thing, imei: maskImei(imei) });
+        } else if (existing.name !== thing) {
+          const from = existing.name;
+          await this.updateDevice(await this.traccar.updateDeviceName(existing, thing));
+          result.renamed++;
+          this.log.info({ msg: 'traccar_device_renamed', thingName: thing, from, imei: maskImei(imei) });
+        }
+      } catch (err) {
+        // 400 ao criar: o aparelho existe mas o usuário da ponte não o enxerga (de outro usuário) OU a ponte não tem permissão de
+        // criar (`deviceReadonly`/`deviceLimit`; o `gt06.sh init` corrige). Uma vez por IMEI.
+        if (!existing && (err as Error).message.endsWith('_400')) {
+          if (!this.notVisibleLogged.has(imei)) {
+            this.notVisibleLogged.add(imei);
+            this.log.error({ msg: 'traccar_device_not_visible', thingName: thing, imei: maskImei(imei), hint: 'aparelho de outro usuário OU ponte sem permissão (rode gt06.sh init)' });
+          }
+          continue;
+        }
+        this.log.error({ msg: existing ? 'traccar_device_rename_failed' : 'traccar_device_create_failed', thingName: thing, imei: maskImei(imei), error: (err as Error).message });
+      }
+    }
+    if (result.created > 0) this.newDeviceReopenPending = true;
+    if (this.newDeviceReopenPending) {
+      const now = this.now();
+      if (now - this.lastNewDeviceReopenAt < NEW_DEVICE_REOPEN_MIN_MS) {
+        this.logLimited('traccar_socket_reopen_rate_limited', 'warn', { reason: 'new_devices' }); // pedido segue pendente
+      } else if (this.opts.reopenSocket?.()) {
+        this.lastNewDeviceReopenAt = now;
+        this.lastReopenAt = now; // o checkUndelivered não reabre de novo logo em seguida
+        this.newDeviceReopenPending = false;
+        this.log.info({ msg: 'traccar_socket_reopen_new_devices', devices: result.created });
+      }
+    }
+    return result;
   }
 
   /**

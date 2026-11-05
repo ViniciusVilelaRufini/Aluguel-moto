@@ -3,17 +3,19 @@
  * para teste.
  */
 import type { Prisma } from '@prisma/client';
-import { hasInUseReservation, hasOpenRental, pendingLockKind } from '../common/vehicle-in-use';
+import { hasOpenRental } from '../common/vehicle-in-use';
+import { lockVehicleTrackerChange, pendingLockOn, vehicleInUseReason } from '../modules/trackers/install-guards';
+import { isStockable, stockThingName } from '../modules/trackers/trackers.mapper';
 import { IoRedisStore, type RedisStore } from '../redis/redis-store';
+
+const openRentalError = (code: string) => new Error(`A moto ${code} está com um aluguel aberto; reprovisione o rastreador com a moto fora de aluguel.`);
 
 /**
  * Reprovisionar troca o modo de controle (`speed_control` ↔ `relay_only`) e o caminho dos comandos: com aluguel aberto, um lock
  * de fim de aluguel ou de cerca poderia seguir o fluxo errado. Recusa antes de qualquer escrita (AWS, Traccar ou banco).
  */
 export async function assertNoOpenRental(tx: Pick<Prisma.TransactionClient, 'rental'>, vehicle: { id: string; code: string }): Promise<void> {
-  if (await hasOpenRental(tx, vehicle.id)) {
-    throw new Error(`A moto ${vehicle.code} está com um aluguel aberto; reprovisione o rastreador com a moto fora de aluguel.`);
-  }
+  if (await hasOpenRental(tx, vehicle.id)) throw openRentalError(vehicle.code);
 }
 
 /**
@@ -21,8 +23,10 @@ export async function assertNoOpenRental(tx: Pick<Prisma.TransactionClient, 'ren
  * seguiria o caminho do modo antigo. Recusa como o aluguel aberto.
  */
 export async function assertVehicleFreeForProvisioning(tx: Pick<Prisma.TransactionClient, 'rental' | 'reservation'>, vehicle: { id: string; code: string }): Promise<void> {
-  await assertNoOpenRental(tx, vehicle);
-  if (await hasInUseReservation(tx, vehicle.id)) {
+  // Mesma regra do painel (`install-guards.ts`): aluguel aberto primeiro, depois reserva ativa/em entrega.
+  const inUse = await vehicleInUseReason(tx, vehicle.id);
+  if (inUse === 'rental') throw openRentalError(vehicle.code);
+  if (inUse === 'reservation') {
     throw new Error(`A moto ${vehicle.code} tem uma reserva ativa ou em entrega; reprovisione o rastreador com a moto livre.`);
   }
 }
@@ -34,8 +38,8 @@ export async function assertVehicleFreeForProvisioning(tx: Pick<Prisma.Transacti
  * Erro de leitura propaga (falha fechada).
  */
 export async function assertNoPendingLock(redis: Pick<RedisStore, 'exists' | 'hgetall'>, thingName: string): Promise<void> {
-  const what = await pendingLockKind(redis, thingName);
-  if (what) throw new Error(`A moto ${thingName} tem uma trava em andamento na API (${what}); espere a trava terminar antes de reprovisionar o rastreador.`);
+  const pending = await pendingLockOn(redis, [thingName]);
+  if (pending) throw new Error(`A moto ${thingName} tem uma trava em andamento na API (${pending.kind}); espere a trava terminar antes de reprovisionar o rastreador.`);
 }
 
 /** Prazo do PING ao Redis da API no provisionamento. */
@@ -69,6 +73,18 @@ export async function connectProvisioningRedis(
   return redis;
 }
 
+/**
+ * Desvincula o rastreador antigo da moto (outro thingName) antes de ligar o novo (`Tracker.vehicleId` é único). M5: um GT06 do
+ * estoque (relay_only, IMEI, sem certificado) volta ao estoque como `gt06-<IMEI>` — com o `moto-NNNN` antigo ele continuaria
+ * "dono" do thingName e a ponte o trataria como a moto. Os demais (MQTT) só perdem a moto.
+ */
+export async function unlinkPreviousTracker(tx: Pick<Prisma.TransactionClient, 'tracker'>, vehicleId: string, keepThingName: string): Promise<void> {
+  const previous = await tx.tracker.findMany({ where: { vehicleId, NOT: { thingName: keepThingName } }, select: { id: true, controlMode: true, imei: true, certificateArn: true } });
+  for (const t of previous) {
+    await tx.tracker.update({ where: { id: t.id }, data: isStockable(t) ? { thingName: stockThingName(t.imei), vehicleId: null } : { vehicleId: null } });
+  }
+}
+
 export interface MqttTrackerLink {
   vehicle: { id: string; code: string; thingName: string | null };
   thingName: string;
@@ -81,11 +97,13 @@ export interface MqttTrackerLink {
  * MQTT volta a `speed_control`/`protocol: null`. `Tracker.vehicleId` é único: o rastreador antigo da moto (outro thingName) é
  * desvinculado **antes** do upsert. Reconfere o aluguel aberto e a reserva ativa/em entrega dentro da transação.
  */
-export async function linkMqttTracker(tx: Pick<Prisma.TransactionClient, 'vehicle' | 'tracker' | 'rental' | 'reservation'>, link: MqttTrackerLink): Promise<void> {
+export async function linkMqttTracker(tx: Pick<Prisma.TransactionClient, 'vehicle' | 'tracker' | 'rental' | 'reservation' | '$queryRaw'>, link: MqttTrackerLink): Promise<void> {
   const { vehicle, thingName, imei, certificateArn } = link;
+  // Serializa com instalar/trocar/remover pelo painel e o PATCH do thingName da mesma moto.
+  await lockVehicleTrackerChange(tx, vehicle.id);
   await assertVehicleFreeForProvisioning(tx, vehicle);
   if (vehicle.thingName !== thingName) await tx.vehicle.update({ where: { id: vehicle.id }, data: { thingName } });
-  await tx.tracker.updateMany({ where: { vehicleId: vehicle.id, NOT: { thingName } }, data: { vehicleId: null } });
+  await unlinkPreviousTracker(tx, vehicle.id, thingName);
   await tx.tracker.upsert({
     where: { thingName },
     create: { thingName, vehicleId: vehicle.id, imei, certificateArn, controlMode: 'speed_control', protocol: null },

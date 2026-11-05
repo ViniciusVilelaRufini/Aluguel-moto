@@ -304,8 +304,12 @@ Class | Method | HTTP request | Description
 [*ReservationsApi*](doc/ReservationsApi.md) | [**createTestHandover**](doc/ReservationsApi.md#createtesthandover) | **POST** /reservations/{id}/test-handover | Entrega simulada (só em ambiente de teste)
 [*ReservationsApi*](doc/ReservationsApi.md) | [**getCurrentReservation**](doc/ReservationsApi.md#getcurrentreservation) | **GET** /reservations/current | Reserva ativa do cliente
 [*SimCardsApi*](doc/SimCardsApi.md) | [**createSimCard**](doc/SimCardsApi.md#createsimcard) | **POST** /sim-cards | Cadastrar chip
+[*SimCardsApi*](doc/SimCardsApi.md) | [**createTracker**](doc/SimCardsApi.md#createtracker) | **POST** /trackers | Cadastrar rastreador no estoque
+[*SimCardsApi*](doc/SimCardsApi.md) | [**installVehicleTracker**](doc/SimCardsApi.md#installvehicletracker) | **PUT** /vehicles/{id}/tracker | Instalar ou trocar o rastreador da moto
 [*SimCardsApi*](doc/SimCardsApi.md) | [**listSimCards**](doc/SimCardsApi.md#listsimcards) | **GET** /sim-cards | Chips cadastrados
 [*SimCardsApi*](doc/SimCardsApi.md) | [**listTrackerConsoleCommands**](doc/SimCardsApi.md#listtrackerconsolecommands) | **GET** /vehicles/{id}/tracker-console | Histórico do console do rastreador
+[*SimCardsApi*](doc/SimCardsApi.md) | [**listTrackers**](doc/SimCardsApi.md#listtrackers) | **GET** /trackers | Rastreadores (estoque e instalados)
+[*SimCardsApi*](doc/SimCardsApi.md) | [**removeVehicleTracker**](doc/SimCardsApi.md#removevehicletracker) | **DELETE** /vehicles/{id}/tracker | Remover o rastreador da moto (volta ao estoque)
 [*SimCardsApi*](doc/SimCardsApi.md) | [**sendTrackerConsoleCommand**](doc/SimCardsApi.md#sendtrackerconsolecommand) | **POST** /vehicles/{id}/tracker-console | Enviar comando de texto ao rastreador
 [*SimCardsApi*](doc/SimCardsApi.md) | [**updateSimCard**](doc/SimCardsApi.md#updatesimcard) | **PATCH** /sim-cards/{id} | Atualizar chip
 [*StaffApi*](doc/StaffApi.md) | [**createStaffUser**](doc/StaffApi.md#createstaffuser) | **POST** /staff | Convidar usuário interno
@@ -423,6 +427,7 @@ Class | Method | HTTP request | Description
  - [CouponValidation](doc/CouponValidation.md)
  - [CoverageItem](doc/CoverageItem.md)
  - [CreateSimCardRequest](doc/CreateSimCardRequest.md)
+ - [CreateTrackerRequest](doc/CreateTrackerRequest.md)
  - [CurrentRental](doc/CurrentRental.md)
  - [CurrentReservation](doc/CurrentReservation.md)
  - [Customer](doc/Customer.md)
@@ -504,6 +509,7 @@ Class | Method | HTTP request | Description
  - [IncidentUpdate](doc/IncidentUpdate.md)
  - [Inspection](doc/Inspection.md)
  - [InspectionRequest](doc/InspectionRequest.md)
+ - [InstallTrackerRequest](doc/InstallTrackerRequest.md)
  - [InsuranceCoverage](doc/InsuranceCoverage.md)
  - [InsuranceCoverageOption](doc/InsuranceCoverageOption.md)
  - [InsuranceCoverageOptionList](doc/InsuranceCoverageOptionList.md)
@@ -653,6 +659,9 @@ Class | Method | HTTP request | Description
  - [TrackerConsoleRisk](doc/TrackerConsoleRisk.md)
  - [TrackerConsoleStatus](doc/TrackerConsoleStatus.md)
  - [TrackerControlMode](doc/TrackerControlMode.md)
+ - [TrackerDevice](doc/TrackerDevice.md)
+ - [TrackerDeviceList](doc/TrackerDeviceList.md)
+ - [TrackerModel](doc/TrackerModel.md)
  - [TrackerStatusReport](doc/TrackerStatusReport.md)
  - [UpdateSimCardRequest](doc/UpdateSimCardRequest.md)
  - [UploadContentType](doc/UploadContentType.md)

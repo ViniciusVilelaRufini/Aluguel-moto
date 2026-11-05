@@ -27,9 +27,11 @@ import { LocalShadowStore } from './local-shadow';
 import { RedisSafeLockStore } from './safe-lock.store';
 import { RedisRelayLockStore } from './relay-lock.store';
 import { StubIotGateway } from './stub-iot-gateway';
+import { StockTrackerHeartbeat } from './stock-tracker-heartbeat';
 import { TelemetryService } from './telemetry.service';
 import { PrismaTrackerModeLookup, TRACKER_MODES, type TrackerModeLookup } from './tracker-mode';
 import { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
+import { vehicleInUseReason } from '../trackers/install-guards';
 
 /**
  * Módulo IoT (Task 4). Seleção por variável de ambiente:
@@ -51,10 +53,17 @@ import { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
     },
     {
       provide: IOT_GATEWAY,
-      inject: [IOT_CONFIG, IOT_CLOCK, LiveStateStore, EventEmitter2, REDIS_STORE, QUEUE_BUS, StubIotGateway],
-      useFactory: (cfg: IotConfig, clock: Clock, live: LiveStateStore, events: EventEmitter2, redis: RedisStore, queue: QueueBus, stub: StubIotGateway): IotGateway => {
+      inject: [IOT_CONFIG, IOT_CLOCK, LiveStateStore, EventEmitter2, REDIS_STORE, QUEUE_BUS, StubIotGateway, PrismaService],
+      useFactory: (cfg: IotConfig, clock: Clock, live: LiveStateStore, events: EventEmitter2, redis: RedisStore, queue: QueueBus, stub: StubIotGateway, prisma: PrismaService): IotGateway => {
         // Rampas do bloqueio seguro no Redis: telemetria processada por qualquer instância avança a rampa e um deploy não a perde.
-        const opts = { confirmWaitMs: cfg.confirmWaitMs, commandTimeoutMs: cfg.commandTimeoutMs, safeLockStore: new RedisSafeLockStore(redis), relayLockStore: new RedisRelayLockStore(redis) };
+        const opts = {
+          confirmWaitMs: cfg.confirmWaitMs,
+          commandTimeoutMs: cfg.commandTimeoutMs,
+          safeLockStore: new RedisSafeLockStore(redis),
+          relayLockStore: new RedisRelayLockStore(redis),
+          // N1: a trava pedida depois de instalar reconfere aluguel/reserva antes do corte.
+          vehicleInUse: async (vehicleId: string) => (await vehicleInUseReason(prisma, vehicleId)) !== null,
+        };
         if (cfg.iotMode === 'stub') return stub;
         if (cfg.iotMode === 'aws') {
           const client = new IoTDataPlaneClient({ region: cfg.region, endpoint: cfg.iotEndpoint });
@@ -99,13 +108,19 @@ import { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
       useFactory: (modes: TrackerModeLookup, geofence: GeofenceService, redis: RedisStore, events: EventEmitter2, rentals: RentalLookup) => new ZoneSpeedMonitor(modes, geofence, redis, events, rentals),
     },
     {
+      provide: StockTrackerHeartbeat,
+      inject: [PrismaService],
+      useFactory: (prisma: PrismaService) => new StockTrackerHeartbeat(prisma),
+    },
+    {
       provide: TelemetryService,
-      inject: [IOT_GATEWAY, GeofenceService, RENTAL_LOOKUP, PrismaService, EventEmitter2, IOT_CLOCK, APP_CONFIG, IOT_CONFIG, ZoneSpeedMonitor],
-      useFactory: (gw: IotGateway, geofence: GeofenceService, rentals: RentalLookup, prisma: PrismaService, events: EventEmitter2, clock: Clock, app: AppConfig, cfg: IotConfig, zoneSpeed: ZoneSpeedMonitor) =>
-        gw instanceof BaseIotGateway ? new TelemetryService(gw, geofence, rentals, prisma, events, clock, { trackRetentionDays: app.trackRetentionDays, reconnectGapMs: cfg.reconnectGapMs, queueLagMs: cfg.queueLagMs }, zoneSpeed) : null,
+      inject: [IOT_GATEWAY, GeofenceService, RENTAL_LOOKUP, PrismaService, EventEmitter2, IOT_CLOCK, APP_CONFIG, IOT_CONFIG, ZoneSpeedMonitor, StockTrackerHeartbeat],
+      useFactory: (gw: IotGateway, geofence: GeofenceService, rentals: RentalLookup, prisma: PrismaService, events: EventEmitter2, clock: Clock, app: AppConfig, cfg: IotConfig, zoneSpeed: ZoneSpeedMonitor, stock: StockTrackerHeartbeat) =>
+        gw instanceof BaseIotGateway ? new TelemetryService(gw, geofence, rentals, prisma, events, clock, { trackRetentionDays: app.trackRetentionDays, reconnectGapMs: cfg.reconnectGapMs, queueLagMs: cfg.queueLagMs }, zoneSpeed, stock) : null,
     },
     IotRuntime,
   ],
-  exports: [IOT_GATEWAY, IOT_CONFIG],
+  // TRACKER_MODES: o módulo trackers invalida o cache de modo da moto ao instalar/remover rastreador.
+  exports: [IOT_GATEWAY, IOT_CONFIG, TRACKER_MODES, LiveStateStore],
 })
 export class IotModule {}

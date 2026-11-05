@@ -30,6 +30,11 @@ export interface RelayLockState {
   deadlineAt?: number;
   /** Quando `travada: true` foi gravado (fase `cutting`). */
   cutAt?: number;
+  /**
+   * N1: trava pedida só para a moto livre (`tracker_install`): antes de gravar `travada: true`, reconfere aluguel/reserva desta
+   * moto. Sai se outro lock (comum) entra na mesma trava.
+   */
+  freeVehicleId?: string;
 }
 
 /**

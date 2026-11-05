@@ -9,7 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'update_sim_card_request.g.dart';
 
-/// Todos os campos são opcionais. `vehicleId: null` desvincula.
+/// Todos os campos são opcionais. `vehicleId: null` ou `trackerId: null` desvincula. `vehicleId` e `trackerId` juntos → 400.
 ///
 /// Properties:
 /// * [iccid]
@@ -19,6 +19,7 @@ part 'update_sim_card_request.g.dart';
 /// * [status]
 /// * [notes]
 /// * [vehicleId]
+/// * [trackerId] - Vincula o chip a este rastreador; `null` desvincula. Chip já em outro rastreador → `409` (desvincule antes).
 @BuiltValue()
 abstract class UpdateSimCardRequest
     implements Built<UpdateSimCardRequest, UpdateSimCardRequestBuilder> {
@@ -43,6 +44,10 @@ abstract class UpdateSimCardRequest
 
   @BuiltValueField(wireName: r'vehicleId')
   String? get vehicleId;
+
+  /// Vincula o chip a este rastreador; `null` desvincula. Chip já em outro rastreador → `409` (desvincule antes).
+  @BuiltValueField(wireName: r'trackerId')
+  String? get trackerId;
 
   UpdateSimCardRequest._();
 
@@ -119,6 +124,13 @@ class _$UpdateSimCardRequestSerializer
       yield r'vehicleId';
       yield serializers.serialize(
         object.vehicleId,
+        specifiedType: const FullType.nullable(String),
+      );
+    }
+    if (object.trackerId != null) {
+      yield r'trackerId';
+      yield serializers.serialize(
+        object.trackerId,
         specifiedType: const FullType.nullable(String),
       );
     }
@@ -202,6 +214,14 @@ class _$UpdateSimCardRequestSerializer
           ) as String?;
           if (valueDes == null) continue;
           result.vehicleId = valueDes;
+          break;
+        case r'trackerId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.trackerId = valueDes;
           break;
         default:
           unhandled.add(key);

@@ -8,6 +8,7 @@
  * - Tiles do OpenStreetMap sao respondidos com um PNG 1x1 (nenhuma chamada a servicos reais).
  */
 import type { Page, Route, WebSocketRoute } from '@playwright/test';
+import type { components } from '@volti/contracts';
 import * as F from './fixtures';
 
 export const API_HOST = 'http://api.mock.local';
@@ -55,6 +56,7 @@ function makeDb(group: NonNullable<MockOptions['group']>) {
     models: F.makeModels(),
     simCards: F.makeSimCards(),
     trackerConsole: F.makeTrackerConsole(),
+    trackers: [] as components['schemas']['TrackerDevice'][],
     staff: F.makeStaff(),
     audit: F.makeAudit(),
     fieldTasks: F.makeFieldTasks(),
@@ -88,6 +90,7 @@ const problem = (status: number, title: string, slug = 'error') => ({ type: `htt
 export async function installMockApi(page_: Page, opts: MockOptions = {}): Promise<Mock> {
   const group = opts.group ?? 'admin';
   const db = makeDb(group);
+  db.trackers = F.makeTrackers(db.vehicles);
   const mock: Mock = { calls: [], unmocked: [], emit: () => {}, db };
 
   // Tiles e qualquer outro host externo: nunca sai da maquina.
@@ -167,6 +170,37 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
     return ok({ id: 'cmd-1', vehicleId: id, type: b.type, status: 'pending', reason: b.reason, speedLimitKmh: b.speedLimitKmh, on: b.on, requestedByName: 'Ana QA', requestedByType: 'staff', createdAt: now, updatedAt: now }, 202);
   }
   if (method === 'GET' && match(/^\/commands\/[^/]+$/)) return ok({ id, vehicleId: 'veh-001', type: 'lock', status: 'confirmed', reason: 'teste', createdAt: now, updatedAt: now, confirmedAt: now });
+  // Estoque de rastreadores e instalação na moto
+  if (method === 'GET' && p === '/trackers') {
+    const digits = q.get('q');
+    const inst = q.get('installed');
+    const veh = q.get('vehicleId');
+    return ok({ items: db.trackers.filter((t) => (!digits || t.imei.includes(digits)) && (inst === null || t.installed === (inst === 'true')) && (!veh || t.vehicleId === veh)) });
+  }
+  if (method === 'POST' && p === '/trackers') {
+    if (db.trackers.some((t) => t.imei === b.imei)) return { status: 409, json: problem(409, 'Este IMEI já está cadastrado', 'conflict') };
+    const sim = db.simCards.find((s) => s.id === b.simCardId);
+    if (sim?.trackerId || sim?.vehicleId) return { status: 409, json: problem(409, 'Este chip já está vinculado', 'conflict') };
+    const t = { id: `trk-${db.trackers.length + 1}`, imei: b.imei, model: b.model, installed: false, vehicleId: null, vehicleCode: null, simCard: null, online: false, lastSeenAt: null, createdAt: now } as components['schemas']['TrackerDevice'];
+    if (sim) { sim.trackerId = t.id; t.simCard = { id: sim.id, iccid: sim.iccid, msisdn: sim.msisdn, carrier: sim.carrier, apn: sim.apn, status: sim.status }; }
+    db.trackers.push(t);
+    return ok(t, 201);
+  }
+  if (method === 'PUT' && match(/^\/vehicles\/[^/]+\/tracker$/)) {
+    const veh = find(db.vehicles); if (!veh) return notFound();
+    const next = db.trackers.find((t) => t.id === b.trackerId); if (!next) return notFound();
+    if (next.vehicleId === veh.id) return ok(next);
+    if (next.installed) return { status: 409, json: problem(409, 'Este rastreador já está instalado em outra moto', 'conflict') };
+    db.trackers.forEach((t) => { if (t.vehicleId === veh.id) Object.assign(t, { installed: false, vehicleId: null, vehicleCode: null }); });
+    Object.assign(next, { installed: true, vehicleId: veh.id, vehicleCode: veh.code });
+    return ok(next);
+  }
+  if (method === 'DELETE' && match(/^\/vehicles\/[^/]+\/tracker$/)) {
+    const cur = db.trackers.find((t) => t.vehicleId === id);
+    if (!cur) return notFound();
+    Object.assign(cur, { installed: false, vehicleId: null, vehicleCode: null });
+    return ok(cur);
+  }
   // Chips (SIM) e console do rastreador
   if (method === 'GET' && p === '/sim-cards') {
     const qq = (q.get('q') ?? '').toLowerCase();

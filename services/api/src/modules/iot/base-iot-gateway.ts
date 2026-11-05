@@ -28,6 +28,8 @@ export interface GatewayOptions {
   relayConfirmTimeoutMs?: number;
   /** Prazo do unlock de rastreador só relé (padrão `RELAY_UNLOCK_TIMEOUT_MS`, 90 s); os outros comandos usam `commandTimeoutMs`. */
   relayUnlockTimeoutMs?: number;
+  /** N1: aluguel aberto ou reserva em uso da moto (a trava `tracker_install` reconfere antes do corte). */
+  vehicleInUse?: (vehicleId: string) => Promise<boolean>;
 }
 
 /**
@@ -133,6 +135,7 @@ export abstract class BaseIotGateway implements IotGateway {
         await this.live.refresh(t);
         return { online: this.live.isOnline(t) };
       },
+      vehicleInUse: opts.vehicleInUse,
       onLocalActivity: (t) => this.watch(t),
       onError: (entry) => this.logger.error(entry),
     });

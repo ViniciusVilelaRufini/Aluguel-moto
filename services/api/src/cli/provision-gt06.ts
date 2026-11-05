@@ -9,6 +9,7 @@
  * Modo de controle: a API guarda o modo por rastreador num cache de 60 s por processo (iot/tracker-mode.ts). Esta CLI roda em outro
  * processo e não o invalida: uma troca de modo vale em até 60 s. Moto com aluguel aberto ou reserva ativa/em entrega é recusada
  * (reprovisione com a moto livre; reconferido dentro da transação), e também moto com trava em andamento no Redis da API.
+ * Essas checagens de aluguel/reserva/trava são as mesmas da instalação pelo painel (`modules/trackers/install-guards.ts`).
  *
  * Ex-rastreador MQTT (Tracker com `certificateArn`): a CLI não fala com o IoT Core (sem dependência AWS) e recusa até o operador
  * revogar o certificado (comandos na mensagem de erro) e confirmar com `--certificate-revoked` — senão o certificado continuaria
@@ -20,7 +21,9 @@
 import { parseArgs } from 'node:util';
 import { PrismaClient } from '@prisma/client';
 import type { RedisStore } from '../redis/redis-store';
-import { assertNoPendingLock, assertVehicleFreeForProvisioning, connectProvisioningRedis } from './provision-tracker';
+import { lockVehicleTrackerChange } from '../modules/trackers/install-guards';
+import { isStockThingName } from '../modules/iot/stock-tracker-heartbeat';
+import { assertNoPendingLock, assertVehicleFreeForProvisioning, connectProvisioningRedis, unlinkPreviousTracker } from './provision-tracker';
 
 const IMEI = /^\d{15}$/;
 const THING_NAME = /^moto-\d{4,}$/;
@@ -29,6 +32,11 @@ const VEHICLE_CODE = /^VLT-\d{4,}$/;
 /** IMEI em log/erro: só os 4 últimos dígitos (spec §6.5). */
 export function maskImei(imei: string): string {
   return imei.length <= 4 ? '****' : `${'*'.repeat(imei.length - 4)}${imei.slice(-4)}`;
+}
+
+/** thingName em erro/log: o do estoque (`gt06-<IMEI>`) sai com o IMEI mascarado. */
+export function maskThingName(thingName: string): string {
+  return isStockThingName(thingName) ? `gt06-${maskImei(thingName.slice('gt06-'.length))}` : thingName;
 }
 
 export interface TraccarAdminApi {
@@ -125,7 +133,7 @@ export async function provisionGt06(
   const certificateArn = existingTracker?.certificateArn ?? null;
   if (certificateArn && !input.certificateRevoked) throw certificateStillActiveError(thingName, certificateArn);
   const imeiOwner = await deps.prisma.tracker.findFirst({ where: { imei, NOT: { thingName } }, select: { thingName: true } });
-  if (imeiOwner) throw new Error(`IMEI ${maskImei(imei)} já vinculado a ${imeiOwner.thingName}.`);
+  if (imeiOwner) throw new Error(`IMEI ${maskImei(imei)} já vinculado a ${maskThingName(imeiOwner.thingName)}.`);
 
   const existing = await deps.traccar.findDevice(imei);
   deps.log({ msg: 'plan', protocol: 'gt06', thingName, vehicleCode, imei: maskImei(imei), traccarDevice: existing ? 'exists' : 'create', dryRun: !!input.dryRun });
@@ -142,11 +150,14 @@ export async function provisionGt06(
   // O ARN não é dado pessoal: fica no log como registro de que o operador confirmou a revogação.
   if (certificateArn) deps.log({ msg: 'certificate_revocation_confirmed', thingName, certificateArn });
   await deps.prisma.$transaction(async (tx) => {
+    // Serializa com instalar/trocar/remover pelo painel e o PATCH do thingName da mesma moto.
+    await lockVehicleTrackerChange(tx, vehicle.id);
     // Aluguel/reserva reconferidos dentro da transação (como o linkMqttTracker): podem ter aberto depois da checagem.
     await assertVehicleFreeForProvisioning(tx, { id: vehicle.id, code: vehicleCode });
     if (vehicle.thingName !== thingName) await tx.vehicle.update({ where: { id: vehicle.id }, data: { thingName } });
-    // Tracker.vehicleId é único: desvincula o rastreador antigo da moto (outro thingName) ANTES de ligar este.
-    await tx.tracker.updateMany({ where: { vehicleId: vehicle.id, NOT: { thingName } }, data: { vehicleId: null } });
+    // Tracker.vehicleId é único: desvincula o rastreador antigo da moto (outro thingName) ANTES de ligar este; um GT06 volta
+    // ao estoque como gt06-<IMEI> (M5).
+    await unlinkPreviousTracker(tx, vehicle.id, thingName);
     await tx.tracker.upsert({
       where: { thingName },
       create: { thingName, vehicleId: vehicle.id, imei, controlMode: 'relay_only', protocol: 'gt06' },

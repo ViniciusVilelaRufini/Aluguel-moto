@@ -34,7 +34,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   const battery = (env.BATTERY_MODEL ?? '72v') as BatteryModel;
   if (!BATTERIES.includes(battery)) throw new Error('BATTERY_MODEL deve ser 48v, 60v ou 72v');
   if (mode === 'aws' && (!env.MQTT_CERT_PEM || !env.MQTT_KEY_PEM)) throw new Error('IOT_MODE=aws exige MQTT_CERT_PEM e MQTT_KEY_PEM (certificado de serviço da ponte)');
-  const registryRefreshMs = Number(env.REGISTRY_REFRESH_MS ?? 60_000);
+  const registryRefreshMs = Number(env.REGISTRY_REFRESH_MS ?? 30_000);
   if (!Number.isFinite(registryRefreshMs) || registryRefreshMs < 1_000) throw new Error('REGISTRY_REFRESH_MS deve ser um número ≥ 1000');
   const mqttUrl = env.MQTT_URL || (mode === 'aws' ? `mqtts://${need('IOT_ENDPOINT').replace(/^https?:\/\//, '')}:8883` : 'mqtt://localhost:1883');
   const database: PoolConfigLike = env.DATABASE_URL

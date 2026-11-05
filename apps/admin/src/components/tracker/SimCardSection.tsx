@@ -12,6 +12,10 @@ const STATUS_LABEL: Record<S<'SimCardStatus'>, string> = { active: 'Ativo', susp
 const STATUS_TONE: Record<S<'SimCardStatus'>, 'success' | 'warning' | 'danger'> = { active: 'success', suspended: 'warning', cancelled: 'danger' };
 const STATUS_OPTIONS = (Object.keys(STATUS_LABEL) as S<'SimCardStatus'>[]).map((value) => ({ value, label: STATUS_LABEL[value] }));
 
+/** Formato do ICCID e da linha (mesmas regras do contrato), compartilhado com o assistente de rastreador. */
+export const SIM_ICCID_RE = /^[0-9]{18,22}$/;
+export const SIM_MSISDN_RE = /^\+?[0-9]{10,15}$/;
+
 /** Limite de `notes` no contrato (`SimCard.notes`, maxLength 500). */
 export const SIM_NOTES_MAX = 500;
 
@@ -21,8 +25,12 @@ export function simCardBody(f: { iccid: string; carrier: string; msisdn: string;
   return f.notes === null ? body : { ...body, notes: f.notes.trim() || null };
 }
 
-/** Chip (SIM) do rastreador da moto. Qualquer perfil com acesso à ficha vê; só o admin vincula, edita e desvincula. */
-export function SimCardSection({ vehicleId, simCard, groups }: { vehicleId: string; simCard: S<'SimCardSummary'> | null | undefined; groups: StaffGroup[] }) {
+/**
+ * Chip (SIM) do rastreador da moto. Qualquer perfil com acesso à ficha vê; só o admin vincula, edita e desvincula.
+ * `embedded`: dentro do bloco "Rastreador e chip" da ficha (sem título próprio, chip resumido numa linha) — o chip aparece num
+ * lugar só, com as mesmas ações.
+ */
+export function SimCardSection({ vehicleId, simCard, groups, embedded = false }: { vehicleId: string; simCard: S<'SimCardSummary'> | null | undefined; groups: StaffGroup[]; embedded?: boolean }) {
   const canEdit = can(groups, 'simCard.manage');
   const [linking, setLinking] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -30,6 +38,7 @@ export function SimCardSection({ vehicleId, simCard, groups }: { vehicleId: stri
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['vehicle', vehicleId] });
     qc.invalidateQueries({ queryKey: ['sim-cards'] });
+    qc.invalidateQueries({ queryKey: ['trackers'] });
   };
   const unlink = useMutation({
     mutationFn: async () => unwrap(api.PATCH('/sim-cards/{id}', { params: { path: { id: simCard!.id } }, body: { vehicleId: null } })),
@@ -37,15 +46,26 @@ export function SimCardSection({ vehicleId, simCard, groups }: { vehicleId: stri
   });
 
   return (
-    <div data-testid="sim-card-section">
-      <SectionTitle>Chip</SectionTitle>
+    <div data-testid={embedded ? 'tracker-chip' : 'sim-card-section'}>
+      {!embedded && <SectionTitle>Chip</SectionTitle>}
       {simCard ? (
         <>
-          <KV k="ICCID" v={simCard.iccid} mono />
-          <KV k="Linha" v={simCard.msisdn ?? '—'} mono />
-          <KV k="Operadora" v={simCard.carrier} />
-          <KV k="APN esperado" v={simCard.apn ?? '—'} mono />
-          <KV k="Situação" v={<Pill tone={STATUS_TONE[simCard.status]}>{STATUS_LABEL[simCard.status]}</Pill>} />
+          {embedded ? (
+            <>
+              <KV k="Chip" v={`${simCard.carrier} · ${simCard.iccid}`} mono />
+              {simCard.msisdn && <KV k="Linha" v={simCard.msisdn} mono />}
+              <KV k="APN esperado" v={simCard.apn ?? '—'} mono />
+              <KV k="Situação do chip" v={<Pill tone={STATUS_TONE[simCard.status]}>{STATUS_LABEL[simCard.status]}</Pill>} />
+            </>
+          ) : (
+            <>
+              <KV k="ICCID" v={simCard.iccid} mono />
+              <KV k="Linha" v={simCard.msisdn ?? '—'} mono />
+              <KV k="Operadora" v={simCard.carrier} />
+              <KV k="APN esperado" v={simCard.apn ?? '—'} mono />
+              <KV k="Situação" v={<Pill tone={STATUS_TONE[simCard.status]}>{STATUS_LABEL[simCard.status]}</Pill>} />
+            </>
+          )}
           {canEdit && (
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <Button size="sm" variant="secondary" icon="Pencil" testId="sim-edit" onClick={() => setEditing(true)}>Editar chip</Button>
@@ -56,7 +76,7 @@ export function SimCardSection({ vehicleId, simCard, groups }: { vehicleId: stri
         </>
       ) : (
         <>
-          <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Nenhum chip vinculado</div>
+          {embedded ? <KV k="Chip" v="Sem chip" /> : <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Nenhum chip vinculado</div>}
           {canEdit && <Button size="sm" variant="secondary" icon="Link" testId="sim-link" style={{ marginTop: 8 }} onClick={() => setLinking(true)}>Vincular chip</Button>}
         </>
       )}
@@ -118,8 +138,8 @@ export function SimFormModal({ title, initial, simId, vehicleId, onClose, onDone
   const savedNotes = simId ? (full.data?.items.find((s) => s.id === simId)?.notes ?? '') : '';
   const notesValue = notes ?? savedNotes;
   const [touched, setTouched] = useState(false);
-  const iccidOk = /^[0-9]{18,22}$/.test(iccid);
-  const msisdnOk = msisdn === '' || /^\+?[0-9]{10,15}$/.test(msisdn);
+  const iccidOk = SIM_ICCID_RE.test(iccid);
+  const msisdnOk = msisdn === '' || SIM_MSISDN_RE.test(msisdn);
   const carrierOk = carrier.trim().length >= 1 && carrier.trim().length <= 40;
   const notesOk = notesValue.trim().length <= SIM_NOTES_MAX;
   const valid = iccidOk && msisdnOk && carrierOk && notesOk;

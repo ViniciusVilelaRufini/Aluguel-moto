@@ -42,12 +42,14 @@ vi.mock('@tanstack/react-query', async (orig) => {
     depots: { items: [...depots, { ...depots[1], id: 'inativo', name: 'Galpão Fechado', active: false }] },
     batteries: { items: [battery({ serial: 'BT-LIVRE', chargePct: 97, depotId: D2 }), battery({ serial: 'BT-NA-MOTO', vehicleId: 'x' }), battery({ serial: 'BT-CARREGANDO', status: 'charging' })] },
     vehicle: vehicle,
+    trackers: { items: [] },
     'vehicle-audit': { items: [{ id: 'a1', actorType: 'staff', actorName: 'Ana', action: 'vehicle.transfer_depot', entityType: 'Vehicle', entityId: vehicle.id, reason: 'Rebalanceamento', createdAt: '2026-10-25T13:00:00.000Z' }] },
   };
   return {
     ...real,
     useQuery: (o: { queryKey: unknown[]; enabled?: boolean }) => ({ data: o.enabled === false ? undefined : data[String(o.queryKey[0])], isLoading: false, error: null, refetch() {} }),
     useQueryClient: () => ({ invalidateQueries() {} }),
+    useMutation: () => ({ mutate() {}, mutateAsync: async () => ({}), isPending: false, error: null }),
   };
 });
 

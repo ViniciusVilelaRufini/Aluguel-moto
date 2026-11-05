@@ -19,6 +19,7 @@ part 'create_sim_card_request.g.dart';
 /// * [status]
 /// * [notes]
 /// * [vehicleId] - Vincula o chip ao rastreador desta moto.
+/// * [trackerId] - Vincula o chip a este rastreador (estoque ou instalado). `vehicleId` e `trackerId` juntos → 400.
 @BuiltValue()
 abstract class CreateSimCardRequest
     implements Built<CreateSimCardRequest, CreateSimCardRequestBuilder> {
@@ -44,6 +45,10 @@ abstract class CreateSimCardRequest
   /// Vincula o chip ao rastreador desta moto.
   @BuiltValueField(wireName: r'vehicleId')
   String? get vehicleId;
+
+  /// Vincula o chip a este rastreador (estoque ou instalado). `vehicleId` e `trackerId` juntos → 400.
+  @BuiltValueField(wireName: r'trackerId')
+  String? get trackerId;
 
   CreateSimCardRequest._();
 
@@ -116,6 +121,13 @@ class _$CreateSimCardRequestSerializer
       yield r'vehicleId';
       yield serializers.serialize(
         object.vehicleId,
+        specifiedType: const FullType.nullable(String),
+      );
+    }
+    if (object.trackerId != null) {
+      yield r'trackerId';
+      yield serializers.serialize(
+        object.trackerId,
         specifiedType: const FullType.nullable(String),
       );
     }
@@ -197,6 +209,14 @@ class _$CreateSimCardRequestSerializer
           ) as String?;
           if (valueDes == null) continue;
           result.vehicleId = valueDes;
+          break;
+        case r'trackerId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.trackerId = valueDes;
           break;
         default:
           unhandled.add(key);

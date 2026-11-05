@@ -795,6 +795,7 @@ paths:
       tags: [vehicles]
       operationId: updateVehicle
       summary: Editar moto
+      description: Mudar o `thingName` com rastreador instalado na moto → `409` (remova o rastreador antes).
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao]
@@ -1137,6 +1138,121 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────────── estoque de rastreadores ─────────────────────────────
+  /trackers:
+    get:
+      tags: [sim-cards]
+      operationId: listTrackers
+      summary: Rastreadores (estoque e instalados)
+      description: |
+        Rastreadores GT06/J16 (`relay_only`, com IMEI, sem certificado), do mais recente ao mais antigo. `installed` = está
+        numa moto (`vehicleId`/`vehicleCode`). `online` = último sinal há no máximo 180 s (instalado: sinal da moto; no
+        estoque: sinal do próprio rastreador).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, suporte]
+      parameters:
+        - name: q
+          in: query
+          description: Busca parcial por dígitos do IMEI.
+          schema: { type: string, pattern: '^[0-9]{1,15}$' }
+        - name: installed
+          in: query
+          description: '`true` = só instalados; `false` = só no estoque.'
+          schema: { type: boolean }
+        - name: vehicleId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Rastreadores.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrackerDeviceList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [sim-cards]
+      operationId: createTracker
+      summary: Cadastrar rastreador no estoque
+      description: |
+        Cria o rastreador sem moto (`thingName` = `gt06-<IMEI>`). Com `simCardId`, vincula um chip do estoque. `409` se o
+        IMEI já está cadastrado ou se o chip já está vinculado a outro rastreador. Grava AuditLog (IMEI mascarado).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTrackerRequest' }
+      responses:
+        '201':
+          description: Rastreador cadastrado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrackerDevice' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /vehicles/{id}/tracker:
+    put:
+      tags: [sim-cards]
+      operationId: installVehicleTracker
+      summary: Instalar ou trocar o rastreador da moto
+      description: |
+        Instala um rastreador do estoque na moto; se a moto já tem outro, troca (o antigo volta ao estoque antes, na mesma
+        transação). Instalar o rastreador que já está na moto não faz nada (`200`). `409` se: a moto tem aluguel aberto ou
+        reserva em uso; há bloqueio/desbloqueio em andamento (comando `lock`/`unlock` criado nos últimos 5 min ou trava
+        em andamento); o rastreador está instalado em outra moto. Rastreador inexistente ou com certificado (MQTT) → `404`.
+        Grava AuditLog (IMEI mascarado).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InstallTrackerRequest' }
+      responses:
+        '200':
+          description: Rastreador instalado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrackerDevice' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [sim-cards]
+      operationId: removeVehicleTracker
+      summary: Remover o rastreador da moto (volta ao estoque)
+      description: |
+        O rastreador volta ao estoque (`gt06-<IMEI>`, sem moto); o chip continua com ele. `404` se a moto não tem
+        rastreador. `409` com aluguel aberto, reserva em uso ou bloqueio/desbloqueio em andamento. Grava AuditLog.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      responses:
+        '200':
+          description: Rastreador no estoque.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrackerDevice' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────────── catálogo de modelos e estações ─────────────────────────────
   /vehicle-models:
@@ -6612,9 +6728,10 @@ components:
         status: { $ref: '#/components/schemas/SimCardStatus' }
         notes: { type: [string, 'null'], maxLength: 500 }
         vehicleId: { type: [string, 'null'], format: uuid, description: Vincula o chip ao rastreador desta moto. }
+        trackerId: { type: [string, 'null'], format: uuid, description: 'Vincula o chip a este rastreador (estoque ou instalado). `vehicleId` e `trackerId` juntos → 400.' }
     UpdateSimCardRequest:
       type: object
-      description: 'Todos os campos são opcionais. `vehicleId: null` desvincula.'
+      description: 'Todos os campos são opcionais. `vehicleId: null` ou `trackerId: null` desvincula. `vehicleId` e `trackerId` juntos → 400.'
       properties:
         iccid: { type: string, pattern: '^[0-9]{18,22}$' }
         msisdn: { type: [string, 'null'], pattern: '^\+?[0-9]{10,15}$' }
@@ -6623,6 +6740,7 @@ components:
         status: { $ref: '#/components/schemas/SimCardStatus' }
         notes: { type: [string, 'null'], maxLength: 500 }
         vehicleId: { type: [string, 'null'], format: uuid }
+        trackerId: { type: [string, 'null'], format: uuid, description: 'Vincula o chip a este rastreador; `null` desvincula. Chip já em outro rastreador → `409` (desvincule antes).' }
     SimCardList:
       type: object
       required: [items]
@@ -6630,6 +6748,45 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/SimCard' }
+    TrackerModel:
+      type: string
+      enum: [J16]
+    TrackerDevice:
+      type: object
+      required: [id, imei, model, installed, vehicleId, vehicleCode, simCard, online, lastSeenAt, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        imei: { type: string, pattern: '^[0-9]{15}$' }
+        model: { $ref: '#/components/schemas/TrackerModel' }
+        installed: { type: boolean }
+        vehicleId: { type: [string, 'null'], format: uuid }
+        vehicleCode: { type: [string, 'null'], examples: [VLT-0001] }
+        simCard:
+          oneOf:
+            - $ref: '#/components/schemas/SimCardSummary'
+            - type: 'null'
+        online: { type: boolean, description: Último sinal há no máximo 180 s. }
+        lastSeenAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    TrackerDeviceList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrackerDevice' }
+    CreateTrackerRequest:
+      type: object
+      required: [imei, model]
+      properties:
+        imei: { type: string, pattern: '^[0-9]{15}$' }
+        model: { $ref: '#/components/schemas/TrackerModel' }
+        simCardId: { type: string, format: uuid, description: Chip do estoque a vincular ao rastreador. }
+    InstallTrackerRequest:
+      type: object
+      required: [trackerId]
+      properties:
+        trackerId: { type: string, format: uuid }
     TrackerConsoleRisk:
       type: string
       enum: [read, change, connection]

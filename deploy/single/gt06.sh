@@ -131,8 +131,24 @@ SQL
     if ! printf '%s' "$users" | grep -q "\"email\":\"$TRACCAR_BRIDGE_EMAIL\""; then
       traccar_admin POST /api/users "$(printf '{"name":"traccar-bridge","email":"%s","password":"%s"}' "$TRACCAR_BRIDGE_EMAIL" "$(envval TRACCAR_BRIDGE_PASSWORD)")" >/dev/null
       echo "usuário da ponte criado no Traccar"
+      users="$(traccar_admin GET /api/users)" || { echo "GET /api/users como admin falhou" >&2; exit 1; }
     fi
-    echo "GT06 pronto (Traccar, papéis traccar e volti_bridge, usuários admin e ponte, cadastro fechado)"
+    # A ponte cria e renomeia aparelhos sozinha (rastreador cadastrado no painel): o usuário dela precisa de deviceReadonly:false e
+    # deviceLimit:-1. Idempotente (roda em todo update, vale para usuário já existente): lê o objeto completo da ponte e só faz o
+    # PUT se algum dos dois campos estiver diferente. Credenciais e corpo pelo stdin do curl (traccar_admin); nada é impresso.
+    bridge_user="$(printf '%s' "$users" | sed 's/},{"id":/}\n{"id":/g' | grep "\"email\":\"$TRACCAR_BRIDGE_EMAIL\"" | head -n 1 | sed 's/^\[//; s/\]$//' || true)"
+    bridge_id="$(printf '%s' "$bridge_user" | grep -o '^{"id":[0-9]*' | grep -o '[0-9]*$' || true)"
+    [ -n "$bridge_id" ] || { echo "não achei o usuário da ponte no Traccar para ajustar as permissões de aparelho" >&2; exit 1; }
+    case "$bridge_user" in
+      *'"deviceReadonly":'*'"deviceLimit":'* | *'"deviceLimit":'*'"deviceReadonly":'*) ;;
+      *) echo "o usuário da ponte no Traccar não traz deviceReadonly/deviceLimit; não sei ajustar" >&2; exit 1 ;;
+    esac
+    fixed="$(printf '%s' "$bridge_user" | sed -E 's/"deviceReadonly":(true|false)/"deviceReadonly":false/; s/"deviceLimit":-?[0-9]+/"deviceLimit":-1/')"
+    if [ "$fixed" != "$bridge_user" ]; then
+      traccar_admin PUT "/api/users/$bridge_id" "$fixed" >/dev/null || { echo "PUT /api/users/$bridge_id (permissões de aparelho da ponte) falhou" >&2; exit 1; }
+      echo "usuário da ponte pode criar/editar aparelhos no Traccar (deviceReadonly:false, deviceLimit:-1)"
+    fi
+    echo "GT06 pronto (Traccar, papéis traccar e volti_bridge, usuários admin e ponte com permissão de aparelho, cadastro fechado)"
     ;;
   provision)
     # A senha do admin do Traccar já está no ambiente da API (env_file); aqui só valores públicos. TRACCAR_BRIDGE_EMAIL liga
@@ -189,7 +205,7 @@ SQL
     [ "$mode" = relay_only ] || warn "o Tracker não é relay_only: a ponte não o vê (gt06.sh provision)"
     [ "$vcode" != "-" ] || warn "Tracker sem moto vinculada"
     registry="não"
-    if [ "$mode" = relay_only ] && [ "$masked" != "sem IMEI" ]; then registry="sim (Tracker relay_only com IMEI; releitura a cada 60 s)"; fi
+    if [ "$mode" = relay_only ] && [ "$masked" != "sem IMEI" ]; then registry="sim (Tracker relay_only com IMEI; releitura a cada 30 s)"; fi
     echo "registro da ponte: $registry"
     server="$(curl -fsS "$TRACCAR_LOCAL/api/server" 2>/dev/null || true)"
     if [ -z "$server" ]; then

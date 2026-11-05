@@ -314,4 +314,113 @@ describe('TelemetryService: poda do limite de log de rastreador desconhecido', (
       warn.mockRestore();
     }
   });
+
+  describe('rastreador em estoque (gt06-<IMEI>, sem moto)', () => {
+    const STOCK = 'gt06-869890080273430';
+    function stockSetup() {
+      const s = setup();
+      const touch = jest.fn().mockResolvedValue(undefined);
+      const svc = new TelemetryService(s.gateway, s.geofence, s.rentals, s.prisma as any, s.events, s.clock, { trackRetentionDays: 90 }, undefined, { touch });
+      return { ...s, svc, touch };
+    }
+
+    it('telemetria: grava o último sinal e não toca estado ao vivo, cerca, trava nem trajeto', async () => {
+      const { svc, touch, live, gateway, geofence, rentals, prisma, emitted, clock } = stockSetup();
+      const applied = jest.spyOn(live, 'applyTelemetry');
+      const sample = jest.spyOn(gateway, 'onTelemetrySample');
+      const speed = jest.spyOn(gateway, 'onSpeed');
+      await svc.telemetry(STOCK, msg());
+      expect(touch).toHaveBeenCalledWith(STOCK, clock.now());
+      expect(applied).not.toHaveBeenCalled();
+      expect(sample).not.toHaveBeenCalled();
+      expect(speed).not.toHaveBeenCalled();
+      expect(geofence.onPosition).not.toHaveBeenCalled();
+      expect(rentals.trackingRentalId).not.toHaveBeenCalled();
+      expect(prisma.trackPoint.create).not.toHaveBeenCalled();
+      expect(emitted[EV.IOT_TELEMETRY]).toEqual([]);
+    });
+
+    it('status (reported via MQTT): grava o último sinal e não toca o estado ao vivo', async () => {
+      const { svc, touch, live, gateway, emitted, clock } = stockSetup();
+      const load = jest.spyOn(live, 'load');
+      const onReported = jest.spyOn(gateway, 'onReported');
+      await svc.reported(STOCK, { travada: true });
+      expect(touch).toHaveBeenCalledWith(STOCK, clock.now());
+      expect(load).not.toHaveBeenCalled();
+      expect(onReported).not.toHaveBeenCalled();
+      expect(emitted[EV.IOT_REPORTED]).toEqual([]);
+    });
+
+    it('console_resposta: grava o último sinal; console_falha não conta', async () => {
+      const { svc, touch, emitted, clock } = stockSetup();
+      await svc.deviceEvent(STOCK, { tipo: 'console_falha', timestamp: '2026-10-21T15:00:00.000Z', comando_id: '33333333-3333-4333-8333-333333333333', motivo: 'offline' });
+      expect(touch).not.toHaveBeenCalled();
+      await svc.deviceEvent(STOCK, { tipo: 'console_resposta', timestamp: '2026-10-21T15:00:00.000Z', comando_id: '33333333-3333-4333-8333-333333333333', texto: 'Battery:4.27V;' });
+      expect(touch).toHaveBeenCalledTimes(1);
+      expect(touch).toHaveBeenCalledWith(STOCK, clock.now());
+      expect(emitted[EV.TRACKER_CONSOLE_EVENT]).toEqual([]);
+    });
+
+    it('telemetria de moto cadastrada não chama o último sinal do estoque', async () => {
+      const { svc, touch } = stockSetup();
+      await svc.telemetry(T, msg());
+      expect(touch).not.toHaveBeenCalled();
+    });
+
+    it('falha ao gravar o sinal não derruba a mensagem (touch rejeitado só é registrado)', async () => {
+      const { svc, touch } = stockSetup();
+      touch.mockRejectedValueOnce(new Error('x'));
+      await expect(svc.telemetry(STOCK, msg())).resolves.toBeUndefined();
+    });
+
+    /** Toda chamada de log do Nest (log/warn/error) espionada, para conferir que o IMEI nunca sai. */
+    function spyLogs() {
+      const spies = (['log', 'warn', 'error'] as const).map((m) => jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined));
+      return { all: () => spies.flatMap((s) => s.mock.calls), restore: () => spies.forEach((s) => s.mockRestore()) };
+    }
+
+    it('presença online: só grava o último sinal (sem estado ao vivo nem log com o thingName)', async () => {
+      const { svc, touch, live, gateway, emitted, clock } = stockSetup();
+      const logs = spyLogs();
+      try {
+        const setOnline = jest.spyOn(live, 'setOnline');
+        const load = jest.spyOn(live, 'load');
+        const connectivity = jest.spyOn(gateway, 'onConnectivity');
+        await svc.presence(STOCK, true);
+        expect(touch).toHaveBeenCalledWith(STOCK, clock.now());
+        expect(setOnline).not.toHaveBeenCalled();
+        expect(load).not.toHaveBeenCalled();
+        expect(connectivity).not.toHaveBeenCalled();
+        expect(live.get(STOCK) ?? null).toBeNull();
+        expect(emitted[EV.IOT_CONNECTIVITY]).toEqual([]);
+        expect(JSON.stringify(logs.all())).not.toContain('869890080273430');
+      } finally {
+        logs.restore();
+      }
+    });
+
+    it('presença offline: nada (nem estado ao vivo nem sinal)', async () => {
+      const { svc, touch, live } = stockSetup();
+      const setOnline = jest.spyOn(live, 'setOnline');
+      await svc.presence(STOCK, false);
+      expect(touch).not.toHaveBeenCalled();
+      expect(setOnline).not.toHaveBeenCalled();
+    });
+
+    it('telemetria/evento inválidos: o log não leva o thingName do estoque', async () => {
+      const { svc } = stockSetup();
+      const logs = spyLogs();
+      try {
+        await svc.telemetry(STOCK, { lixo: true });
+        await svc.deviceEvent(STOCK, { tipo: 'queda' });
+        await svc.deviceEvent(STOCK, { tipo: 'console_resposta' });
+        const entries = logs.all().map((c) => c[0] as Record<string, unknown>);
+        expect(entries.map((e) => e.msg)).toEqual(['telemetry_invalid', 'device_event_invalid', 'console_event_invalid']);
+        expect(entries.every((e) => e.stockThing === true && !('thingName' in e))).toBe(true);
+        expect(JSON.stringify(entries)).not.toContain('869890080273430');
+      } finally {
+        logs.restore();
+      }
+    });
+  });
 });

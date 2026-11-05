@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { conflict, notFound } from '../../common/problem';
+import { badRequest, conflict, notFound } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
@@ -8,6 +8,11 @@ import type { CreateSimCardDto, ListSimCardsQuery, UpdateSimCardDto } from './si
 import { toSimCard } from './sim-cards.mapper';
 
 const INCLUDE = { tracker: { select: { vehicle: { select: { id: true, code: true } } } } } as const;
+
+const BOTH_TARGETS = 'Informe a moto ou o rastreador, não os dois.';
+
+/** Alvo do vínculo: o rastreador desta moto (`vehicleId`) ou o próprio rastreador (`trackerId`). */
+type LinkTarget = { vehicleId: string } | { trackerId: string };
 
 function isUnique(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
@@ -31,9 +36,11 @@ export class SimCardsService {
   }
 
   async create(dto: CreateSimCardDto, actor: Principal) {
+    if (dto.vehicleId != null && dto.trackerId != null) throw badRequest(BOTH_TARGETS);
     try {
       const row = await this.prisma.$transaction(async (tx) => {
-        const trackerId = dto.vehicleId ? await this.trackerFor(tx, dto.vehicleId, undefined) : null;
+        const target: LinkTarget | null = dto.vehicleId ? { vehicleId: dto.vehicleId } : dto.trackerId ? { trackerId: dto.trackerId } : null;
+        const trackerId = target ? await this.trackerFor(tx, target, undefined) : null;
         const created = await tx.simCard.create({
           data: {
             iccid: dto.iccid,
@@ -58,6 +65,7 @@ export class SimCardsService {
   }
 
   async update(id: string, dto: UpdateSimCardDto, actor: Principal) {
+    if (dto.vehicleId !== undefined && dto.trackerId !== undefined) throw badRequest(BOTH_TARGETS);
     try {
       const row = await this.prisma.$transaction(async (tx) => {
         const current = await tx.simCard.findUnique({ where: { id } });
@@ -70,11 +78,12 @@ export class SimCardsService {
         if (dto.status !== undefined) data.status = dto.status;
         if (dto.notes !== undefined) data.notes = dto.notes;
         let link: 'linked' | 'unlinked' | undefined;
-        if (dto.vehicleId === null) {
+        const target = dto.vehicleId !== undefined ? dto.vehicleId : dto.trackerId;
+        if (target === null) {
           data.trackerId = null;
           link = 'unlinked';
-        } else if (dto.vehicleId !== undefined) {
-          const trackerId = await this.trackerFor(tx, dto.vehicleId, id);
+        } else if (target !== undefined) {
+          const trackerId = await this.trackerFor(tx, dto.vehicleId ? { vehicleId: dto.vehicleId } : { trackerId: target }, id);
           // Mover direto para outro rastreador não vale: desvincule antes (evita trocar o chip de moto sem querer).
           if (current.trackerId && current.trackerId !== trackerId) throw conflict('conflict', 'Chip já vinculado a outro rastreador; desvincule antes.');
           data.trackerId = trackerId;
@@ -82,7 +91,7 @@ export class SimCardsService {
         }
         const updated = await tx.simCard.update({ where: { id }, data, include: INCLUDE });
         await this.audit.record(
-          { actor, action: 'sim_card.update', entityType: 'SimCard', entityId: id, metadata: { fields: Object.keys(dto).filter((k) => k !== 'vehicleId'), link } },
+          { actor, action: 'sim_card.update', entityType: 'SimCard', entityId: id, metadata: { fields: Object.keys(dto).filter((k) => k !== 'vehicleId' && k !== 'trackerId'), link } },
           tx,
         );
         return updated;
@@ -94,11 +103,16 @@ export class SimCardsService {
     }
   }
 
-  /** Rastreador da moto; 409 se a moto não tem rastreador ou ele já tem outro chip (`selfId` = o próprio chip). */
-  private async trackerFor(tx: Prisma.TransactionClient, vehicleId: string, selfId: string | undefined): Promise<string> {
-    const tracker = await tx.tracker.findUnique({ where: { vehicleId }, include: { simCard: { select: { id: true } } } });
+  /**
+   * Rastreador do vínculo (o da moto ou o informado); 404 se o rastreador não existe, 409 se a moto não tem rastreador ou ele já
+   * tem outro chip (`selfId` = o próprio chip).
+   */
+  private async trackerFor(tx: Prisma.TransactionClient, target: LinkTarget, selfId: string | undefined): Promise<string> {
+    const where = 'trackerId' in target ? { id: target.trackerId } : { vehicleId: target.vehicleId };
+    const tracker = await tx.tracker.findUnique({ where, include: { simCard: { select: { id: true } } } });
     if (!tracker) {
-      const vehicle = await tx.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true } });
+      if ('trackerId' in target) throw notFound('Rastreador não encontrado.');
+      const vehicle = await tx.vehicle.findUnique({ where: { id: target.vehicleId }, select: { id: true } });
       if (!vehicle) throw notFound('Moto não encontrada.');
       throw conflict('conflict', 'A moto não tem rastreador.');
     }

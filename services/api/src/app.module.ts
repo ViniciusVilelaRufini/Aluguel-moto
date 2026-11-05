@@ -15,6 +15,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { CommandsModule } from './modules/commands/commands.module';
 import { SimCardsModule } from './modules/sim-cards/sim-cards.module';
 import { TrackerConsoleModule } from './modules/tracker-console/tracker-console.module';
+import { TrackersModule } from './modules/trackers/trackers.module';
 import { CustomersController } from './modules/customers/customers.controller';
 import { FieldTasksModule } from './modules/field-tasks/field-tasks.module';
 import { HealthController } from './modules/health/health.controller';
@@ -73,6 +74,7 @@ import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
     CommandsModule,
     SimCardsModule,
     TrackerConsoleModule,
+    TrackersModule,
     VehiclesModule,
     ZonesModule,
     PricingModule,

@@ -71,6 +71,7 @@ import 'package:volti_api/src/model/coupon_page.dart';
 import 'package:volti_api/src/model/coupon_validation.dart';
 import 'package:volti_api/src/model/coverage_item.dart';
 import 'package:volti_api/src/model/create_sim_card_request.dart';
+import 'package:volti_api/src/model/create_tracker_request.dart';
 import 'package:volti_api/src/model/current_rental.dart';
 import 'package:volti_api/src/model/current_reservation.dart';
 import 'package:volti_api/src/model/customer.dart';
@@ -152,6 +153,7 @@ import 'package:volti_api/src/model/incident_status.dart';
 import 'package:volti_api/src/model/incident_update.dart';
 import 'package:volti_api/src/model/inspection.dart';
 import 'package:volti_api/src/model/inspection_request.dart';
+import 'package:volti_api/src/model/install_tracker_request.dart';
 import 'package:volti_api/src/model/insurance_coverage.dart';
 import 'package:volti_api/src/model/insurance_coverage_option.dart';
 import 'package:volti_api/src/model/insurance_coverage_option_list.dart';
@@ -301,6 +303,9 @@ import 'package:volti_api/src/model/tracker_console_list.dart';
 import 'package:volti_api/src/model/tracker_console_risk.dart';
 import 'package:volti_api/src/model/tracker_console_status.dart';
 import 'package:volti_api/src/model/tracker_control_mode.dart';
+import 'package:volti_api/src/model/tracker_device.dart';
+import 'package:volti_api/src/model/tracker_device_list.dart';
+import 'package:volti_api/src/model/tracker_model.dart';
 import 'package:volti_api/src/model/tracker_status_report.dart';
 import 'package:volti_api/src/model/update_sim_card_request.dart';
 import 'package:volti_api/src/model/upload_content_type.dart';
@@ -397,6 +402,7 @@ part 'serializers.g.dart';
   CouponValidation,
   CoverageItem,
   CreateSimCardRequest,
+  CreateTrackerRequest,
   CurrentRental,
   CurrentReservation,
   Customer,
@@ -478,6 +484,7 @@ part 'serializers.g.dart';
   IncidentUpdate,
   Inspection,
   InspectionRequest,
+  InstallTrackerRequest,
   InsuranceCoverage,
   InsuranceCoverageOption,
   InsuranceCoverageOptionList,
@@ -628,6 +635,9 @@ part 'serializers.g.dart';
   TrackerConsoleRisk,
   TrackerConsoleStatus,
   TrackerControlMode,
+  TrackerDevice,
+  TrackerDeviceList,
+  TrackerModel,
   TrackerStatusReport,
   UpdateSimCardRequest,
   UploadContentType,
@@ -812,6 +822,10 @@ Serializers serializers = (_$serializers.toBuilder()
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(PlanRevenue)]),
         () => ListBuilder<PlanRevenue>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(TrackerDevice)]),
+        () => ListBuilder<TrackerDevice>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Deposit)]),
