@@ -1194,10 +1194,10 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
   it('falha ao criar → log traccar_device_create_failed (IMEI mascarado) e tenta de novo na próxima releitura', async () => {
     c = await start();
     c.registry.set(STOCK_IMEI, STOCK_THING);
-    c.traccar.deviceWriteFailStatus = 400;
+    c.traccar.deviceWriteFailStatus = 500;
     await c.bridge.refreshRegistry();
     expect(c.traccar.created).toEqual([]);
-    expect(c.logs).toContainEqual({ level: 'error', msg: 'traccar_device_create_failed', thingName: 'gt06-***********3430', imei: '***********3430', error: 'traccar_device_create_failed_400' });
+    expect(c.logs).toContainEqual({ level: 'error', msg: 'traccar_device_create_failed', thingName: 'gt06-***********3430', imei: '***********3430', error: 'traccar_device_create_failed_500' });
     expect(JSON.stringify(c.logs)).not.toContain(STOCK_IMEI);
     c.traccar.deviceWriteFailStatus = undefined;
     await c.bridge.refreshRegistry();
@@ -1205,18 +1205,38 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     expect(c.traccar.connections).toBeGreaterThanOrEqual(1);
   });
 
-  it('reabertura do WebSocket por aparelho novo respeita SOCKET_REOPEN_MIN_MS', async () => {
+  it('reabertura por aparelho novo: limite de 60 s e pedido pendente atendido na releitura seguinte, sem novo created', async () => {
     c = await start();
     c.registry.set(STOCK_IMEI, STOCK_THING);
     await c.bridge.refreshRegistry();
     await waitFor(() => c.traccar.connections === 2, 5_000);
     await sleep(40);
     c.registry.set('869890080273999', 'gt06-869890080273999');
-    c.now.value = T0 + 60_000;
+    c.now.value = T0 + 30_000;
     await c.bridge.refreshRegistry();
     await sleep(40);
     expect(c.traccar.created).toHaveLength(2);
-    expect(c.traccar.connections).toBe(2); // menos de 5 min da última reabertura
+    expect(c.traccar.connections).toBe(2); // menos de 60 s da última reabertura: pendente
+    c.now.value = T0 + 61_000;
+    await c.bridge.refreshRegistry(); // nada novo a criar
+    await waitFor(() => c.traccar.connections === 3, 5_000);
+    expect(c.traccar.created).toHaveLength(2);
+  });
+
+  it('aparelho apagado no Traccar é recriado; 400 ao criar (IMEI existe mas invisível à ponte) → traccar_device_not_visible uma vez só', async () => {
+    c = await start();
+    c.registry.set(STOCK_IMEI, STOCK_THING);
+    await c.bridge.refreshRegistry();
+    expect(c.traccar.created).toHaveLength(1);
+    c.traccar.devices = c.traccar.devices.filter((d) => d.uniqueId !== STOCK_IMEI); // apagado no Traccar
+    await c.bridge.refreshRegistry();
+    expect(c.traccar.created).toHaveLength(2);
+    c.traccar.devices = c.traccar.devices.filter((d) => d.uniqueId !== STOCK_IMEI);
+    c.traccar.deviceWriteFailStatus = 400;
+    await c.bridge.refreshRegistry();
+    await c.bridge.refreshRegistry();
+    expect(c.logs.filter((l) => l.msg === 'traccar_device_not_visible')).toEqual([{ level: 'error', msg: 'traccar_device_not_visible', thingName: 'gt06-***********3430', imei: '***********3430' }]);
+    expect(c.logs.some((l) => l.msg === 'traccar_device_create_failed')).toBe(false);
   });
 
   it('A4-1: engineResume numa moto com bit fresco travada:false ainda ecoa reported.travada:false (o resume não trava)', async () => {

@@ -191,8 +191,11 @@ no registro como `gt06-<IMEI>` (estoque) ou com o `thingName` da moto (instalado
 renomeia (`PUT /api/devices/{id}`, objeto completo) o de nome diferente do thingName, sem duplicar; logs
 `traccar_device_created`/`traccar_device_renamed`/`traccar_device_create_failed` (IMEI só mascarado; falha tenta de novo na próxima
 releitura). Criou algum aparelho -> reabre o WebSocket (o aparelho novo só chega numa sessão nova), no máximo uma reabertura a cada
-`SOCKET_REOPEN_MIN_MS` (5 min, o mesmo limite do item abaixo): atraso aceito de até ~1 min entre cadastrar e ficar online, mais
-se outra reabertura foi feita há pouco. Exige que o usuário da ponte tenha `deviceReadonly:false` e `deviceLimit:-1` (o
+`NEW_DEVICE_REOPEN_MIN_MS` (60 s; limite próprio, separado do de 5 min do item abaixo). Se limitada, o pedido fica pendente e é
+atendido na primeira releitura que puder, sem precisar de novo cadastro: atraso de até ~1 min entre cadastrar e ficar online. O
+aparelho é procurado na lista desta releitura (aparelho apagado no Traccar é recriado). Erro 400 ao criar (IMEI já existe no
+Traccar mas o usuário da ponte não o enxerga) vira `traccar_device_not_visible`, uma vez por IMEI: ligue o aparelho ao usuário
+da ponte no Traccar ou rode `gt06.sh provision`. Exige que o usuário da ponte tenha `deviceReadonly:false` e `deviceLimit:-1` (o
 `gt06.sh init` garante, a cada update). Troca de thingName para o mesmo IMEI falha os comandos de console pendentes da coisa
 antiga (`console_falha` `erro`). Todo log passa por `maskLogger`: dígitos longos (IMEI dentro de `gt06-<IMEI>`) saem mascarados.
 O `gt06.sh provision` continua como alternativa (CLI/CloudShell).

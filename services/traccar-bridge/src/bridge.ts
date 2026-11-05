@@ -57,6 +57,8 @@ export const CONSOLE_SWEEP_MS = 5_000;
 export const UNDELIVERED_REOPEN_MS = 90_000;
 /** Reaberturas do WebSocket por dispositivo não entregue: no máximo uma neste intervalo (e uma por moto). */
 export const SOCKET_REOPEN_MIN_MS = 5 * 60_000;
+/** Reabertura do WebSocket por aparelho recém-criado: limite próprio e menor (cadastro seguido de outro não espera 5 min). */
+export const NEW_DEVICE_REOPEN_MIN_MS = 60_000;
 
 /** Corte conhecido e bateria ainda desconhecida há este tempo → telemetria sai com `bateria_pct: 0` (log `battery_unknown`). */
 export const BATTERY_UNKNOWN_CAP_MS = 5 * 60_000;
@@ -115,6 +117,11 @@ export class Bridge {
   private readonly reopenTried = new Set<string>();
   private socketOpenedAt?: number;
   private lastReopenAt = Number.NEGATIVE_INFINITY;
+  private lastNewDeviceReopenAt = Number.NEGATIVE_INFINITY;
+  /** Aparelho criado e ainda sem reabertura do WebSocket (limitada ou sem conexão): atendido na primeira releitura que puder. */
+  private newDeviceReopenPending = false;
+  /** IMEIs com `traccar_device_not_visible` já logado (uma vez por IMEI, até o aparelho aparecer). */
+  private readonly notVisibleLogged = new Set<string>();
   private readonly subscribed = new Set<string>();
   private readonly chains = new Map<string, Promise<void>>();
   private imeiToThing = new Map<string, string>();
@@ -326,13 +333,16 @@ export class Bridge {
    * visível ao usuário da ponte → `createDevice(thingName, imei)`; aparelho com nome diferente do thingName (rastreador instalado
    * numa moto, trocado ou devolvido ao estoque) → `updateDeviceName`, sem duplicar. Falha em um aparelho é registrada (IMEI
    * mascarado) e tentada de novo na próxima releitura. Criou algum → reabre o WebSocket (o aparelho novo só chega numa sessão
-   * nova), no máximo uma reabertura a cada `SOCKET_REOPEN_MIN_MS` (mesmo limite do `checkUndelivered`).
+   * nova), no máximo uma a cada `NEW_DEVICE_REOPEN_MIN_MS` (60 s); se limitada, o pedido fica pendente e é atendido na primeira releitura que puder.
    */
   async ensureTraccarDevices(): Promise<{ created: number; renamed: number }> {
     const result = { created: 0, renamed: 0 };
     if (!this.imeiToThing.size) return result;
-    for (const d of await this.traccar.devices()) await this.updateDevice(d); // sem reler a versão (/api/server)
-    const byImei = new Map([...this.devices.values()].map((d) => [d.uniqueId, d]));
+    // Só os aparelhos desta rodada (não o cache acumulado): aparelho apagado no Traccar é recriado. Sem reler /api/server.
+    const visible = await this.traccar.devices();
+    for (const d of visible) await this.updateDevice(d);
+    const byImei = new Map(visible.map((d) => [d.uniqueId, d]));
+    for (const imei of byImei.keys()) this.notVisibleLogged.delete(imei);
     for (const [imei, thing] of this.imeiToThing) {
       const existing = byImei.get(imei);
       try {
@@ -347,15 +357,26 @@ export class Bridge {
           this.log.info({ msg: 'traccar_device_renamed', thingName: thing, from, imei: maskImei(imei) });
         }
       } catch (err) {
+        // 400 ao criar = uniqueId duplicado: o aparelho existe mas o usuário da ponte não o enxerga. Uma vez por IMEI.
+        if (!existing && (err as Error).message.endsWith('_400')) {
+          if (!this.notVisibleLogged.has(imei)) {
+            this.notVisibleLogged.add(imei);
+            this.log.error({ msg: 'traccar_device_not_visible', thingName: thing, imei: maskImei(imei) });
+          }
+          continue;
+        }
         this.log.error({ msg: existing ? 'traccar_device_rename_failed' : 'traccar_device_create_failed', thingName: thing, imei: maskImei(imei), error: (err as Error).message });
       }
     }
-    if (result.created > 0) {
+    if (result.created > 0) this.newDeviceReopenPending = true;
+    if (this.newDeviceReopenPending) {
       const now = this.now();
-      if (now - this.lastReopenAt < SOCKET_REOPEN_MIN_MS) {
-        this.logLimited('traccar_socket_reopen_rate_limited', 'warn', { thingName: this.imeiToThing.values().next().value, things: result.created });
+      if (now - this.lastNewDeviceReopenAt < NEW_DEVICE_REOPEN_MIN_MS) {
+        this.logLimited('traccar_socket_reopen_rate_limited', 'warn', { reason: 'new_devices' }); // pedido segue pendente
       } else if (this.opts.reopenSocket?.()) {
-        this.lastReopenAt = now;
+        this.lastNewDeviceReopenAt = now;
+        this.lastReopenAt = now; // o checkUndelivered não reabre de novo logo em seguida
+        this.newDeviceReopenPending = false;
         this.log.info({ msg: 'traccar_socket_reopen_new_devices', devices: result.created });
       }
     }
