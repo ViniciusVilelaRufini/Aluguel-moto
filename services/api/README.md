@@ -387,6 +387,15 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - `GET /customers` traz `stats` por cliente (lote). `GET /customers/{id}/kyc-files` (`admin`, `suporte`): links pré-assinados de 5 min do documento e da selfie (só chaves `kyc/{id}/`), AuditLog `customer.kyc_files_view` sem as chaves.
 - `Vehicle.positionAt`: hora da medição da posição (também da sobreposição do Redis). Para cliente, só junto com a posição visível (devolução sem GPS, 2026-11-04); `GET /vehicles/by-code/{code}` usa o estado ao vivo do Redis como o `GET /vehicles/{id}`. `FieldTask.vehicleBatteryPct` ausente e `Battery.chargeKnown: false` quando a moto não tem leitura de bateria. `GET /field-tasks?active=true&completedSince=`.
 
+## Chips do rastreador (`src/modules/sim-cards`, `docs/decisoes.md` 2026-11-05)
+
+- `GET /sim-cards` (`admin`, `operacao`, `suporte`; filtros `q` em ICCID/linha, `status`, `unlinked`), `POST /sim-cards` e `PATCH /sim-cards/{id}` (`admin`).
+- `vehicleId` no corpo = "o `Tracker` cuja `vehicleId` é esta". Vínculo e desvínculo (`vehicleId: null`) são feitos em transação; `SimCard.trackerId` é único.
+- `409 conflict`: ICCID repetido (P2002), moto sem rastreador, rastreador que já tem outro chip, chip já vinculado a outro rastreador (desvincule antes de mover). `404`: chip ou moto inexistente.
+- `Vehicle.simCard` (`SimCardSummary | null`) vem só para staff, lido de `tracker.simCard` em `VehiclesService.enrich()`.
+- Auditoria `sim_card.create`/`sim_card.update` sem ICCID nem número da linha (dado pessoal indireto).
+- `dev-reset-bench` desvincula os chips dos rastreadores apagados (o chip fica no estoque) e apaga o console das motos apagadas.
+
 ## Regras que nunca mudam
 
 - Nenhum `speedLimitKmh` fora de 0..32 é aceito (DTO → 400 `speed-limit-out-of-range`; serviço de comandos revalida; `CHECK` no banco).

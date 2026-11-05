@@ -122,3 +122,17 @@ describe('painel de bancada (2026-11-03): bateria instalada numa moto sem leitur
     expect((toVehicle(row(), { staff: true, now: NOW, battery }) as any).battery).not.toHaveProperty('chargeKnown');
   });
 });
+
+describe('Vehicle.simCard (staff)', () => {
+  const sim = { id: 's1', iccid: '8955170110123456789', msisdn: null, carrier: 'Algar', apn: 'indica.algar.br', status: 'active' as const };
+
+  it('staff recebe o resumo do chip do rastreador, ou null sem chip/rastreador', () => {
+    expect((toVehicle(row({ tracker: { id: 't1', simCard: sim } }), { staff: true, now: NOW }) as any).simCard).toEqual(sim);
+    expect((toVehicle(row({ tracker: { id: 't1', simCard: null } }), { staff: true, now: NOW }) as any).simCard).toBeNull();
+    expect((toVehicle(row({ tracker: null }), { staff: true, now: NOW }) as any).simCard).toBeNull();
+  });
+
+  it('cliente nunca recebe o chip', () => {
+    expect(toVehicle(row({ tracker: { id: 't1', simCard: sim } }), { staff: false, now: NOW })).not.toHaveProperty('simCard');
+  });
+});

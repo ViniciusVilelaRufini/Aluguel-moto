@@ -4,6 +4,7 @@ import { toBattery } from '../batteries/batteries.mapper';
 import type { VehicleModelRef } from '../catalog/catalog.service';
 import { computeServiceInfo, publicServiceInfo } from '../maintenance/service-due';
 import { DEFAULT_OFFLINE_AFTER_MS } from '../iot/live-state.store';
+import { toSimCardSummary, type SimCardSummaryRow } from '../sim-cards/sim-cards.mapper';
 
 type VehicleLike = Pick<Vehicle, 'id' | 'code' | 'model' | 'status' | 'lat' | 'lng' | 'batteryPct'> & {
   /** Ausente (`select` sem o campo) = conhecida. */
@@ -54,7 +55,7 @@ type VehicleRow = Omit<Vehicle, 'batteryKnown'> & {
   /** Só do estado ao vivo (live-overlay.ts); ausente = desconhecido. */
   gpsSatellites?: number | null;
   gpsSleep?: boolean | null;
-  tracker?: { id: string; controlMode?: TrackerControlMode; firmwareVersion?: string | null } | null;
+  tracker?: { id: string; controlMode?: TrackerControlMode; firmwareVersion?: string | null; simCard?: SimCardSummaryRow | null } | null;
   vehicleModel?: VehicleModelRef | null;
 };
 
@@ -158,5 +159,6 @@ export function toVehicle(
     createdAt: iso(v.createdAt),
     updatedAt: iso(v.updatedAt),
   });
-  return { ...staffView, ...address };
+  // Staff: `simCard` sempre presente (`null` = sem chip vinculado); o `compact` acima tiraria o nulo.
+  return { ...staffView, ...address, simCard: toSimCardSummary(v.tracker?.simCard) };
 }
