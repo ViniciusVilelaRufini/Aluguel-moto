@@ -27,6 +27,7 @@ import { LocalShadowStore } from './local-shadow';
 import { RedisSafeLockStore } from './safe-lock.store';
 import { RedisRelayLockStore } from './relay-lock.store';
 import { StubIotGateway } from './stub-iot-gateway';
+import { StockTrackerHeartbeat } from './stock-tracker-heartbeat';
 import { TelemetryService } from './telemetry.service';
 import { PrismaTrackerModeLookup, TRACKER_MODES, type TrackerModeLookup } from './tracker-mode';
 import { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
@@ -99,10 +100,15 @@ import { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
       useFactory: (modes: TrackerModeLookup, geofence: GeofenceService, redis: RedisStore, events: EventEmitter2, rentals: RentalLookup) => new ZoneSpeedMonitor(modes, geofence, redis, events, rentals),
     },
     {
+      provide: StockTrackerHeartbeat,
+      inject: [PrismaService],
+      useFactory: (prisma: PrismaService) => new StockTrackerHeartbeat(prisma),
+    },
+    {
       provide: TelemetryService,
-      inject: [IOT_GATEWAY, GeofenceService, RENTAL_LOOKUP, PrismaService, EventEmitter2, IOT_CLOCK, APP_CONFIG, IOT_CONFIG, ZoneSpeedMonitor],
-      useFactory: (gw: IotGateway, geofence: GeofenceService, rentals: RentalLookup, prisma: PrismaService, events: EventEmitter2, clock: Clock, app: AppConfig, cfg: IotConfig, zoneSpeed: ZoneSpeedMonitor) =>
-        gw instanceof BaseIotGateway ? new TelemetryService(gw, geofence, rentals, prisma, events, clock, { trackRetentionDays: app.trackRetentionDays, reconnectGapMs: cfg.reconnectGapMs, queueLagMs: cfg.queueLagMs }, zoneSpeed) : null,
+      inject: [IOT_GATEWAY, GeofenceService, RENTAL_LOOKUP, PrismaService, EventEmitter2, IOT_CLOCK, APP_CONFIG, IOT_CONFIG, ZoneSpeedMonitor, StockTrackerHeartbeat],
+      useFactory: (gw: IotGateway, geofence: GeofenceService, rentals: RentalLookup, prisma: PrismaService, events: EventEmitter2, clock: Clock, app: AppConfig, cfg: IotConfig, zoneSpeed: ZoneSpeedMonitor, stock: StockTrackerHeartbeat) =>
+        gw instanceof BaseIotGateway ? new TelemetryService(gw, geofence, rentals, prisma, events, clock, { trackRetentionDays: app.trackRetentionDays, reconnectGapMs: cfg.reconnectGapMs, queueLagMs: cfg.queueLagMs }, zoneSpeed, stock) : null,
     },
     IotRuntime,
   ],

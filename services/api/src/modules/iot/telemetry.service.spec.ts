@@ -314,4 +314,63 @@ describe('TelemetryService: poda do limite de log de rastreador desconhecido', (
       warn.mockRestore();
     }
   });
+
+  describe('rastreador em estoque (gt06-<IMEI>, sem moto)', () => {
+    const STOCK = 'gt06-869890080273430';
+    function stockSetup() {
+      const s = setup();
+      const touch = jest.fn().mockResolvedValue(undefined);
+      const svc = new TelemetryService(s.gateway, s.geofence, s.rentals, s.prisma as any, s.events, s.clock, { trackRetentionDays: 90 }, undefined, { touch });
+      return { ...s, svc, touch };
+    }
+
+    it('telemetria: grava o último sinal e não toca estado ao vivo, cerca, trava nem trajeto', async () => {
+      const { svc, touch, live, gateway, geofence, rentals, prisma, emitted, clock } = stockSetup();
+      const applied = jest.spyOn(live, 'applyTelemetry');
+      const sample = jest.spyOn(gateway, 'onTelemetrySample');
+      const speed = jest.spyOn(gateway, 'onSpeed');
+      await svc.telemetry(STOCK, msg());
+      expect(touch).toHaveBeenCalledWith(STOCK, clock.now());
+      expect(applied).not.toHaveBeenCalled();
+      expect(sample).not.toHaveBeenCalled();
+      expect(speed).not.toHaveBeenCalled();
+      expect(geofence.onPosition).not.toHaveBeenCalled();
+      expect(rentals.trackingRentalId).not.toHaveBeenCalled();
+      expect(prisma.trackPoint.create).not.toHaveBeenCalled();
+      expect(emitted[EV.IOT_TELEMETRY]).toEqual([]);
+    });
+
+    it('status (reported via MQTT): grava o último sinal e não toca o estado ao vivo', async () => {
+      const { svc, touch, live, gateway, emitted, clock } = stockSetup();
+      const load = jest.spyOn(live, 'load');
+      const onReported = jest.spyOn(gateway, 'onReported');
+      await svc.reported(STOCK, { travada: true });
+      expect(touch).toHaveBeenCalledWith(STOCK, clock.now());
+      expect(load).not.toHaveBeenCalled();
+      expect(onReported).not.toHaveBeenCalled();
+      expect(emitted[EV.IOT_REPORTED]).toEqual([]);
+    });
+
+    it('console_resposta: grava o último sinal; console_falha não conta', async () => {
+      const { svc, touch, emitted, clock } = stockSetup();
+      await svc.deviceEvent(STOCK, { tipo: 'console_falha', timestamp: '2026-10-21T15:00:00.000Z', comando_id: '33333333-3333-4333-8333-333333333333', motivo: 'offline' });
+      expect(touch).not.toHaveBeenCalled();
+      await svc.deviceEvent(STOCK, { tipo: 'console_resposta', timestamp: '2026-10-21T15:00:00.000Z', comando_id: '33333333-3333-4333-8333-333333333333', texto: 'Battery:4.27V;' });
+      expect(touch).toHaveBeenCalledTimes(1);
+      expect(touch).toHaveBeenCalledWith(STOCK, clock.now());
+      expect(emitted[EV.TRACKER_CONSOLE_EVENT]).toEqual([]);
+    });
+
+    it('telemetria de moto cadastrada não chama o último sinal do estoque', async () => {
+      const { svc, touch } = stockSetup();
+      await svc.telemetry(T, msg());
+      expect(touch).not.toHaveBeenCalled();
+    });
+
+    it('falha ao gravar o sinal não derruba a mensagem (touch rejeitado só é registrado)', async () => {
+      const { svc, touch } = stockSetup();
+      touch.mockRejectedValueOnce(new Error('x'));
+      await expect(svc.telemetry(STOCK, msg())).resolves.toBeUndefined();
+    });
+  });
 });

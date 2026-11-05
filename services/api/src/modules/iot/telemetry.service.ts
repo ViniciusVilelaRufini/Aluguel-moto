@@ -9,6 +9,7 @@ import type { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
 import { DEFAULT_QUEUE_LAG_MS, DEFAULT_RECONNECT_GAP_MS, MAX_CLOCK_SKEW_MS } from './live-state.store';
 import { isConsoleEventType, isWeakFix, parseConsoleEvent, parseDeviceEvent, parseTelemetry } from './mqtt-contract';
 import type { InboundHandler, ReportedMeta, ReportedState } from './shadow-transport';
+import { isStockThingName, type StockTrackerHeartbeat } from './stock-tracker-heartbeat';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Intervalo mínimo entre dois logs `telemetry_unknown_thing` do mesmo thingName. */
@@ -48,7 +49,19 @@ export class TelemetryService implements InboundHandler {
     private readonly opts: TelemetryOptions,
     /** Alerta `zone_speed_exceeded` de rastreador só relé (spec GT06 §10). */
     private readonly zoneSpeed?: Pick<ZoneSpeedMonitor, 'onSample'>,
+    /** Último sinal do rastreador em estoque (`gt06-<IMEI>`, sem moto): só grava `Tracker.lastSeenAt`. */
+    private readonly stockHeartbeat?: Pick<StockTrackerHeartbeat, 'touch'>,
   ) {}
+
+  /**
+   * Rastreador do estoque (thingName `gt06-…` sem moto): registra só o último sinal, sem nenhum outro efeito (estado ao vivo,
+   * trava, cerca, trajeto). Devolve true se o thingName é de estoque (a mensagem deve parar aqui). Falha nunca derruba a mensagem.
+   */
+  private async stockSignal(thingName: string): Promise<boolean> {
+    if (!isStockThingName(thingName)) return false;
+    await this.stockHeartbeat?.touch(thingName, this.clock.now()).catch(() => this.logger.error({ msg: 'stock_heartbeat_failed' }));
+    return true;
+  }
 
   /** Serializa o processamento por moto (diff de cercas e rampa dependem da ordem). */
   private serial(thingName: string, fn: () => Promise<void>): Promise<void> {
@@ -128,7 +141,7 @@ export class TelemetryService implements InboundHandler {
       }
       const vehicleId = await this.vehicleIdOf(thingName);
       if (!vehicleId) {
-        this.logUnknownThing(thingName);
+        if (!(await this.stockSignal(thingName))) this.logUnknownThing(thingName);
         return;
       }
       const now = this.clock.now();
@@ -211,7 +224,11 @@ export class TelemetryService implements InboundHandler {
           this.logger.warn({ msg: 'console_event_invalid', thingName });
           return;
         }
-        if (!(await this.vehicleIdOf(thingName))) return;
+        if (!(await this.vehicleIdOf(thingName))) {
+          // Só a resposta do aparelho é sinal de vida (console_falha vem da ponte).
+          if (consoleEv.kind === 'resposta') await this.stockSignal(thingName);
+          return;
+        }
         // I3: `console_falha` é produzido pela ponte (timeout/offline/erro), não pelo aparelho: não é sinal de vida.
         if (consoleEv.kind === 'resposta') {
           await this.gateway.live.load(thingName);
@@ -256,6 +273,7 @@ export class TelemetryService implements InboundHandler {
         return;
       }
       const vehicleId = await this.vehicleIdOf(thingName);
+      if (!vehicleId && (await this.stockSignal(thingName))) return;
       const wasOnline = this.gateway.live.isOnline(thingName);
       const gap = this.heard(thingName, this.clock.now());
       if (!wasOnline || gap) await this.reconnect(thingName);
