@@ -15,6 +15,14 @@ const TEXT_PATTERN = /^[A-Za-z0-9,.\-_:]{1,99}#$/;
 const READ_ONLY = new Set(['STATUS', 'PARAM', 'WHERE', 'VERSION', 'GPRSSET']);
 const READ_OR_SET = new Map<string, Risk>([['APN', 'connection'], ['SERVER', 'connection'], ['TIMER', 'change']]);
 const RELAY_KEYWORDS = new Set(['RELAY', 'DYD', 'HFYD', 'STOP', 'RESUME']);
+/** `TIMER,<em movimento 5–60>,<parado 10–3600>#`. */
+function timerArgsOk(body: string): boolean {
+  const m = /^TIMER,(\d{1,4}),(\d{1,4})$/i.exec(body);
+  if (!m) return false;
+  const moving = Number(m[1]);
+  const parked = Number(m[2]);
+  return moving >= 5 && moving <= 60 && parked >= 10 && parked <= 3600;
+}
 
 /**
  * Espelho da allowlist da API (`console-policy.ts`) só para mostrar o motivo antes de enviar; a API é a autoridade.
@@ -32,6 +40,7 @@ export function classifyConsole(input: string): { ok: true; risk: Risk } | { ok:
   if (RELAY_KEYWORDS.has(keyword)) return { ok: false, reason: 'Use Bloquear/Desbloquear da ficha da moto.' };
   const hasArgs = comma !== -1;
   if (READ_ONLY.has(keyword) && !hasArgs) return { ok: true, risk: 'read' };
+  if (keyword === 'TIMER' && hasArgs && !timerArgsOk(body)) return { ok: false, reason: 'Intervalos permitidos: 5–60 s em movimento e 10–3600 s parado.' };
   const set = READ_OR_SET.get(keyword);
   if (set) return { ok: true, risk: hasArgs ? set : 'read' };
   if (keyword === 'RESET' && !hasArgs) return { ok: true, risk: 'connection' };

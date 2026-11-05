@@ -52,6 +52,10 @@ describe('lib/tracker-console', () => {
     for (const t of ['GPRSON,0#', 'GMT,W,3,0#', 'FACTORY#', 'STATUS,1#', 'RESET,1#', 'FOO#']) {
       expect(classifyConsole(t)).toEqual({ ok: false, reason: 'Comando não permitido pelo console.' });
     }
+    for (const t of ['TIMER,10,10#', 'TIMER,30,3600#']) expect(classifyConsole(t)).toEqual({ ok: true, risk: 'change' });
+    for (const t of ['TIMER,3600,3600#', 'TIMER,2,10#', 'TIMER,10#', 'TIMER,10,3601#']) {
+      expect(classifyConsole(t)).toEqual({ ok: false, reason: 'Intervalos permitidos: 5–60 s em movimento e 10–3600 s parado.' });
+    }
     expect(classifyConsole('STATUS')).toMatchObject({ ok: false });
     expect(classifyConsole('')).toMatchObject({ ok: false });
   });
