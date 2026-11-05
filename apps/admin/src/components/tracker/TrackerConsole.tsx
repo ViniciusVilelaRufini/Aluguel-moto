@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { can } from '@/lib/permissions';
 import { formatDateTime } from '@/lib/format';
-import { CHANGE_CONFIRM_TEXT, CONSOLE_PRESETS, apnMismatch, consoleRisk } from '@/lib/tracker-console';
+import { CHANGE_CONFIRM_TEXT, CONSOLE_PRESETS, apnMismatch, classifyConsole } from '@/lib/tracker-console';
 import type { S, StaffGroup } from '@/lib/types';
 import { Button } from '@/ds/Button';
 import { Alert } from '@/ds/Alert';
@@ -18,7 +18,7 @@ const POLL_MS = 3000;
 
 function failLabel(reason: Cmd['failReason']): string {
   if (reason === 'offline') return 'Rastreador offline';
-  if (reason === 'timeout') return 'Sem resposta em 90 s';
+  if (reason === 'timeout') return 'Sem resposta do rastreador';
   return 'Falha ao enviar o comando';
 }
 
@@ -80,10 +80,15 @@ export function TrackerConsole({ vehicleId, groups, mode, simApn }: {
 
   const items = list.data?.items ?? [];
   const hasPending = items.some((c) => c.status === 'pending');
+  // Recusa mostrada antes do envio (espelho da allowlist; a API continua sendo a autoridade).
+  const typed = text.trim() ? classifyConsole(text) : null;
+  const refused = typed && !typed.ok ? typed.reason : null;
   const submit = (t: string) => {
     const value = t.trim();
     if (!value) return;
-    if (consoleRisk(value) === 'read') send.mutate({ text: value });
+    const c = classifyConsole(value);
+    if (!c.ok) return;
+    if (c.risk === 'read') send.mutate({ text: value });
     else setConfirming(value);
   };
   // Só a resposta com APN mais recente conta (a lista vem do mais novo para o mais antigo).
@@ -100,8 +105,9 @@ export function TrackerConsole({ vehicleId, groups, mode, simApn }: {
       </div>
       <form style={{ display: 'flex', gap: 8, marginTop: 8 }} onSubmit={(e) => { e.preventDefault(); submit(text); }}>
         <div style={{ flex: 1, minWidth: 0 }}><TextInput value={text} onChange={setText} placeholder="Ex.: STATUS#" testId="console-text" /></div>
-        <Button size="md" type="submit" testId="console-send" busy={send.isPending} disabled={send.isPending || hasPending || !text.trim()}>Enviar</Button>
+        <Button size="md" type="submit" testId="console-send" busy={send.isPending} disabled={send.isPending || hasPending || !text.trim() || refused !== null}>Enviar</Button>
       </form>
+      {refused && <div data-testid="console-refused" style={{ fontSize: 12, color: 'var(--danger-ink)', marginTop: 6 }}>{refused}</div>}
       {hasPending && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>Aguardando a resposta do rastreador…</div>}
       {send.error && <div style={{ marginTop: 8 }}><ErrorNote error={send.error} /></div>}
       {mismatch && simApn && (

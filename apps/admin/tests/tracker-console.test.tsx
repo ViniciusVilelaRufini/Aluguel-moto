@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CONSOLE_PRESETS, apnMismatch, consoleRisk } from '@/lib/tracker-console';
+import { CONSOLE_PRESETS, apnMismatch, classifyConsole, consoleRisk } from '@/lib/tracker-console';
 
 const answered = {
   id: 'c1', vehicleId: 'v1', text: 'STATUS#', risk: 'read', status: 'answered', failReason: null,
@@ -40,6 +40,21 @@ describe('lib/tracker-console', () => {
     expect(consoleRisk('apn,indica.algar.br#')).toBe('connection');
     expect(consoleRisk('TIMER,30#')).toBe('change');
   });
+  it('mesma allowlist da API: leitura, alteração, conexão e recusas com o motivo', () => {
+    for (const t of ['STATUS#', 'PARAM#', 'WHERE#', 'VERSION#', 'GPRSSET#', 'APN#', 'SERVER#', 'TIMER#', 'status#']) expect(classifyConsole(t)).toEqual({ ok: true, risk: 'read' });
+    expect(classifyConsole('TIMER,30,3600#')).toEqual({ ok: true, risk: 'change' });
+    expect(classifyConsole('APN,indica.algar.br#')).toEqual({ ok: true, risk: 'connection' });
+    expect(classifyConsole('SERVER,1,h,5023,0#')).toEqual({ ok: true, risk: 'connection' });
+    expect(classifyConsole('RESET#')).toEqual({ ok: true, risk: 'connection' });
+    for (const t of ['RELAY,1#', 'relay,1#', 'Relay,0#', 'dyd#', 'HFYD#', 'STOP#', 'resume#']) {
+      expect(classifyConsole(t)).toEqual({ ok: false, reason: 'Use Bloquear/Desbloquear da ficha da moto.' });
+    }
+    for (const t of ['GPRSON,0#', 'GMT,W,3,0#', 'FACTORY#', 'STATUS,1#', 'RESET,1#', 'FOO#']) {
+      expect(classifyConsole(t)).toEqual({ ok: false, reason: 'Comando não permitido pelo console.' });
+    }
+    expect(classifyConsole('STATUS')).toMatchObject({ ok: false });
+    expect(classifyConsole('')).toMatchObject({ ok: false });
+  });
 });
 
 describe('TrackerConsole', () => {
@@ -61,7 +76,7 @@ describe('TrackerConsole', () => {
     items = [failed, timedOut, pending];
     const t = text(renderToStaticMarkup(<TrackerConsole vehicleId="v1" groups={['admin']} mode="relay_only" simApn={null} />));
     expect(t).toContain('Rastreador offline');
-    expect(t).toContain('Sem resposta em 90 s');
+    expect(t).toContain('Sem resposta do rastreador');
     expect(t).toContain('Aguardando');
   });
   it('avisa quando o APN do aparelho difere do chip', async () => {

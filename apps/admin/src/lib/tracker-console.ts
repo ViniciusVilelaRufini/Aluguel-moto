@@ -9,15 +9,39 @@ export const CONSOLE_PRESETS: { label: string; text: string }[] = [
   { label: 'Versão', text: 'VERSION#' },
 ];
 
-/** Mesma política da API: sem vírgula e ≠ RESET lê; RESET ou APN/SERVER com vírgula mexem na conexão; demais com vírgula alteram. */
-export function consoleRisk(text: string): 'read' | 'change' | 'connection' {
-  const t = text.trim();
-  const end = t.search(/[,#]/);
-  const keyword = (end < 0 ? t : t.slice(0, end)).toUpperCase();
-  const hasComma = t.includes(',');
-  if (keyword === 'RESET') return 'connection';
-  if (!hasComma) return 'read';
-  return keyword === 'APN' || keyword === 'SERVER' ? 'connection' : 'change';
+type Risk = 'read' | 'change' | 'connection';
+
+const TEXT_PATTERN = /^[A-Za-z0-9,.\-_:]{1,99}#$/;
+const READ_ONLY = new Set(['STATUS', 'PARAM', 'WHERE', 'VERSION', 'GPRSSET']);
+const READ_OR_SET = new Map<string, Risk>([['APN', 'connection'], ['SERVER', 'connection'], ['TIMER', 'change']]);
+const RELAY_KEYWORDS = new Set(['RELAY', 'DYD', 'HFYD', 'STOP', 'RESUME']);
+
+/**
+ * Espelho da allowlist da API (`console-policy.ts`) só para mostrar o motivo antes de enviar; a API é a autoridade.
+ * `STATUS`/`PARAM`/`WHERE`/`VERSION`/`GPRSSET` sem vírgula e `APN`/`SERVER`/`TIMER` sem vírgula = leitura; `TIMER` com
+ * vírgula = alteração; `APN`/`SERVER` com vírgula e `RESET` = conexão; relé/motor e qualquer outro são recusados.
+ */
+export function classifyConsole(input: string): { ok: true; risk: Risk } | { ok: false; reason: string } {
+  const t = input.trim();
+  if (!t) return { ok: false, reason: 'Informe o comando.' };
+  if (t.length > 100) return { ok: false, reason: 'O comando deve ter no máximo 100 caracteres.' };
+  if (!TEXT_PATTERN.test(t)) return { ok: false, reason: 'Comando inválido: use só letras, números e , . - _ : e termine com #.' };
+  const body = t.slice(0, -1);
+  const comma = body.indexOf(',');
+  const keyword = (comma === -1 ? body : body.slice(0, comma)).toUpperCase();
+  if (RELAY_KEYWORDS.has(keyword)) return { ok: false, reason: 'Use Bloquear/Desbloquear da ficha da moto.' };
+  const hasArgs = comma !== -1;
+  if (READ_ONLY.has(keyword) && !hasArgs) return { ok: true, risk: 'read' };
+  const set = READ_OR_SET.get(keyword);
+  if (set) return { ok: true, risk: hasArgs ? set : 'read' };
+  if (keyword === 'RESET' && !hasArgs) return { ok: true, risk: 'connection' };
+  return { ok: false, reason: 'Comando não permitido pelo console.' };
+}
+
+/** Risco de um texto aceito pela allowlist; recusado conta como alteração (pede confirmação; a API recusa mesmo assim). */
+export function consoleRisk(text: string): Risk {
+  const c = classifyConsole(text);
+  return c.ok ? c.risk : 'change';
 }
 
 export const CHANGE_CONFIRM_TEXT =
