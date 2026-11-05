@@ -11,6 +11,7 @@ const vehicle = {
   trackerControlMode: 'relay_only', thingName: 'moto-0059', simCard: null, depotId: null, odometerKm: 0, usageHours: 0,
 };
 let items: unknown[] = [];
+let mutError: Error | null = null;
 let authGroups: string[] = ['admin'];
 vi.mock('@tanstack/react-query', async (orig) => {
   const real = await orig<typeof import('@tanstack/react-query')>();
@@ -22,7 +23,7 @@ vi.mock('@tanstack/react-query', async (orig) => {
       return { data: { items: k === 'trackers' ? items : [] }, isLoading: false, error: null };
     },
     useQueryClient: () => ({ invalidateQueries() {}, setQueryData() {} }),
-    useMutation: () => ({ mutate() {}, mutateAsync: async () => ({}), isPending: false, error: null }),
+    useMutation: () => ({ mutate() {}, mutateAsync: async () => ({}), isPending: false, error: mutError }),
   };
 });
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ groups: authGroups }) }));
@@ -61,6 +62,17 @@ describe('TrackerSection', () => {
     const t2 = text(renderToStaticMarkup(<TrackerSection vehicleId="v1" vehicleCode="M-0059" groups={['suporte']} />));
     expect(t2).toContain('Esta moto não tem rastreador.');
     expect(t2).not.toContain('Instalar rastreador');
+  });
+});
+
+describe('TrackerSection — erro ao instalar', () => {
+  it('mostra a mensagem da API no próprio bloco quando a instalação falha', async () => {
+    items = [];
+    mutError = new Error('Este rastreador já está instalado em outra moto');
+    const { TrackerSection } = await import('@/components/trackers/TrackerSection');
+    const t = text(renderToStaticMarkup(<TrackerSection vehicleId="v1" vehicleCode="M-0059" groups={['operacao']} />));
+    mutError = null;
+    expect(t).toContain('Este rastreador já está instalado em outra moto');
   });
 });
 

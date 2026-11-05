@@ -85,6 +85,8 @@ export function TrackerSection({ vehicleId, vehicleCode, groups }: { vehicleId: 
           {install.error && <ErrorNote error={install.error} />}
         </Modal>
       )}
+      {/* Falha ao instalar depois de "Cadastrar novo": os diálogos já fecharam, então o erro fica visível aqui. */}
+      {dialog === null && install.error && <div data-testid="tracker-install-error" style={{ marginTop: 8 }}><ErrorNote error={install.error} /></div>}
       {manage && dialog === 'create' && (
         <CreateTrackerWizard onClose={close} onCreated={(t) => install.mutate(t.id)} />
       )}

@@ -60,7 +60,7 @@ export default function VehiclesPage() {
 
   const tabs = (
     <SegmentedControl<MotosTab> label="Área de motos" options={TAB_OPTIONS} value={tab} style={{ width: 280 }}
-      onChange={(t) => { setTab(t); router.replace(t === 'trackers' ? '/motos?tab=rastreadores' : '/motos', { scroll: false }); }} />
+      onChange={(t) => { setTab(t); router.replace(t === 'trackers' ? '/motos?tab=rastreadores' : selected ? `/motos?vehicle=${selected}` : '/motos', { scroll: false }); }} />
   );
   if (tab === 'trackers') {
     return (
