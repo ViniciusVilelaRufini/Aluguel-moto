@@ -4,7 +4,7 @@ const base = { TRACCAR_URL: 'http://traccar:8082', TRACCAR_EMAIL: 'bridge@volti.
 
 describe('loadConfig', () => {
   it('local: Mosquitto sem TLS, bateria 72v e registro a cada 60 s por padrão', () => {
-    expect(loadConfig(base)).toMatchObject({ iotMode: 'local', mqttUrl: 'mqtt://localhost:1883', mqttClientId: 'traccar-bridge', battery: '72v', registryRefreshMs: 60_000, traccarBootstrapAdmin: false, database: { connectionString: base.DATABASE_URL } });
+    expect(loadConfig(base)).toMatchObject({ iotMode: 'local', mqttUrl: 'mqtt://localhost:1883', mqttClientId: 'traccar-bridge', battery: '72v', registryRefreshMs: 30_000, traccarBootstrapAdmin: false, database: { connectionString: base.DATABASE_URL } });
   });
   it('aws: mqtts no endpoint do IoT Core e certificado de serviço obrigatório; banco por partes com SSL', () => {
     expect(() => loadConfig({ ...base, IOT_MODE: 'aws', IOT_ENDPOINT: 'abc-ats.iot.sa-east-1.amazonaws.com' })).toThrow('MQTT_CERT_PEM');

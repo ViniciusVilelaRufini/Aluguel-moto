@@ -1,7 +1,7 @@
 import { ConsoleQueue, CONSOLE_TIMEOUT_MS, isRelayConsoleText, parseConsoleCommand, replyMatches } from './console';
 import { FIXED_LIMIT_KMH, TOPICS, thingOf, type DeviceEventMessage, type ReportedState } from './contract';
 import { CUT_FRESH_MS, cutRefusal, parseDelta, planDeltaFor, planReconnect, type BridgeAction } from './delta';
-import { maskImei, silentLogger, type Logger } from './log';
+import { maskImei, maskLogger, silentLogger, type Logger } from './log';
 import { applyPosition, currentBlocked, freshBlocked, gpsSleepOf, markCommandSent, markReconnected, parseRelayReply, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { MqttLike } from './mqtt';
 import type { TraccarDevice, TraccarEvent, TraccarPosition, TraccarSocketMessage } from './traccar/types';
@@ -18,6 +18,10 @@ export interface TraccarApi {
   sendCommand(deviceId: number, type: 'engineStop' | 'engineResume'): Promise<'sent' | 'queued'>;
   /** Comando de texto do console (`custom`, sempre `noQueue`): 202 = enfileirado pelo Traccar (`queued`); 400 = sem sessão (`offline`). */
   sendCustom(deviceId: number, data: string): Promise<'sent' | 'queued' | 'offline'>;
+  /** `POST /api/devices`: cria o aparelho (fica ligado ao usuário da ponte). */
+  createDevice(name: string, uniqueId: string): Promise<TraccarDevice>;
+  /** `PUT /api/devices/{id}` com o objeto completo e só o nome trocado. */
+  updateDeviceName(device: TraccarDevice, name: string): Promise<TraccarDevice>;
 }
 
 export interface Registry {
@@ -139,7 +143,7 @@ export class Bridge {
     private readonly registry: Registry,
     private readonly opts: BridgeOptions,
   ) {
-    this.log = opts.log ?? silentLogger;
+    this.log = maskLogger(opts.log ?? silentLogger);
     this.now = opts.now ?? Date.now;
     this.publishTimeoutMs = opts.publishTimeoutMs ?? PUBLISH_TIMEOUT_MS;
     this.subscribeTimeoutMs = opts.subscribeTimeoutMs ?? SUBSCRIBE_TIMEOUT_MS;
@@ -309,11 +313,53 @@ export class Bridge {
       });
     }
     await this.subscribe([...this.thingToImei.keys()].filter((t) => !this.subscribed.has(t)));
+    await this.ensureTraccarDevices().catch((err: Error) => this.log.error({ msg: 'traccar_devices_sync_failed', error: err.message }));
     try {
       await this.checkUndelivered();
     } catch (err) {
       this.log.error({ msg: 'undelivered_check_failed', error: (err as Error).message });
     }
+  }
+
+  /**
+   * Rastreador cadastrado no painel (registro IMEI → thingName) vira aparelho no Traccar sem passo manual: IMEI sem aparelho
+   * visível ao usuário da ponte → `createDevice(thingName, imei)`; aparelho com nome diferente do thingName (rastreador instalado
+   * numa moto, trocado ou devolvido ao estoque) → `updateDeviceName`, sem duplicar. Falha em um aparelho é registrada (IMEI
+   * mascarado) e tentada de novo na próxima releitura. Criou algum → reabre o WebSocket (o aparelho novo só chega numa sessão
+   * nova), no máximo uma reabertura a cada `SOCKET_REOPEN_MIN_MS` (mesmo limite do `checkUndelivered`).
+   */
+  async ensureTraccarDevices(): Promise<{ created: number; renamed: number }> {
+    const result = { created: 0, renamed: 0 };
+    if (!this.imeiToThing.size) return result;
+    for (const d of await this.traccar.devices()) await this.updateDevice(d); // sem reler a versão (/api/server)
+    const byImei = new Map([...this.devices.values()].map((d) => [d.uniqueId, d]));
+    for (const [imei, thing] of this.imeiToThing) {
+      const existing = byImei.get(imei);
+      try {
+        if (!existing) {
+          await this.updateDevice(await this.traccar.createDevice(thing, imei));
+          result.created++;
+          this.log.info({ msg: 'traccar_device_created', thingName: thing, imei: maskImei(imei) });
+        } else if (existing.name !== thing) {
+          const from = existing.name;
+          await this.updateDevice(await this.traccar.updateDeviceName(existing, thing));
+          result.renamed++;
+          this.log.info({ msg: 'traccar_device_renamed', thingName: thing, from, imei: maskImei(imei) });
+        }
+      } catch (err) {
+        this.log.error({ msg: existing ? 'traccar_device_rename_failed' : 'traccar_device_create_failed', thingName: thing, imei: maskImei(imei), error: (err as Error).message });
+      }
+    }
+    if (result.created > 0) {
+      const now = this.now();
+      if (now - this.lastReopenAt < SOCKET_REOPEN_MIN_MS) {
+        this.logLimited('traccar_socket_reopen_rate_limited', 'warn', { thingName: this.imeiToThing.values().next().value, things: result.created });
+      } else if (this.opts.reopenSocket?.()) {
+        this.lastReopenAt = now;
+        this.log.info({ msg: 'traccar_socket_reopen_new_devices', devices: result.created });
+      }
+    }
+    return result;
   }
 
   /**

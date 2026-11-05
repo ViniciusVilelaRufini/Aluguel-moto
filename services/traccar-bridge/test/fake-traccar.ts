@@ -11,6 +11,12 @@ import type { TraccarDevice, TraccarPosition, TraccarSocketMessage } from '../sr
 export class FakeTraccar {
   url = '';
   devices: TraccarDevice[] = [];
+  /** `POST /api/devices` recebidos (nome e IMEI). */
+  readonly created: Array<{ name: string; uniqueId: string }> = [];
+  /** `PUT /api/devices/{id}` recebidos (objeto completo, como o Traccar exige). */
+  readonly updated: Array<Record<string, unknown>> = [];
+  /** Status HTTP de erro forçado em POST/PUT /api/devices (ex.: 400 sem permissão); `undefined` = aceita. */
+  deviceWriteFailStatus?: number;
   /** Todo POST /api/commands/send recebido. */
   readonly commands: Array<{ deviceId: number; type: string }> = [];
   /** Corpo bruto de cada comando (para conferir `attributes.noQueue`). */
@@ -115,6 +121,27 @@ export class FakeTraccar {
     }
     if (!this.hasSession(req)) return void res.writeHead(401).end();
     if (req.method === 'GET' && req.url === '/api/devices') return json(200, this.devices);
+    if (req.method === 'POST' && req.url === '/api/devices') {
+      if (this.deviceWriteFailStatus) return void res.writeHead(this.deviceWriteFailStatus).end('{}');
+      const b = JSON.parse(body) as { name: string; uniqueId: string };
+      this.created.push({ name: b.name, uniqueId: b.uniqueId });
+      // Usuário não-admin: o aparelho criado fica ligado a ele (entra em GET /api/devices).
+      const d: TraccarDevice = { id: Math.max(0, ...this.devices.map((x) => x.id)) + 1, name: b.name, uniqueId: b.uniqueId, status: 'unknown' };
+      this.devices.push(d);
+      return json(200, d);
+    }
+    const put = req.method === 'PUT' ? /^\/api\/devices\/(\d+)$/.exec(req.url ?? '') : null;
+    if (put) {
+      if (this.deviceWriteFailStatus) return void res.writeHead(this.deviceWriteFailStatus).end('{}');
+      const b = JSON.parse(body) as TraccarDevice;
+      const i = this.devices.findIndex((x) => x.id === Number(put[1]));
+      // Como o Traccar: sem o id no corpo ou id diferente do da URL → 400; aparelho inexistente → 404.
+      if (b.id !== Number(put[1])) return void res.writeHead(400).end();
+      if (i < 0) return void res.writeHead(404).end();
+      this.updated.push(b as unknown as Record<string, unknown>);
+      this.devices[i] = { ...this.devices[i], ...b };
+      return json(200, this.devices[i]);
+    }
     if (req.method === 'POST' && req.url === '/api/commands/send') {
       const c = JSON.parse(body) as { deviceId: number; type: string; attributes?: Record<string, unknown> };
       this.commands.push({ deviceId: c.deviceId, type: c.type });

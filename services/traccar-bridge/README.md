@@ -155,7 +155,7 @@ Nenhum segredo no código: senhas e certificado vêm do ambiente (Secrets Manage
 | `TRACCAR_BOOTSTRAP_ADMIN` | `false` | só no compose local: cria o primeiro usuário do Traccar |
 | `DATABASE_URL` ou `DATABASE_HOST/PORT/NAME/USER/PASSWORD` (+ `DATABASE_SSL=require`) | — | leitura do `Tracker` |
 | `BATTERY_MODEL` | `72v` | `48v`, `60v` ou `72v` |
-| `REGISTRY_REFRESH_MS` | `60000` | releitura do registro (≥ 1000) |
+| `REGISTRY_REFRESH_MS` | `30000` | releitura do registro (≥ 1000) |
 | `LIVENESS_FILE` | `/tmp/bridge-alive` | arquivo de vida do HEALTHCHECK |
 
 ## Rodar e testar
@@ -184,6 +184,18 @@ Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuári
 por digest — para atualizar, troque o `ARG NODE_IMAGE`). Dev single: `deploy/single/gt06.sh` e `deploy/single/cloudshell.md`. A
 ponte não tem endpoint HTTP; a saúde é o HEALTHCHECK do arquivo de vida (acima). O Docker não reinicia contêiner `unhealthy`
 sozinho (veja `docker ps`); no ECS a task é substituída.
+
+**Aparelho no Traccar criado pela ponte (estoque de rastreadores):** o rastreador cadastrado no painel (Motos -> Rastreadores) entra
+no registro como `gt06-<IMEI>` (estoque) ou com o `thingName` da moto (instalado). A cada releitura do registro
+(`ensureTraccarDevices`) a ponte cria no Traccar (`POST /api/devices`) o aparelho de IMEI que o usuário dela não enxerga e
+renomeia (`PUT /api/devices/{id}`, objeto completo) o de nome diferente do thingName, sem duplicar; logs
+`traccar_device_created`/`traccar_device_renamed`/`traccar_device_create_failed` (IMEI só mascarado; falha tenta de novo na próxima
+releitura). Criou algum aparelho -> reabre o WebSocket (o aparelho novo só chega numa sessão nova), no máximo uma reabertura a cada
+`SOCKET_REOPEN_MIN_MS` (5 min, o mesmo limite do item abaixo): atraso aceito de até ~1 min entre cadastrar e ficar online, mais
+se outra reabertura foi feita há pouco. Exige que o usuário da ponte tenha `deviceReadonly:false` e `deviceLimit:-1` (o
+`gt06.sh init` garante, a cada update). Troca de thingName para o mesmo IMEI falha os comandos de console pendentes da coisa
+antiga (`console_falha` `erro`). Todo log passa por `maskLogger`: dígitos longos (IMEI dentro de `gt06-<IMEI>`) saem mascarados.
+O `gt06.sh provision` continua como alternativa (CLI/CloudShell).
 
 **Dispositivo provisionado com a ponte rodando:** na bancada do J16 (2026-11-03) a ponte só passou a receber o dispositivo
 recém-ligado ao usuário dela no Traccar depois de reiniciar (a sessão do WebSocket não incluía o dispositivo novo). Por isso o

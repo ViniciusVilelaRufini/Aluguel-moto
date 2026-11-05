@@ -118,6 +118,7 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     expect(JSON.stringify(c.logs)).not.toContain(IMEI); // IMEI nunca completo nos logs
     expect(JSON.stringify(c.logs)).not.toContain(OTHER_IMEI);
     expect(JSON.stringify(c.logs)).not.toContain(NEW_IMEI);
+    expect(JSON.stringify(c.logs)).not.toContain('869890080273430');
   });
 
   it('posição → motos/{t}/telemetria no schema do contrato (nós × 1,852, timestamp = fixTime)', async () => {
@@ -350,6 +351,17 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
         expect.objectContaining({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' }),
         expect.objectContaining({ tipo: 'console_falha', comando_id: CID2, motivo: 'erro' }),
       ]);
+    });
+
+    it('thingName trocado para o mesmo IMEI (moto-0059 → gt06-<IMEI>) → console_falha erro para o pendente da coisa antiga', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      c.registry.set(IMEI, `gt06-${IMEI}`);
+      await c.bridge.refreshRegistry();
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
+      expect(c.traccar.devices.find((d) => d.uniqueId === IMEI)?.name).toBe(`gt06-${IMEI}`);
     });
 
     it('I1: Traccar enfileirou (202, ignora noQueue) → console_falha erro + log console_queued_by_traccar, sem pendente', async () => {
@@ -1138,6 +1150,73 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     c.now.value = T0 + 120_000 + 5 * 60_000;
     await c.bridge.refreshRegistry();
     await waitFor(() => c.traccar.connections === 3, 5_000);
+  });
+
+  // ---- Estoque de rastreadores: a ponte cria/renomeia o aparelho no Traccar a partir do cadastro
+  const STOCK_IMEI = '869890080273430';
+  const STOCK_THING = `gt06-${STOCK_IMEI}`;
+
+  it('registro com IMEI sem aparelho no Traccar → createDevice(gt06-<IMEI>, IMEI) e pede a reabertura do WebSocket; log só com IMEI mascarado', async () => {
+    c = await start();
+    c.registry.set(STOCK_IMEI, STOCK_THING);
+    await c.bridge.refreshRegistry();
+    expect(c.traccar.created).toEqual([{ name: STOCK_THING, uniqueId: STOCK_IMEI }]);
+    await waitFor(() => c.traccar.connections === 2, 5_000);
+    expect(c.traccar.devices.find((d) => d.uniqueId === STOCK_IMEI)?.name).toBe(STOCK_THING);
+    expect(c.logs).toContainEqual({ level: 'info', msg: 'traccar_device_created', thingName: 'gt06-***********3430', imei: '***********3430' });
+    expect(JSON.stringify(c.logs)).not.toContain(STOCK_IMEI);
+    await sleep(40);
+    await c.bridge.refreshRegistry(); // já existe: nada de novo
+    expect(c.traccar.created).toHaveLength(1);
+    expect(c.traccar.updated).toEqual([]);
+  });
+
+  it('aparelho existente com nome antigo e registro gt06-<IMEI> → renomeia (PUT com o objeto completo), sem criar duplicado nem reabrir o WebSocket', async () => {
+    c = await start();
+    c.traccar.devices.push({ id: 59, name: 'moto-0059', uniqueId: STOCK_IMEI, status: 'online' });
+    c.registry.set(STOCK_IMEI, STOCK_THING);
+    await c.bridge.refreshRegistry();
+    expect(c.traccar.created).toEqual([]);
+    expect(c.traccar.updated).toEqual([{ id: 59, name: STOCK_THING, uniqueId: STOCK_IMEI, status: 'online' }]);
+    expect(c.traccar.devices.find((d) => d.id === 59)?.name).toBe(STOCK_THING);
+    await sleep(40);
+    expect(c.traccar.connections).toBe(1);
+    expect(await c.bridge.ensureTraccarDevices()).toEqual({ created: 0, renamed: 0 }); // idempotente
+  });
+
+  it('aparelho com nome igual ao thingName → nada (sem POST nem PUT)', async () => {
+    c = await start();
+    expect(await c.bridge.ensureTraccarDevices()).toEqual({ created: 0, renamed: 0 });
+    expect(c.traccar.created).toEqual([]);
+    expect(c.traccar.updated).toEqual([]);
+  });
+
+  it('falha ao criar → log traccar_device_create_failed (IMEI mascarado) e tenta de novo na próxima releitura', async () => {
+    c = await start();
+    c.registry.set(STOCK_IMEI, STOCK_THING);
+    c.traccar.deviceWriteFailStatus = 400;
+    await c.bridge.refreshRegistry();
+    expect(c.traccar.created).toEqual([]);
+    expect(c.logs).toContainEqual({ level: 'error', msg: 'traccar_device_create_failed', thingName: 'gt06-***********3430', imei: '***********3430', error: 'traccar_device_create_failed_400' });
+    expect(JSON.stringify(c.logs)).not.toContain(STOCK_IMEI);
+    c.traccar.deviceWriteFailStatus = undefined;
+    await c.bridge.refreshRegistry();
+    expect(c.traccar.created).toEqual([{ name: STOCK_THING, uniqueId: STOCK_IMEI }]);
+    expect(c.traccar.connections).toBeGreaterThanOrEqual(1);
+  });
+
+  it('reabertura do WebSocket por aparelho novo respeita SOCKET_REOPEN_MIN_MS', async () => {
+    c = await start();
+    c.registry.set(STOCK_IMEI, STOCK_THING);
+    await c.bridge.refreshRegistry();
+    await waitFor(() => c.traccar.connections === 2, 5_000);
+    await sleep(40);
+    c.registry.set('869890080273999', 'gt06-869890080273999');
+    c.now.value = T0 + 60_000;
+    await c.bridge.refreshRegistry();
+    await sleep(40);
+    expect(c.traccar.created).toHaveLength(2);
+    expect(c.traccar.connections).toBe(2); // menos de 5 min da última reabertura
   });
 
   it('A4-1: engineResume numa moto com bit fresco travada:false ainda ecoa reported.travada:false (o resume não trava)', async () => {

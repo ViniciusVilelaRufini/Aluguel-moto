@@ -65,6 +65,31 @@ export class TraccarRest {
     return (await res.json()) as TraccarDevice[];
   }
 
+  /**
+   * `POST /api/devices`: o Traccar liga o aparelho criado ao próprio usuário da ponte (não-admin), então ele passa a aparecer em
+   * `devices()` e (depois de reabrir o WebSocket) no socket. Exige `deviceReadonly:false` e `deviceLimit` ≠ 0 no usuário.
+   */
+  async createDevice(name: string, uniqueId: string): Promise<TraccarDevice> {
+    const res = await this.request('/api/devices', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, uniqueId }),
+    });
+    if (!res.ok) throw new Error(`traccar_device_create_failed_${res.status}`);
+    return (await res.json()) as TraccarDevice;
+  }
+
+  /** `PUT /api/devices/{id}`: o Traccar exige o objeto completo do aparelho, só o `name` muda. */
+  async updateDeviceName(device: TraccarDevice, name: string): Promise<TraccarDevice> {
+    const res = await this.request(`/api/devices/${device.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...device, name }),
+    });
+    if (!res.ok) throw new Error(`traccar_device_rename_failed_${res.status}`);
+    return (await res.json()) as TraccarDevice;
+  }
+
   /** `GET /api/server`: a ponte lê `version` (C1: `noQueue` só a partir do Traccar 6.7.0). */
   async server(): Promise<{ version?: unknown }> {
     const res = await this.request('/api/server');
