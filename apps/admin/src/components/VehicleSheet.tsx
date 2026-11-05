@@ -12,7 +12,6 @@ import { commandSupported, lockDescription, lockMovingWarning, TRACKER_CONTROL_L
 import { GPS_SLEEP_LOCK_WARNING, addressView, batteryView, gpsView, positionView, sheetVehicle, speedLimitChip } from '@/lib/vehicle-live';
 import { useNow } from '@/lib/use-now';
 import { RelayOnlyNotice } from './vehicles/RelayOnlyNotice';
-import { SimCardSection } from './tracker/SimCardSection';
 import { TrackerSection } from './trackers/TrackerSection';
 import { TrackerConsole } from './tracker/TrackerConsole';
 import { formatDateTime, timeAgo } from '@/lib/format';
@@ -258,8 +257,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         <Alert tone="info" icon="Info">Seu perfil não envia comandos para a moto.</Alert>
       )}
 
-      <TrackerSection vehicleId={vehicleId} vehicleCode={v.code} groups={groups} />
-      <SimCardSection vehicleId={vehicleId} simCard={v.simCard} groups={groups} />
+      <TrackerSection vehicleId={vehicleId} vehicleCode={v.code} groups={groups} controlMode={v.trackerControlMode} trackerId={v.trackerId} simCard={v.simCard} />
       <TrackerConsole vehicleId={vehicleId} groups={groups} mode={mode} simApn={v.simCard?.apn ?? null} />
 
       {/* A moto que não trava (ex.: sem GPS em local coberto) prende o aluguel em "encerrando": a saída fica aqui, sem abrir o aluguel. */}

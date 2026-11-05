@@ -20,7 +20,6 @@ import { VehicleFormModal } from '../VehicleFormModal';
 import { CollectArrival } from '../depots/CollectArrival';
 import { ErrorNote, Field, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, Select, SidePanel, TextArea, useToast } from '../ui';
 import { ModelCell } from './VehiclesTable';
-import { SimCardSection } from '../tracker/SimCardSection';
 import { TrackerConsole } from '../tracker/TrackerConsole';
 import { TrackerSection } from '../trackers/TrackerSection';
 
@@ -88,8 +87,7 @@ export function VehicleDetailPanel({ vehicleId, depots, models, onClose }: {
         )}
       </div>
 
-      <TrackerSection vehicleId={v.id} vehicleCode={v.code} groups={groups} />
-      <SimCardSection vehicleId={v.id} simCard={v.simCard} groups={groups} />
+      <TrackerSection vehicleId={v.id} vehicleCode={v.code} groups={groups} controlMode={v.trackerControlMode} trackerId={v.trackerId} simCard={v.simCard} />
       <TrackerConsole vehicleId={v.id} groups={groups} mode={v.trackerControlMode} simApn={v.simCard?.apn ?? null} />
 
       <div data-testid="vehicle-history">
