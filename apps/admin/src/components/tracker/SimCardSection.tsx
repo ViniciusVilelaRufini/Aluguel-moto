@@ -6,11 +6,20 @@ import { api, unwrap } from '@/lib/api';
 import { can } from '@/lib/permissions';
 import type { S, StaffGroup } from '@/lib/types';
 import { Button } from '@/ds/Button';
-import { Field, KV, Modal, Pill, SectionTitle, Select, TextInput, ErrorNote } from '../ui';
+import { Field, KV, Modal, Pill, SectionTitle, Select, TextArea, TextInput, ErrorNote } from '../ui';
 
 const STATUS_LABEL: Record<S<'SimCardStatus'>, string> = { active: 'Ativo', suspended: 'Suspenso', cancelled: 'Cancelado' };
 const STATUS_TONE: Record<S<'SimCardStatus'>, 'success' | 'warning' | 'danger'> = { active: 'success', suspended: 'warning', cancelled: 'danger' };
 const STATUS_OPTIONS = (Object.keys(STATUS_LABEL) as S<'SimCardStatus'>[]).map((value) => ({ value, label: STATUS_LABEL[value] }));
+
+/** Limite de `notes` no contrato (`SimCard.notes`, maxLength 500). */
+export const SIM_NOTES_MAX = 500;
+
+/** Corpo de criação/edição. `notes: null` = campo não tocado (não vai no corpo); string = trim, vazio vira `null`. */
+export function simCardBody(f: { iccid: string; carrier: string; msisdn: string; apn: string; status: S<'SimCardStatus'>; notes: string | null }) {
+  const body = { iccid: f.iccid, carrier: f.carrier.trim(), msisdn: f.msisdn || null, apn: f.apn.trim() || null, status: f.status };
+  return f.notes === null ? body : { ...body, notes: f.notes.trim() || null };
+}
 
 /** Chip (SIM) do rastreador da moto. Qualquer perfil com acesso à ficha vê; só o admin vincula, edita e desvincula. */
 export function SimCardSection({ vehicleId, simCard, groups }: { vehicleId: string; simCard: S<'SimCardSummary'> | null | undefined; groups: StaffGroup[] }) {
@@ -91,7 +100,7 @@ function LinkSimModal({ vehicleId, onClose, onDone }: { vehicleId: string; onClo
   );
 }
 
-function SimFormModal({ title, initial, simId, vehicleId, onClose, onDone }: {
+export function SimFormModal({ title, initial, simId, vehicleId, onClose, onDone }: {
   title: string; initial?: S<'SimCardSummary'>; simId?: string; vehicleId?: string; onClose: () => void; onDone: () => void;
 }) {
   const [iccid, setIccid] = useState(initial?.iccid ?? '');
@@ -99,14 +108,24 @@ function SimFormModal({ title, initial, simId, vehicleId, onClose, onDone }: {
   const [carrier, setCarrier] = useState(initial?.carrier ?? '');
   const [apn, setApn] = useState(initial?.apn ?? '');
   const [status, setStatus] = useState<S<'SimCardStatus'>>(initial?.status ?? 'active');
+  // `null` = não tocado. Na edição, o resumo do chip não traz `notes`: vem da lista de chips (busca pelo ICCID).
+  const [notes, setNotes] = useState<string | null>(simId ? null : '');
+  const full = useQuery({
+    queryKey: ['sim-cards', 'by-iccid', initial?.iccid],
+    enabled: !!simId && !!initial?.iccid,
+    queryFn: () => unwrap(api.GET('/sim-cards', { params: { query: { q: initial!.iccid } } })),
+  });
+  const savedNotes = simId ? (full.data?.items.find((s) => s.id === simId)?.notes ?? '') : '';
+  const notesValue = notes ?? savedNotes;
   const [touched, setTouched] = useState(false);
   const iccidOk = /^[0-9]{18,22}$/.test(iccid);
   const msisdnOk = msisdn === '' || /^\+?[0-9]{10,15}$/.test(msisdn);
   const carrierOk = carrier.trim().length >= 1 && carrier.trim().length <= 40;
-  const valid = iccidOk && msisdnOk && carrierOk;
+  const notesOk = notesValue.trim().length <= SIM_NOTES_MAX;
+  const valid = iccidOk && msisdnOk && carrierOk && notesOk;
   const save = useMutation({
     mutationFn: async () => {
-      const fields = { iccid, carrier: carrier.trim(), msisdn: msisdn || null, apn: apn.trim() || null, status };
+      const fields = simCardBody({ iccid, carrier, msisdn, apn, status, notes });
       if (simId) return unwrap(api.PATCH('/sim-cards/{id}', { params: { path: { id: simId } }, body: fields }));
       return unwrap(api.POST('/sim-cards', { body: { ...fields, ...(vehicleId ? { vehicleId } : {}) } }));
     },
@@ -122,6 +141,7 @@ function SimFormModal({ title, initial, simId, vehicleId, onClose, onDone }: {
       <Field label="Operadora" error={touched && !carrierOk ? 'Informe a operadora (até 40 caracteres)' : undefined}><TextInput value={carrier} onChange={setCarrier} testId="sim-carrier" /></Field>
       <Field label="APN esperado"><TextInput value={apn} onChange={setApn} placeholder="indica.algar.br" testId="sim-apn" /></Field>
       <Field label="Situação"><Select value={status} onChange={setStatus} options={STATUS_OPTIONS} testId="sim-status" /></Field>
+      <Field label="Observações" error={!notesOk ? `Até ${SIM_NOTES_MAX} caracteres` : undefined}><TextArea value={notesValue} onChange={setNotes} testId="sim-notes" /></Field>
       {save.error && <ErrorNote error={save.error} />}
     </Modal>
   );
