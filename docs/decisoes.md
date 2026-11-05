@@ -1385,3 +1385,24 @@ Spec: `docs/superpowers/specs/2026-11-05-volti-rastreador-chip-design.md`.
 9. **Visibilidade do chip.** `Vehicle.simCard` (ICCID, linha, operadora, APN, situação) aparece para todo grupo de staff que abre a ficha da moto, não só para quem lista `/sim-cards`. Decisão: o chip é ativo corporativo da Volti (linha M2M da empresa), não dado pessoal de cliente; não há motivo para escondê-lo da operação/suporte/campo/financeiro que já vê a moto. Os logs continuam sem ICCID/linha.
 
 **Prod (deliberado):** a regra IoT de eventos (`infra/lib/stacks/iot-stack.ts`, `eventFields`) passa a projetar `comando_id`, `texto` e `motivo`, senão o modo aws descartaria as respostas do console. Muda só o template `volti-prod-iot`; `infra/test/fixtures/prod-templates.sha256.json` foi regenerado com `UPDATE_PROD_FINGERPRINT=1` e conferido (as outras 7 stacks do prod iguais).
+
+## 2026-11-05 · Estoque de rastreadores e instalação na moto pelo painel (branch `feat/estoque-rastreadores`) · status: aplicada (contrato aditivo)
+
+Spec: `docs/superpowers/specs/2026-11-05-volti-estoque-rastreadores-design.md`.
+
+1. **Por quê.** Um J16 só entrava pelo `gt06.sh provision` (CloudShell + SSM). O dono cadastra o rastreador antes (estoque, como o chip) e instala numa moto depois, pelo painel, sem CloudShell.
+2. **Contrato.** `GET`/`POST /trackers` (listar: `admin`/`operacao`/`suporte`; cadastrar: `admin`/`operacao`), `PUT`/`DELETE /vehicles/{id}/tracker` (instalar-trocar / remover, `admin`/`operacao`). Schemas `TrackerModel` (`J16`), `TrackerDevice`, `TrackerDeviceList`, `CreateTrackerRequest`, `InstallTrackerRequest`. `CreateSimCardRequest`/`UpdateSimCardRequest` ganham `trackerId` (`vehicleId` e `trackerId` juntos → 400). `PATCH /vehicles/{id}` documenta `409` ao mudar `thingName` com rastreador instalado. O console continua só `admin`.
+3. **Identidade.** Estoque: `thingName = gt06-<IMEI>`, `vehicleId = null`. Instalado: `thingName` da moto e `vehicleId`. Remover volta a `gt06-<IMEI>`; trocar = remover o atual + instalar o novo numa transação. Instalar o que já está na moto não faz nada (`200`). Só aparecem `relay_only` com IMEI e sem `certificateArn`.
+4. **Regras (409).** Aluguel aberto, reserva em uso, `lock`/`unlock` em andamento (criado nos últimos 5 min) ou trava em andamento no Redis; rastreador já em outra moto; moto com outro rastreador (via "Trocar"); IMEI repetido no cadastro. Logs e auditoria com IMEI mascarado (4 últimos dígitos).
+5. **Migração `20261105200000_tracker_stock`.** `Tracker.model` e `Tracker.lastSeenAt`; `model = 'J16'` nos `relay_only` com IMEI; renomeia para `gt06-<IMEI>` os `relay_only` com IMEI e sem moto. Sem índice novo.
+
+**Decisões após a leitura do construtor:**
+
+1. **Sinal no estoque.** A API descartava a telemetria de `thingName` sem moto. Em vez de criar estado ao vivo, grava `Tracker.lastSeenAt` ao chegar telemetria/status de `gt06-…` do estoque, no máximo a cada 15 s por rastreador, sem nenhum outro efeito (nada de trava, cerca ou trajeto). Instalado usa o `lastSeenAt` da moto. Online = sinal nos últimos 180 s.
+2. **Normalização.** A migração renomeia os órfãos `relay_only`; `speed_control` órfãos ficam fora da lista.
+3. **Edição da moto.** `PATCH /vehicles/{id}` com `thingName` diferente → `409` com rastreador instalado.
+4. **Ponte.** `REGISTRY_REFRESH_MS` padrão passa de 60 s a 30 s. Depois de reler, a ponte cria no Traccar o aparelho de IMEI sem aparelho visível e renomeia o de nome diferente do `thingName`; criou algum → pede a reabertura do WebSocket (respeitando o intervalo mínimo). Atraso aceito: até ~1 min entre cadastrar e ficar online. `gt06.sh init` garante (idempotente) `deviceReadonly: false` e `deviceLimit: -1` para o usuário da ponte. A ponte não lê `Tracker.model` (sem GRANT novo).
+5. **Chips.** `/sim-cards` aceita `trackerId`; ao remover o rastreador da moto o chip fica com o rastreador.
+6. **Console no painel de Motos.** Oculto para quem não é `admin`.
+
+**Pendências.** Módulo `trackers` e telemetria (Tasks 2-3), ponte (Task 4) e painel (Task 5); até a Task 2, `contract-security.spec.ts` acusa as 4 rotas novas sem controller.

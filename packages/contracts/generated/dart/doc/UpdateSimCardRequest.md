@@ -15,6 +15,7 @@ Name | Type | Description | Notes
 **status** | [**SimCardStatus**](SimCardStatus.md) |  | [optional] 
 **notes** | **String** |  | [optional] 
 **vehicleId** | **String** |  | [optional] 
+**trackerId** | **String** | Vincula (ou move) o chip a este rastreador; `null` desvincula. | [optional] 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

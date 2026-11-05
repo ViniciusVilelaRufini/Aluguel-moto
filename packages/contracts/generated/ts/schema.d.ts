@@ -438,7 +438,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Editar moto */
+        /**
+         * Editar moto
+         * @description Mudar o `thingName` com rastreador instalado na moto → `409` (remova o rastreador antes).
+         */
         patch: operations["updateVehicle"];
         trace?: never;
     };
@@ -640,6 +643,62 @@ export interface paths {
          */
         post: operations["sendTrackerConsoleCommand"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trackers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rastreadores (estoque e instalados)
+         * @description Rastreadores GT06/J16 (`relay_only`, com IMEI, sem certificado), do mais recente ao mais antigo. `installed` = está
+         *     numa moto (`vehicleId`/`vehicleCode`). `online` = último sinal há no máximo 180 s (instalado: sinal da moto; no
+         *     estoque: sinal do próprio rastreador).
+         */
+        get: operations["listTrackers"];
+        put?: never;
+        /**
+         * Cadastrar rastreador no estoque
+         * @description Cria o rastreador sem moto (`thingName` = `gt06-<IMEI>`). Com `simCardId`, vincula um chip do estoque. `409` se o
+         *     IMEI já está cadastrado ou se o chip já está vinculado a outro rastreador. Grava AuditLog (IMEI mascarado).
+         */
+        post: operations["createTracker"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vehicles/{id}/tracker": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Instalar ou trocar o rastreador da moto
+         * @description Instala um rastreador do estoque na moto; se a moto já tem outro, troca (o antigo volta ao estoque antes, na mesma
+         *     transação). Instalar o rastreador que já está na moto não faz nada (`200`). `409` se: a moto tem aluguel aberto ou
+         *     reserva em uso; há bloqueio/desbloqueio em andamento (comando `lock`/`unlock` criado nos últimos 5 min ou trava
+         *     em andamento); o rastreador está instalado em outra moto. Rastreador inexistente ou com certificado (MQTT) → `404`.
+         *     Grava AuditLog (IMEI mascarado).
+         */
+        put: operations["installVehicleTracker"];
+        post?: never;
+        /**
+         * Remover o rastreador da moto (volta ao estoque)
+         * @description O rastreador volta ao estoque (`gt06-<IMEI>`, sem moto); o chip continua com ele. `404` se a moto não tem
+         *     rastreador. `409` com aluguel aberto, reserva em uso ou bloqueio/desbloqueio em andamento. Grava AuditLog.
+         */
+        delete: operations["removeVehicleTracker"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4482,8 +4541,13 @@ export interface components {
              * @description Vincula o chip ao rastreador desta moto.
              */
             vehicleId?: string | null;
+            /**
+             * Format: uuid
+             * @description Vincula o chip a este rastreador (estoque ou instalado). `vehicleId` e `trackerId` juntos → 400.
+             */
+            trackerId?: string | null;
         };
-        /** @description Todos os campos são opcionais. `vehicleId: null` desvincula. */
+        /** @description Todos os campos são opcionais. `vehicleId: null` ou `trackerId: null` desvincula. `vehicleId` e `trackerId` juntos → 400. */
         UpdateSimCardRequest: {
             iccid?: string;
             msisdn?: string | null;
@@ -4493,9 +4557,50 @@ export interface components {
             notes?: string | null;
             /** Format: uuid */
             vehicleId?: string | null;
+            /**
+             * Format: uuid
+             * @description Vincula (ou move) o chip a este rastreador; `null` desvincula.
+             */
+            trackerId?: string | null;
         };
         SimCardList: {
             items: components["schemas"]["SimCard"][];
+        };
+        /** @enum {string} */
+        TrackerModel: "J16";
+        TrackerDevice: {
+            /** Format: uuid */
+            id: string;
+            imei: string;
+            model: components["schemas"]["TrackerModel"];
+            installed: boolean;
+            /** Format: uuid */
+            vehicleId: string | null;
+            /** @example VLT-0001 */
+            vehicleCode: string | null;
+            simCard: components["schemas"]["SimCardSummary"] | null;
+            /** @description Último sinal há no máximo 180 s. */
+            online: boolean;
+            /** Format: date-time */
+            lastSeenAt: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        TrackerDeviceList: {
+            items: components["schemas"]["TrackerDevice"][];
+        };
+        CreateTrackerRequest: {
+            imei: string;
+            model: components["schemas"]["TrackerModel"];
+            /**
+             * Format: uuid
+             * @description Chip do estoque a vincular ao rastreador.
+             */
+            simCardId?: string;
+        };
+        InstallTrackerRequest: {
+            /** Format: uuid */
+            trackerId: string;
         };
         /** @enum {string} */
         TrackerConsoleRisk: "read" | "change" | "connection";
@@ -8410,6 +8515,121 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listTrackers: {
+        parameters: {
+            query?: {
+                /** @description Busca parcial por dígitos do IMEI. */
+                q?: string;
+                /** @description `true` = só instalados; `false` = só no estoque. */
+                installed?: boolean;
+                vehicleId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rastreadores. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackerDeviceList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createTracker: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTrackerRequest"];
+            };
+        };
+        responses: {
+            /** @description Rastreador cadastrado. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackerDevice"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    installVehicleTracker: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallTrackerRequest"];
+            };
+        };
+        responses: {
+            /** @description Rastreador instalado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackerDevice"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    removeVehicleTracker: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rastreador no estoque. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackerDevice"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

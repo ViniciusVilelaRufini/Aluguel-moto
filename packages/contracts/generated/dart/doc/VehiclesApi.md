@@ -437,6 +437,8 @@ Name | Type | Description  | Notes
 
 Editar moto
 
+Mudar o `thingName` com rastreador instalado na moto → `409` (remova o rastreador antes).
+
 ### Example
 ```dart
 import 'package:volti_api/api.dart';

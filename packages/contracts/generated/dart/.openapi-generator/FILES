@@ -63,6 +63,7 @@ doc/CouponPage.md
 doc/CouponValidation.md
 doc/CoverageItem.md
 doc/CreateSimCardRequest.md
+doc/CreateTrackerRequest.md
 doc/CurrentRental.md
 doc/CurrentReservation.md
 doc/Customer.md
@@ -149,6 +150,7 @@ doc/IncidentStatus.md
 doc/IncidentUpdate.md
 doc/Inspection.md
 doc/InspectionRequest.md
+doc/InstallTrackerRequest.md
 doc/InsuranceApi.md
 doc/InsuranceCoverage.md
 doc/InsuranceCoverageOption.md
@@ -313,6 +315,9 @@ doc/TrackerConsoleList.md
 doc/TrackerConsoleRisk.md
 doc/TrackerConsoleStatus.md
 doc/TrackerControlMode.md
+doc/TrackerDevice.md
+doc/TrackerDeviceList.md
+doc/TrackerModel.md
 doc/TrackerStatusReport.md
 doc/UpdateSimCardRequest.md
 doc/UploadContentType.md
@@ -447,6 +452,7 @@ lib/src/model/coupon_page.dart
 lib/src/model/coupon_validation.dart
 lib/src/model/coverage_item.dart
 lib/src/model/create_sim_card_request.dart
+lib/src/model/create_tracker_request.dart
 lib/src/model/current_rental.dart
 lib/src/model/current_reservation.dart
 lib/src/model/customer.dart
@@ -529,6 +535,7 @@ lib/src/model/incident_status.dart
 lib/src/model/incident_update.dart
 lib/src/model/inspection.dart
 lib/src/model/inspection_request.dart
+lib/src/model/install_tracker_request.dart
 lib/src/model/insurance_coverage.dart
 lib/src/model/insurance_coverage_option.dart
 lib/src/model/insurance_coverage_option_list.dart
@@ -678,6 +685,9 @@ lib/src/model/tracker_console_list.dart
 lib/src/model/tracker_console_risk.dart
 lib/src/model/tracker_console_status.dart
 lib/src/model/tracker_control_mode.dart
+lib/src/model/tracker_device.dart
+lib/src/model/tracker_device_list.dart
+lib/src/model/tracker_model.dart
 lib/src/model/tracker_status_report.dart
 lib/src/model/update_sim_card_request.dart
 lib/src/model/upload_content_type.dart

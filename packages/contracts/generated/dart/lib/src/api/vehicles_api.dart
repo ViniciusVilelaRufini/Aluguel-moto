@@ -928,7 +928,7 @@ class VehiclesApi {
   }
 
   /// Editar moto
-  ///
+  /// Mudar o &#x60;thingName&#x60; com rastreador instalado na moto → &#x60;409&#x60; (remova o rastreador antes).
   ///
   /// Parameters:
   /// * [id]
