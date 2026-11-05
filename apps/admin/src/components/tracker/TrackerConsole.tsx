@@ -86,7 +86,9 @@ export function TrackerConsole({ vehicleId, groups, mode, simApn }: {
     if (consoleRisk(value) === 'read') send.mutate({ text: value });
     else setConfirming(value);
   };
-  const mismatch = items.map((c) => (c.status === 'answered' ? apnMismatch(simApn, c.response) : null)).find((m) => m != null) ?? null;
+  // Só a resposta com APN mais recente conta (a lista vem do mais novo para o mais antigo).
+  const latestApnReply = items.find((c) => c.status === 'answered' && c.response && /APN:/i.test(c.response));
+  const mismatch = latestApnReply ? apnMismatch(simApn, latestApnReply.response) : null;
 
   return (
     <div data-testid="tracker-console">

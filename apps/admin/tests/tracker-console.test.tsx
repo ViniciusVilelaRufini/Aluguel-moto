@@ -70,4 +70,10 @@ describe('TrackerConsole', () => {
     const t = text(renderToStaticMarkup(<TrackerConsole vehicleId="v1" groups={['admin']} mode="relay_only" simApn="indica.algar.br" />));
     expect(t).toContain('O aparelho está com o APN algar.br, mas o chip cadastrado usa indica.algar.br.');
   });
+  it('só a resposta de APN mais recente conta: divergência antiga não avisa', async () => {
+    const { TrackerConsole } = await import('@/components/tracker/TrackerConsole');
+    items = [{ ...apnReply, id: 'new', response: 'APN:indica.algar.br,,,' }, { ...apnReply, id: 'old', response: 'APN:algar.br,,,' }];
+    const t = text(renderToStaticMarkup(<TrackerConsole vehicleId="v1" groups={['admin']} mode="relay_only" simApn="indica.algar.br" />));
+    expect(t).not.toContain('O aparelho está com o APN');
+  });
 });
