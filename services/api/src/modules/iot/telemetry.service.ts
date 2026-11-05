@@ -63,10 +63,15 @@ export class TelemetryService implements InboundHandler {
     return true;
   }
 
+  /** Identificação do thing no log: o `gt06-<IMEI>` do estoque nunca sai (LGPD; só a marca `stockThing`). */
+  private thingLog(thingName: string): { thingName: string } | { stockThing: true } {
+    return isStockThingName(thingName) ? { stockThing: true } : { thingName };
+  }
+
   /** Serializa o processamento por moto (diff de cercas e rampa dependem da ordem). */
   private serial(thingName: string, fn: () => Promise<void>): Promise<void> {
     const prev = this.chains.get(thingName) ?? Promise.resolve();
-    const next = prev.then(fn).catch((err) => this.logger.error({ msg: 'iot_inbound_failed', thingName, error: (err as Error).message }));
+    const next = prev.then(fn).catch((err) => this.logger.error({ msg: 'iot_inbound_failed', ...this.thingLog(thingName), error: (err as Error).message }));
     this.chains.set(thingName, next);
     void next.then(() => {
       if (this.chains.get(thingName) === next) this.chains.delete(thingName);
@@ -136,7 +141,7 @@ export class TelemetryService implements InboundHandler {
     return this.serial(thingName, async () => {
       const msg = parseTelemetry(raw);
       if (!msg) {
-        this.logger.warn({ msg: 'telemetry_invalid', thingName });
+        this.logger.warn({ msg: 'telemetry_invalid', ...this.thingLog(thingName) });
         return;
       }
       const vehicleId = await this.vehicleIdOf(thingName);
@@ -221,7 +226,7 @@ export class TelemetryService implements InboundHandler {
       if (isConsoleEventType((raw as { tipo?: unknown } | null)?.tipo)) {
         const consoleEv = parseConsoleEvent(raw);
         if (!consoleEv) {
-          this.logger.warn({ msg: 'console_event_invalid', thingName });
+          this.logger.warn({ msg: 'console_event_invalid', ...this.thingLog(thingName) });
           return;
         }
         if (!(await this.vehicleIdOf(thingName))) {
@@ -240,7 +245,7 @@ export class TelemetryService implements InboundHandler {
       }
       const msg = parseDeviceEvent(raw);
       if (!msg) {
-        this.logger.warn({ msg: 'device_event_invalid', thingName });
+        this.logger.warn({ msg: 'device_event_invalid', ...this.thingLog(thingName) });
         return;
       }
       const vehicleId = await this.vehicleIdOf(thingName);
@@ -292,6 +297,11 @@ export class TelemetryService implements InboundHandler {
   presence(thingName: string, online: boolean, at?: number): Promise<void> {
     return this.serial(thingName, async () => {
       const vehicleId = await this.vehicleIdOf(thingName);
+      // Rastreador do estoque: a conexão é só sinal de vida (nada de estado ao vivo nem log com o IMEI).
+      if (!vehicleId && isStockThingName(thingName)) {
+        if (online) await this.stockSignal(thingName);
+        return;
+      }
       const current = await this.gateway.live.load(thingName);
       // Fila sem ordem (SQS padrão): presença mais velha que a última notícia da moto é atrasada — um `disconnected` velho não
       // derruba uma moto que já mandou mensagens depois dele (revisão M2).

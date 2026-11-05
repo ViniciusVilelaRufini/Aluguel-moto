@@ -372,5 +372,55 @@ describe('TelemetryService: poda do limite de log de rastreador desconhecido', (
       touch.mockRejectedValueOnce(new Error('x'));
       await expect(svc.telemetry(STOCK, msg())).resolves.toBeUndefined();
     });
+
+    /** Toda chamada de log do Nest (log/warn/error) espionada, para conferir que o IMEI nunca sai. */
+    function spyLogs() {
+      const spies = (['log', 'warn', 'error'] as const).map((m) => jest.spyOn(Logger.prototype, m).mockImplementation(() => undefined));
+      return { all: () => spies.flatMap((s) => s.mock.calls), restore: () => spies.forEach((s) => s.mockRestore()) };
+    }
+
+    it('presença online: só grava o último sinal (sem estado ao vivo nem log com o thingName)', async () => {
+      const { svc, touch, live, gateway, emitted, clock } = stockSetup();
+      const logs = spyLogs();
+      try {
+        const setOnline = jest.spyOn(live, 'setOnline');
+        const load = jest.spyOn(live, 'load');
+        const connectivity = jest.spyOn(gateway, 'onConnectivity');
+        await svc.presence(STOCK, true);
+        expect(touch).toHaveBeenCalledWith(STOCK, clock.now());
+        expect(setOnline).not.toHaveBeenCalled();
+        expect(load).not.toHaveBeenCalled();
+        expect(connectivity).not.toHaveBeenCalled();
+        expect(live.get(STOCK) ?? null).toBeNull();
+        expect(emitted[EV.IOT_CONNECTIVITY]).toEqual([]);
+        expect(JSON.stringify(logs.all())).not.toContain('869890080273430');
+      } finally {
+        logs.restore();
+      }
+    });
+
+    it('presença offline: nada (nem estado ao vivo nem sinal)', async () => {
+      const { svc, touch, live } = stockSetup();
+      const setOnline = jest.spyOn(live, 'setOnline');
+      await svc.presence(STOCK, false);
+      expect(touch).not.toHaveBeenCalled();
+      expect(setOnline).not.toHaveBeenCalled();
+    });
+
+    it('telemetria/evento inválidos: o log não leva o thingName do estoque', async () => {
+      const { svc } = stockSetup();
+      const logs = spyLogs();
+      try {
+        await svc.telemetry(STOCK, { lixo: true });
+        await svc.deviceEvent(STOCK, { tipo: 'queda' });
+        await svc.deviceEvent(STOCK, { tipo: 'console_resposta' });
+        const entries = logs.all().map((c) => c[0] as Record<string, unknown>);
+        expect(entries.map((e) => e.msg)).toEqual(['telemetry_invalid', 'device_event_invalid', 'console_event_invalid']);
+        expect(entries.every((e) => e.stockThing === true && !('thingName' in e))).toBe(true);
+        expect(JSON.stringify(entries)).not.toContain('869890080273430');
+      } finally {
+        logs.restore();
+      }
+    });
   });
 });
