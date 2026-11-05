@@ -35,6 +35,8 @@ vi.mock('@tanstack/react-query', async (orig) => {
   };
 });
 vi.mock('@/lib/auth', () => ({ useAuth: () => ({ groups: authGroups }) }));
+let nowOffset = 0;
+vi.mock('@/lib/use-now', () => ({ useNow: () => Date.now() + nowOffset }));
 vi.mock('next/link', () => ({ default: ({ children }: { children: unknown }) => <a>{children as never}</a> }));
 
 const text = (html: string) => html.replace(/<[^>]*>/g, '|');
@@ -151,7 +153,33 @@ describe('TrackerSection — revisão final (I5, M1, M4)', () => {
     mutSuccess = true;
     const t = await render();
     mutSuccess = false;
-    expect(t).toContain('Instalado. O rastreador aparece online em até 1 minuto.');
+    expect(t).toContain('Instalado. O rastreador aparece online em até 1 minuto. Se ele chegar destravado, a moto será travada automaticamente quando estiver parada.');
+  });
+
+  it('N3: instalado e sem sinal há mais de 5 min desde a abertura da ficha → "Sem sinal…" e o refetch de 10 s para', async () => {
+    items = [{ ...tracker, online: false, lastSeenAt: null }];
+    nowOffset = 5 * 60_000 + 1_000;
+    const t = await render();
+    nowOffset = 0;
+    expect(t).toContain('Sem sinal. Confira se o aparelho está ligado e com chip.');
+    expect(t).not.toContain('Aguardando o primeiro sinal');
+    const interval = trackersOpts.refetchInterval as (q: { state: { data?: { items: unknown[] } } }) => number | false;
+    const realNow = Date.now;
+    Date.now = () => realNow() + 5 * 60_000 + 1_000;
+    try {
+      expect(interval({ state: { data: { items } } })).toBe(false);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+
+  it('N4: o diálogo de instalar pede para instalar o aparelho antes de confirmar', async () => {
+    const { TrackerPickIntro } = await import('@/components/trackers/TrackerSection');
+    const install = text(renderToStaticMarkup(<TrackerPickIntro swapping={false} vehicleCode="M-0059" />));
+    expect(install).toContain('Instale o aparelho na moto antes de confirmar.');
+    const swap = text(renderToStaticMarkup(<TrackerPickIntro swapping vehicleCode="M-0059" current={tracker} />));
+    expect(swap).toContain('final 3430');
+    expect(swap).toContain('Instale o aparelho na moto antes de confirmar.');
   });
 
   it('M1: abrir um diálogo e fechar limpam os erros de instalar/remover; concluir não (o aviso de sucesso fica)', async () => {

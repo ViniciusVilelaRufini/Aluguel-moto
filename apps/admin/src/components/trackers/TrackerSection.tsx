@@ -15,7 +15,22 @@ import { TrackerPicker } from './TrackerPicker';
 
 type Dialog = 'install' | 'swap' | 'remove' | 'create' | null;
 
-const INSTALLED_NOTICE = 'Instalado. O rastreador aparece online em até 1 minuto.';
+export const INSTALLED_NOTICE = 'Instalado. O rastreador aparece online em até 1 minuto. Se ele chegar destravado, a moto será travada automaticamente quando estiver parada.';
+export const INSTALL_BEFORE_CONFIRM = 'Instale o aparelho na moto antes de confirmar.';
+
+/** Topo do diálogo de instalar/trocar (N4): lembra de instalar o aparelho antes de confirmar; na troca, o atual volta ao estoque. */
+export function TrackerPickIntro({ swapping, vehicleCode, current }: { swapping: boolean; vehicleCode: string; current?: Pick<TrackerDevice, 'imei'> }) {
+  return (
+    <>
+      {swapping && current && (
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+          Trocar o rastreador da {vehicleCode}? O rastreador atual (final {imeiLast4(current.imei)}) volta para o estoque.
+        </div>
+      )}
+      <div style={{ fontSize: 14, color: 'var(--text-secondary)' }} data-testid="tracker-install-hint">{INSTALL_BEFORE_CONFIRM}</div>
+    </>
+  );
+}
 
 /**
  * Abrir/fechar os diálogos (M1): abrir e cancelar limpam o erro/sucesso de instalar e remover (a mensagem de uma tentativa
@@ -53,11 +68,15 @@ export function TrackerSection({ vehicleId, vehicleCode, groups, controlMode, tr
   const now = useNow();
   const [dialog, setDialog] = useState<Dialog>(null);
   const [pickedId, setPickedId] = useState<string | null>(null);
+  // Referência da espera do primeiro sinal (N3): a instalação feita aqui ou, sem ela, a abertura da ficha (a API não diz quando foi instalado).
+  const [openedAt] = useState(() => Date.now());
+  const [installedAt, setInstalledAt] = useState<number | null>(null);
+  const since = installedAt ?? openedAt;
   const q = useQuery({
     queryKey: ['trackers', 'vehicle', vehicleId],
     queryFn: () => unwrap(api.GET('/trackers', { params: { query: { vehicleId } } })),
-    // Instalado e offline (ex.: logo depois de instalar): recarrega a cada 10 s até aparecer online.
-    refetchInterval: (query) => trackerRefetchInterval(query.state.data?.items[0]),
+    // Instalado e offline (ex.: logo depois de instalar): recarrega a cada 10 s até aparecer online, por até 5 min.
+    refetchInterval: (query) => trackerRefetchInterval(query.state.data?.items[0], Date.now(), since),
   });
   const tracker: TrackerDevice | undefined = q.data?.items[0];
   const chip = simCard !== undefined ? simCard : (tracker?.simCard ?? null);
@@ -70,7 +89,7 @@ export function TrackerSection({ vehicleId, vehicleCode, groups, controlMode, tr
   const done = () => { setPickedId(null); setDialog(null); };
   const install = useMutation({
     mutationFn: async (id: string) => unwrap(api.PUT('/vehicles/{id}/tracker', { params: { path: { id: vehicleId } }, body: { trackerId: id } })),
-    onSuccess: () => { refresh(); done(); },
+    onSuccess: () => { setInstalledAt(Date.now()); refresh(); done(); },
   });
   const remove = useMutation({
     mutationFn: async () => unwrap(api.DELETE('/vehicles/{id}/tracker', { params: { path: { id: vehicleId } } })),
@@ -92,7 +111,7 @@ export function TrackerSection({ vehicleId, vehicleCode, groups, controlMode, tr
     <>
       <KV k="IMEI" v={tracker.imei} mono />
       <KV k="Modelo" v={tracker.model} />
-      <KV k="Sinal" v={<Pill tone={tracker.online ? 'success' : 'neutral'}>{trackerStatusLabel(tracker, now)}</Pill>} />
+      <KV k="Sinal" v={<Pill tone={tracker.online ? 'success' : 'neutral'}>{trackerStatusLabel(tracker, now, since)}</Pill>} />
       <SimCardSection vehicleId={vehicleId} simCard={chip} groups={groups} embedded />
       {manage && (
         <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -122,11 +141,7 @@ export function TrackerSection({ vehicleId, vehicleCode, groups, controlMode, tr
           <Button size="sm" variant="secondary" icon="Plus" testId="tracker-create-new" onClick={() => open('create')}>Cadastrar novo</Button>
           <Button size="sm" testId="tracker-confirm" busy={install.isPending} disabled={!pickedId || install.isPending} onClick={() => pickedId && install.mutate(pickedId)}>{swapping ? 'Trocar' : 'Instalar'}</Button>
         </>}>
-          {swapping && tracker && (
-            <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
-              Trocar o rastreador da {vehicleCode}? O rastreador atual (final {imeiLast4(tracker.imei)}) volta para o estoque.
-            </div>
-          )}
+          <TrackerPickIntro swapping={swapping} vehicleCode={vehicleCode} current={tracker} />
           <div style={{ fontSize: 14, fontWeight: 600 }}>Escolha o rastreador do estoque</div>
           <TrackerPicker selectedId={pickedId} onSelect={setPickedId} />
           {install.error && <ErrorNote error={install.error} />}
