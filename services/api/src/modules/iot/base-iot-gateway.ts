@@ -459,6 +459,10 @@ export abstract class BaseIotGateway implements IotGateway {
     return { commandId: req.commandId, status: 'confirmed' };
   }
 
+  async publishConsole(thingName: string, commandId: string, text: string): Promise<void> {
+    await this.transport.publishCommand(thingName, { comando_id: commandId, acao: 'console', texto: text });
+  }
+
   async getLiveState(thingName: string): Promise<VehicleLiveState | null> {
     const s = await this.live.load(thingName);
     if (!s) return null;

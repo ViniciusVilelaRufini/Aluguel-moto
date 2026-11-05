@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { HOUSEKEEPING_BATCH, HousekeepingService, PROCESSED_WEBHOOK_RETENTION_DAYS } from './housekeeping.service';
+import { HOUSEKEEPING_BATCH, HousekeepingService, PROCESSED_WEBHOOK_RETENTION_DAYS, TRACKER_CONSOLE_RETENTION_DAYS } from './housekeeping.service';
 
 const NOW = new Date('2026-11-03T06:00:00.000Z');
 
@@ -39,6 +39,15 @@ describe('HousekeepingService (auditoria run-4: TTL de idempotência e webhooks)
     expect(calls[0].values[0]).toBe(new Date(NOW.getTime() - 90 * 86_400_000).toISOString());
   });
 
+  it('apaga TrackerConsoleCommand com mais de 90 dias (createdAt), em lotes', async () => {
+    const { svc, calls, text } = setup([4]);
+    await expect(svc.purgeOldTrackerConsoleCommands()).resolves.toBe(4);
+    expect(text(0)).toContain('DELETE FROM "TrackerConsoleCommand" WHERE "id" IN (SELECT "id" FROM "TrackerConsoleCommand" WHERE "createdAt" <');
+    expect(text(0)).toContain(`LIMIT ${HOUSEKEEPING_BATCH})`);
+    expect(TRACKER_CONSOLE_RETENTION_DAYS).toBe(90);
+    expect(calls[0].values[0]).toBe(new Date(NOW.getTime() - 90 * 86_400_000).toISOString());
+  });
+
   it('nada a apagar: uma consulta só', async () => {
     const { svc, calls } = setup([0]);
     await expect(svc.purgeExpiredIdempotency()).resolves.toBe(0);
@@ -52,10 +61,10 @@ describe('HousekeepingService (auditoria run-4: TTL de idempotência e webhooks)
     expect(total).toBe(calls.length * HOUSEKEEPING_BATCH);
   });
 
-  it('job diário: roda os dois expurgos; com JOBS_ENABLED=false não toca no banco', async () => {
+  it('job diário: roda os três expurgos; com JOBS_ENABLED=false não toca no banco', async () => {
     const on = setup([5, 7]);
     await on.svc.purgeJob();
-    expect(on.calls).toHaveLength(2);
+    expect(on.calls).toHaveLength(3);
 
     const off = setup([5, 7], false);
     await off.svc.purgeJob();
@@ -66,7 +75,7 @@ describe('HousekeepingService (auditoria run-4: TTL de idempotência e webhooks)
     const { svc, prisma } = setup([]);
     prisma.$executeRaw.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce(2);
     await expect(svc.purgeJob()).resolves.toBeUndefined();
-    expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(3);
   });
 
   it('é um @Cron diário com @ExclusiveJob (metadados preservados)', () => {

@@ -66,6 +66,8 @@ export interface IotGateway {
   setSpeedLimit(req: CommandRequest, kmh: number): Promise<CommandOutcome>;
   setStolenMode(req: CommandRequest, on: boolean): Promise<CommandOutcome>;
   horn(req: CommandRequest): Promise<CommandOutcome>;
+  /** Publica um comando de console (`acao: 'console'`) em `motos/{thing}/comandos`; a resposta volta como evento `console_*`. */
+  publishConsole(thingName: string, commandId: string, text: string): Promise<void>;
   getLiveState(thingName: string): Promise<VehicleLiveState | null>;
   /**
    * Velocidade conhecida e fresca (a mesma que o bloqueio seguro usa), ou `null` = desconhecida/velha → tratar como em

@@ -12,8 +12,14 @@ export const HOUSEKEEPING_MAX_BATCHES = 500;
 /** Webhooks processados ficam 90 dias (o gateway não reenvia um evento tão antigo; a deduplicação não precisa de mais). */
 export const PROCESSED_WEBHOOK_RETENTION_DAYS = 90;
 
+/** Histórico do console do rastreador expira em 90 dias (LGPD). */
+export const TRACKER_CONSOLE_RETENTION_DAYS = 90;
+
 /** Tabelas e colunas fixas (nunca vêm de entrada): entram no SQL como identificadores. */
-type Target = { table: 'IdempotencyRecord'; column: 'expiresAt' } | { table: 'ProcessedWebhook'; column: 'processedAt' };
+type Target =
+  | { table: 'IdempotencyRecord'; column: 'expiresAt' }
+  | { table: 'ProcessedWebhook'; column: 'processedAt' }
+  | { table: 'TrackerConsoleCommand'; column: 'createdAt' };
 
 /**
  * Auditoria run-4: expurgo diário das tabelas técnicas que só cresciam — `IdempotencyRecord` vencido (`expiresAt < agora`;
@@ -41,6 +47,12 @@ export class HousekeepingService {
     return this.purgeBefore({ table: 'ProcessedWebhook', column: 'processedAt' }, cutoff);
   }
 
+  /** Apaga `TrackerConsoleCommand` criado há mais de `TRACKER_CONSOLE_RETENTION_DAYS` dias. */
+  purgeOldTrackerConsoleCommands(): Promise<number> {
+    const cutoff = new Date(this.now().getTime() - TRACKER_CONSOLE_RETENTION_DAYS * 86_400_000);
+    return this.purgeBefore({ table: 'TrackerConsoleCommand', column: 'createdAt' }, cutoff);
+  }
+
   /** Job diário (04:15 em São Paulo, depois do expurgo LGPD das 03:30). */
   @Cron('15 4 * * *', { name: 'housekeeping-ttl', timeZone: 'America/Sao_Paulo' })
   @ExclusiveJob('housekeeping-ttl', 30 * 60_000)
@@ -48,7 +60,8 @@ export class HousekeepingService {
     if (!this.cfg.jobsEnabled) return;
     const idempotency = await this.purgeExpiredIdempotency().catch((err) => this.failed('idempotency', err));
     const webhooks = await this.purgeOldProcessedWebhooks().catch((err) => this.failed('processed_webhooks', err));
-    this.logger.log({ msg: 'housekeeping_purged', idempotency, webhooks });
+    const consoleCommands = await this.purgeOldTrackerConsoleCommands().catch((err) => this.failed('tracker_console', err));
+    this.logger.log({ msg: 'housekeeping_purged', idempotency, webhooks, consoleCommands });
   }
 
   /**

@@ -396,6 +396,16 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - Auditoria `sim_card.create`/`sim_card.update` sem ICCID nem número da linha (dado pessoal indireto).
 - `dev-reset-bench` desvincula os chips dos rastreadores apagados (o chip fica no estoque) e apaga o console das motos apagadas.
 
+## Console do rastreador (`src/modules/tracker-console`, `docs/decisoes.md` 2026-11-05)
+
+- `POST /vehicles/{id}/tracker-console` (`202`, só `admin`) e `GET` (histórico, `limit` 1-50, mais recentes primeiro). Só rastreador `relay_only` com IMEI; senão `409`.
+- Política (`console-policy.ts`): `^[A-Za-z0-9,.\-_:]{1,99}#$`; recusados `GMT`, `FACTORY`, `FORMAT`, `PWD`, `PASSWORD`; risco `read`/`change`/`connection` (os dois últimos exigem `confirm: true`). Os argumentos mantêm a caixa.
+- Fluxo: grava `TrackerConsoleCommand` `pending`, publica `{comando_id, acao:'console', texto}` (`IotGateway.publishConsole`); a ponte responde com `console_resposta`/`console_falha` em `eventos`; `TelemetryService.deviceEvent` emite `EV.TRACKER_CONSOLE_EVENT` (nunca `iot.device-event`, sem alerta) e o service casa pelo `comando_id` + `thingName` (só se ainda `pending`). Resposta guardada truncada em 1000 caracteres.
+- Um `pending` por moto (outro envio → `409`); pendente há mais de 90 s vira `failed`/`timeout`, avaliado ao enviar e ao listar (sem cron).
+- `statusReport` (`status-report.ts`) só quando o texto é `STATUS#` e a resposta é reconhecida.
+- Auditoria `tracker_console.send` com `{risk, keyword}`, sem o texto. Logs só com ids/`thingName`/`risk`/`kind`, nunca texto nem resposta.
+- Housekeeping diário apaga `TrackerConsoleCommand` com mais de 90 dias (lotes de 5000).
+
 ## Regras que nunca mudam
 
 - Nenhum `speedLimitKmh` fora de 0..32 é aceito (DTO → 400 `speed-limit-out-of-range`; serviço de comandos revalida; `CHECK` no banco).
