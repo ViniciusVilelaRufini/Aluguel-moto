@@ -9,14 +9,14 @@ import type { DesiredState } from './shadow-transport';
 const T = 'moto-0901';
 const T0 = Date.parse('2026-10-27T12:00:00Z');
 
-function setup(opts: { online?: boolean; knownLocked?: () => boolean | null } = {}) {
+function setup(opts: { online?: boolean; knownLocked?: () => boolean | null; vehicleInUse?: (vehicleId: string) => Promise<boolean> } = {}) {
   const clock = new FakeClock(T0);
   const desired: Array<{ at: number; desired: DesiredState }> = [];
   const outcomes: CommandOutcome[] = [];
   const known = new Map<string, number | null>();
   const transport = { updateDesired: async (_t: string, d: DesiredState) => void desired.push({ at: clock.now(), desired: d }) };
   const store = new MemoryRelayLockStore();
-  const svc = new RelayLockService(clock, transport, (o) => outcomes.push(o), { store, knownSpeed: (t) => known.get(t) ?? null, knownLocked: opts.knownLocked });
+  const svc = new RelayLockService(clock, transport, (o) => outcomes.push(o), { store, knownSpeed: (t) => known.get(t) ?? null, knownLocked: opts.knownLocked, vehicleInUse: opts.vehicleInUse });
   const state = { online: opts.online ?? true };
   /** Telemetria aceita pelo LiveStateStore medida agora (o gateway só manda `accepted: true` quando ela é fresca e fora da graça). */
   const sample = async (kmh: number, over: Partial<RelaySample> = {}) => {
@@ -306,5 +306,64 @@ describe('RelayLockService (spec GT06 §5)', () => {
     await svc.sweep();
     expect(desired).toEqual([{ travada: null }]);
     expect(outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'timeout' }]);
+  });
+});
+
+describe('RelayLockService: trava depois de instalar (N1, freeVehicleId)', () => {
+  const stopFor20s = async (s: ReturnType<typeof setup>) => {
+    await s.sample(0);
+    await s.clock.advance(10_000);
+    await s.sample(0);
+    await s.clock.advance(10_000);
+    await s.sample(0);
+  };
+
+  it('aluguel/reserva aberto antes do corte → superseded, sem gravar travada:true', async () => {
+    const inUse = jest.fn().mockResolvedValue(true);
+    const s = setup({ vehicleInUse: inUse });
+    await s.svc.start({ commandId: 'c1', thingName: T, freeVehicleId: 'veh-1' }, s.state);
+    await stopFor20s(s);
+    expect(inUse).toHaveBeenCalledWith('veh-1');
+    expect(s.cuts()).toEqual([]);
+    expect(s.outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'superseded' }]);
+    expect(await s.store.get(T)).toBeNull();
+  });
+
+  it('moto ainda livre → corta normalmente (só com a parada confirmada)', async () => {
+    const inUse = jest.fn().mockResolvedValue(false);
+    const s = setup({ vehicleInUse: inUse });
+    await s.svc.start({ commandId: 'c1', thingName: T, freeVehicleId: 'veh-1' }, s.state);
+    await stopFor20s(s);
+    expect(s.cuts()).toHaveLength(1);
+  });
+
+  it('erro ao conferir: não corta agora (tenta na próxima amostra)', async () => {
+    const inUse = jest.fn().mockRejectedValueOnce(new Error('db')).mockResolvedValue(false);
+    const s = setup({ vehicleInUse: inUse });
+    await s.svc.start({ commandId: 'c1', thingName: T, freeVehicleId: 'veh-1' }, s.state);
+    await stopFor20s(s);
+    expect(s.cuts()).toEqual([]);
+    await s.clock.advance(5_000);
+    await s.sample(0);
+    expect(s.cuts()).toHaveLength(1);
+  });
+
+  it('outro lock (ex.: equipe) entra na mesma trava → a reconferência sai e o corte segue', async () => {
+    const inUse = jest.fn().mockResolvedValue(true);
+    const s = setup({ vehicleInUse: inUse });
+    await s.svc.start({ commandId: 'c1', thingName: T, freeVehicleId: 'veh-1' }, s.state);
+    await s.svc.start({ commandId: 'c2', thingName: T }, s.state);
+    await stopFor20s(s);
+    expect(inUse).not.toHaveBeenCalled();
+    expect(s.cuts()).toHaveLength(1);
+  });
+
+  it('lock comum não consulta aluguel/reserva', async () => {
+    const inUse = jest.fn().mockResolvedValue(true);
+    const s = setup({ vehicleInUse: inUse });
+    await s.svc.start({ commandId: 'c1', thingName: T }, s.state);
+    await stopFor20s(s);
+    expect(inUse).not.toHaveBeenCalled();
+    expect(s.cuts()).toHaveLength(1);
   });
 });

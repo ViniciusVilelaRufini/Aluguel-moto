@@ -170,6 +170,13 @@ describe('Comandos remotos', () => {
         },
       );
 
+      it('N1: lock tracker_install leva freeVehicleId (o corte reconfere aluguel/reserva); os demais não', async () => {
+        await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Instalado', actor: system, context: { purpose: 'tracker_install' } });
+        expect(iot.lock).toHaveBeenLastCalledWith(expect.objectContaining({ freeVehicleId: VEHICLE_ID }));
+        await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Fim', actor: system, context: { rentalId: 'r1', purpose: 'rental_end' } });
+        expect(iot.lock.mock.calls.at(-1)![0]).not.toHaveProperty('freeVehicleId');
+      });
+
       it('lock de sistema sem purpose de estacionar (ex.: cerca) grava origem system', () => {
         expect(lockOriginOf('system', 'geofence')).toBe('system');
         expect(lockOriginOf('system')).toBe('system');

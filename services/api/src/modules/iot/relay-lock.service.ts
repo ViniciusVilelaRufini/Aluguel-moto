@@ -59,6 +59,8 @@ export interface RelayLockOptions {
   confirmTimeoutMs?: number;
   /** Estado relido (Redis) pela varredura: começa a espera de uma trava `waiting_online` cuja reconexão outra instância viu. */
   probe?: (thingName: string) => Promise<RelayLockVehicleState | null>;
+  /** N1: a moto tem aluguel aberto ou reserva em uso agora? (só para travas com `freeVehicleId`; erro = não corta nesta vez). */
+  vehicleInUse?: (vehicleId: string) => Promise<boolean>;
   onLocalActivity?: (thingName: string) => void;
   onError?: (entry: Record<string, unknown>) => void;
 }
@@ -120,12 +122,15 @@ export class RelayLockService {
       }
       if (existing) {
         existing.commandIds.push(req.commandId);
+        // Um lock comum na mesma trava (ex.: equipe) vale para todos: o corte não depende mais de a moto estar livre.
+        if (!req.freeVehicleId) delete existing.freeVehicleId;
         await this.save(existing);
         return existing.phase === 'waiting_online'
           ? { commandId: req.commandId, status: 'pending', reason: 'offline' }
           : { commandId: req.commandId, status: 'in_progress' };
       }
       const lock: RelayLockState = { id: randomUUID(), thingName: req.thingName, commandIds: [req.commandId], phase: 'waiting_online' };
+      if (req.freeVehicleId) lock.freeVehicleId = req.freeVehicleId;
       if (!state.online) {
         await this.save(lock);
         return { commandId: req.commandId, status: 'pending', reason: 'offline' };
@@ -332,6 +337,20 @@ export class RelayLockService {
       // Já travada (Task 4 fix 3): `travada: true` igual ao reported não gera delta — nada a gravar, termina confirmado.
       await this.finish(lock, { status: 'confirmed' });
       return;
+    }
+    if (lock.freeVehicleId && this.opts.vehicleInUse) {
+      // N1: a moto deixou de estar livre (aluguel/reserva abriu durante a espera): cancela sem travar.
+      let inUse: boolean;
+      try {
+        inUse = await this.opts.vehicleInUse(lock.freeVehicleId);
+      } catch (err) {
+        this.opts.onError?.({ msg: 'relay_lock_free_check_failed', thingName: lock.thingName, error: (err as Error).message });
+        return;
+      }
+      if (inUse) {
+        await this.finish(lock, { status: 'failed', reason: 'superseded' });
+        return;
+      }
     }
     lock.phase = 'cutting';
     lock.cutAt = now;
