@@ -34,11 +34,11 @@ describe('StockTrackerHeartbeat', () => {
   it('erro de banco só gera log sem o IMEI e não propaga; a próxima tenta de novo', async () => {
     const { hb, updateMany } = setup();
     const err = jest.spyOn(Logger.prototype, 'error').mockImplementation();
-    updateMany.mockRejectedValueOnce(new Error('db down'));
+    updateMany.mockRejectedValueOnce(Object.assign(new Error('Invalid `updateMany()` where: { thingName: "gt06-869890080273430" }'), { code: 'P2025' }));
     await expect(hb.touch(IMEI_THING, T0)).resolves.toBeUndefined();
     expect(err).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(err.mock.calls)).not.toContain('869890080273430');
-    expect((err.mock.calls[0][0] as any).msg).toBe('stock_heartbeat_failed');
+    expect(err.mock.calls[0][0]).toEqual({ msg: 'stock_heartbeat_failed', errorName: 'Error', errorCode: 'P2025' });
     await hb.touch(IMEI_THING, T0 + 1000);
     expect(updateMany).toHaveBeenCalledTimes(2);
     err.mockRestore();

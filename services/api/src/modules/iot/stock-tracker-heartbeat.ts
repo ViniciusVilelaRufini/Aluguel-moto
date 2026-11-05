@@ -39,7 +39,13 @@ export class StockTrackerHeartbeat {
     } catch (err) {
       // Falhou: libera a marca para a próxima mensagem tentar de novo.
       this.writtenAt.delete(thingName);
-      this.logger.error({ msg: 'stock_heartbeat_failed', error: (err as Error).message.slice(0, 120) });
+      // Nunca a message: o erro do Prisma pode trazer o `where` com o thingName (IMEI).
+      const e = err as { name?: unknown; code?: unknown };
+      this.logger.error({
+        msg: 'stock_heartbeat_failed',
+        ...(typeof e?.name === 'string' ? { errorName: e.name } : {}),
+        ...(typeof e?.code === 'string' ? { errorCode: e.code } : {}),
+      });
     }
   }
 }
