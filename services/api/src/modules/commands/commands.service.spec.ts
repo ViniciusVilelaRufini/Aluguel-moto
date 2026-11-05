@@ -161,7 +161,7 @@ describe('Comandos remotos', () => {
     describe('origem da trava de sistema (estacionar x trava de sistema)', () => {
       const system = { system: true as const, name: 'rental-end' };
 
-      it.each(['rental_end', 'rental_force_end', 'rental_start_rollback', 'rental_depot_return'])(
+      it.each(['rental_end', 'rental_force_end', 'rental_start_rollback', 'rental_depot_return', 'tracker_install'])(
         'lock de sistema com purpose %s só estaciona: lockOrigin null (o próximo aluguel destrava)',
         async (purpose) => {
           expect(lockOriginOf('system', purpose)).toBeNull();
