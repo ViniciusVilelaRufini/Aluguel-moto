@@ -26,8 +26,10 @@ Em 05/11 o J16 da VLT-0059 ficou ~5 h sem dados: o chip M2M da Algar exigia o AP
 
 ## Anti-objetivos (falha mesmo que funcione)
 
-- Um comando aplicado horas depois sem ninguém olhando (fila do Traccar): o console usa `noQueue`; aparelho offline = falha
-  imediata `offline`.
+- Um comando aplicado horas depois sem ninguém olhando (fila do Traccar): o console usa `noQueue` e o mesmo gate de versão
+  dos comandos de motor; aparelho offline = falha imediata `offline`; Traccar que enfileira (202) = falha `erro` com alerta.
+- Cortar ou liberar o relé pelo console, fora do bloqueio seguro (gradual, só abaixo de 3 km/h — CLAUDE.md): o console é
+  ALLOWLIST e `RELAY`/`DYD`/`HFYD`/`STOP`/`RESUME` são recusados na API, no painel e na ponte.
 - Mudar APN/servidor sem querer e desconectar o aparelho: exigem confirmação explícita.
 - Quebrar dados: `GMT` (o servidor espera UTC), reset de fábrica e troca de senha do aparelho são recusados.
 - A senha de admin do Traccar chegar à API (teste de infra proíbe): tudo passa pela ponte via MQTT.
@@ -55,10 +57,23 @@ Em 05/11 o J16 da VLT-0059 ficou ~5 h sem dados: o chip M2M da Algar exigia o AP
 - A ponte envia `type: custom`, `attributes: { data: texto, noQueue: true }` ao Traccar; resposta de texto que não seja do
   relé (`RELAY 0/1 OK`) vira `console_resposta` do comando pendente mais antigo da moto; sem resposta em 60 s, `console_falha`
   `timeout`.
+- Ponte, antes de enviar (revisão final): texto de relé/motor → `console_falha` `erro` (defesa em profundidade); gate de
+  `noQueue` (Traccar ≥ 6.7.0) não satisfeito → `erro`; status do dispositivo conhecido e não `online` → `offline`. Resposta
+  do Traccar: 200 enviado; **202 = enfileirado** (o Traccar ignorou o `noQueue`) → `erro` + log `console_queued_by_traccar`;
+  400 (sem sessão) → `offline`; outro erro → `erro`. `comando_id` repetido (reentrega QoS 1) não reenvia. Coerência mínima
+  da resposta (FIFO sem correlação): `STATUS#` exige `Battery:`, `WHERE#` `Lati`/`Position`, `PARAM#` `IMEI`, `APN#` `APN`,
+  `SERVER#` `SERVER`; senão a resposta não é atribuída (log `console_reply_unmatched`). Com console pendente, resposta sem
+  estado do relé não é ack de `engineStop`/`engineResume`.
+- API (revisão final): `409` "Há um bloqueio/desbloqueio em andamento nesta moto." com `VehicleCommand` `lock`/`unlock`
+  `pending`/`in_progress`; `change`/`connection` com aluguel aberto → `409` "A moto está em aluguel; envie comandos de
+  configuração depois do fim do aluguel." (leitura liberada). `console_falha` (vem da ponte) não é sinal de vida do
+  rastreador; só `console_resposta` é.
 - API: um comando de console pendente por moto (409 se já houver); sem resposta em 90 s o registro vira `failed/timeout`.
 - Política do texto (API): 1–100 caracteres, termina em `#`, só `A-Z a-z 0-9 , . - _ : #`; palavra-chave = trecho antes da
-  primeira vírgula ou do `#`, comparada em maiúsculas. Recusados: `GMT`, `FACTORY`, `FORMAT`, `PWD`, `PASSWORD`.
-  Risco `read` (sem vírgula), `change` (com vírgula) e `connection` (`APN`/`SERVER` com vírgula, e `RESET`). `change` e
-  `connection` exigem `confirm: true`.
+  primeira vírgula ou do `#`, comparada em maiúsculas. **ALLOWLIST**: `STATUS`, `PARAM`, `WHERE`, `VERSION`, `GPRSSET` só sem
+  vírgula (`read`); `APN`, `SERVER`, `TIMER` sem vírgula (`read`); `TIMER` com vírgula (`change`); `APN`/`SERVER` com vírgula
+  e `RESET` sem vírgula (`connection`). Qualquer outro é recusado com "Comando não permitido pelo console."; `RELAY`, `DYD`,
+  `HFYD`, `STOP`, `RESUME` com "Use Bloquear/Desbloquear da ficha da moto.". `change` e `connection` exigem `confirm: true`.
+  O painel espelha a allowlist só para mostrar o motivo antes de enviar.
 - Permissões: chips — leitura `admin`, `operacao`, `suporte`; escrita `admin`. Console — envio e histórico só `admin`.
 - Auditoria: criar/editar/vincular chip e enviar comando de console gravam `AuditLog`.
