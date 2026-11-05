@@ -15,11 +15,13 @@ function fakes(
     openRental?: boolean;
     reservation?: boolean;
     openRentalInTx?: boolean;
+    previous?: Array<Record<string, unknown>>;
   } = {},
 ) {
   const tx = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
     vehicle: { update: jest.fn() },
-    tracker: { upsert: jest.fn(), updateMany: jest.fn() },
+    tracker: { upsert: jest.fn(), findMany: jest.fn().mockResolvedValue(opts.previous ?? []), update: jest.fn() },
     rental: { findFirst: jest.fn().mockResolvedValue(opts.openRental || opts.openRentalInTx ? { id: 'r-1' } : null) },
     reservation: { findFirst: jest.fn().mockResolvedValue(opts.reservation ? { id: 'res-1' } : null) },
   };
@@ -67,7 +69,28 @@ describe('provisionGt06 (spec GT06 §4)', () => {
       create: { thingName: 'moto-0901', vehicleId: 'veh-1', imei: IMEI, controlMode: 'relay_only', protocol: 'gt06' },
       update: { vehicleId: 'veh-1', imei: IMEI, controlMode: 'relay_only', protocol: 'gt06', certificateArn: null },
     });
-    expect(f.tx.tracker.updateMany).toHaveBeenCalledWith({ where: { vehicleId: 'veh-1', NOT: { thingName: 'moto-0901' } }, data: { vehicleId: null } });
+    expect(f.tx.tracker.findMany.mock.calls[0][0].where).toEqual({ vehicleId: 'veh-1', NOT: { thingName: 'moto-0901' } });
+    expect(f.tx.tracker.update).not.toHaveBeenCalled();
+  });
+
+  it('M5: o GT06 antigo da moto volta ao estoque como gt06-<IMEI> (não fica com moto-NNNN)', async () => {
+    const f = fakes({ vehicleThing: 'moto-0059', previous: [{ id: 'trk-old', controlMode: 'relay_only', imei: '869890080270059', certificateArn: null }] });
+    await provisionGt06(f.deps, input);
+    expect(f.tx.tracker.update).toHaveBeenCalledWith({ where: { id: 'trk-old' }, data: { thingName: 'gt06-869890080270059', vehicleId: null } });
+    expect(f.tx.tracker.update.mock.invocationCallOrder[0]).toBeLessThan(f.tx.tracker.upsert.mock.invocationCallOrder[0]);
+  });
+
+  it('M5: trava consultiva da moto no começo da transação', async () => {
+    const f = fakes();
+    await provisionGt06(f.deps, input);
+    expect(f.tx.$queryRaw.mock.calls[0].slice(1)).toEqual(['tracker-install:veh-1']);
+    expect(f.tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(f.tx.rental.findFirst.mock.invocationCallOrder[0]);
+  });
+
+  it('M5: IMEI de um rastreador do estoque → erro com o thingName mascarado', async () => {
+    const f = fakes({ imeiOwner: `gt06-${IMEI}` });
+    const err = await provisionGt06(f.deps, input).catch((e: Error) => e);
+    expect((err as Error).message).toBe('IMEI ***********0901 já vinculado a gt06-***********0901.');
   });
 
   it('idempotente: dispositivo já existe → não cria outro', async () => {
@@ -105,9 +128,10 @@ describe('provisionGt06 (spec GT06 §4)', () => {
 
 describe('provisionGt06: troca de rastreador e dono do thingName', () => {
   it('troca de rastreador: desvincula o antigo ANTES do upsert (Tracker.vehicleId é único)', async () => {
-    const f = fakes();
+    const f = fakes({ previous: [{ id: 'trk-old', controlMode: 'speed_control', imei: null, certificateArn: 'arn:x' }] });
     await provisionGt06(f.deps, input);
-    expect(f.tx.tracker.updateMany.mock.invocationCallOrder[0]).toBeLessThan(f.tx.tracker.upsert.mock.invocationCallOrder[0]);
+    expect(f.tx.tracker.update).toHaveBeenCalledWith({ where: { id: 'trk-old' }, data: { vehicleId: null } });
+    expect(f.tx.tracker.update.mock.invocationCallOrder[0]).toBeLessThan(f.tx.tracker.upsert.mock.invocationCallOrder[0]);
   });
 
   it('thingName já ligado a OUTRA moto → erro antes de qualquer escrita', async () => {
@@ -154,7 +178,8 @@ describe('provisionGt06: N4 (reserva e aluguel dentro da transação) e N5 (trav
     await expect(provisionGt06(f.deps, input)).rejects.toThrow('A moto VLT-0901 está com um aluguel aberto');
     expect(f.tx.rental.findFirst).toHaveBeenCalled();
     expect(f.tx.vehicle.update).not.toHaveBeenCalled();
-    expect(f.tx.tracker.updateMany).not.toHaveBeenCalled();
+    expect(f.tx.tracker.findMany).not.toHaveBeenCalled();
+    expect(f.tx.tracker.update).not.toHaveBeenCalled();
     expect(f.tx.tracker.upsert).not.toHaveBeenCalled();
   });
 

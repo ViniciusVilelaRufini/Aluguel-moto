@@ -4,7 +4,8 @@
  */
 import type { Prisma } from '@prisma/client';
 import { hasOpenRental } from '../common/vehicle-in-use';
-import { pendingLockOn, vehicleInUseReason } from '../modules/trackers/install-guards';
+import { lockVehicleTrackerChange, pendingLockOn, vehicleInUseReason } from '../modules/trackers/install-guards';
+import { isStockable, stockThingName } from '../modules/trackers/trackers.mapper';
 import { IoRedisStore, type RedisStore } from '../redis/redis-store';
 
 const openRentalError = (code: string) => new Error(`A moto ${code} está com um aluguel aberto; reprovisione o rastreador com a moto fora de aluguel.`);
@@ -72,6 +73,18 @@ export async function connectProvisioningRedis(
   return redis;
 }
 
+/**
+ * Desvincula o rastreador antigo da moto (outro thingName) antes de ligar o novo (`Tracker.vehicleId` é único). M5: um GT06 do
+ * estoque (relay_only, IMEI, sem certificado) volta ao estoque como `gt06-<IMEI>` — com o `moto-NNNN` antigo ele continuaria
+ * "dono" do thingName e a ponte o trataria como a moto. Os demais (MQTT) só perdem a moto.
+ */
+export async function unlinkPreviousTracker(tx: Pick<Prisma.TransactionClient, 'tracker'>, vehicleId: string, keepThingName: string): Promise<void> {
+  const previous = await tx.tracker.findMany({ where: { vehicleId, NOT: { thingName: keepThingName } }, select: { id: true, controlMode: true, imei: true, certificateArn: true } });
+  for (const t of previous) {
+    await tx.tracker.update({ where: { id: t.id }, data: isStockable(t) ? { thingName: stockThingName(t.imei), vehicleId: null } : { vehicleId: null } });
+  }
+}
+
 export interface MqttTrackerLink {
   vehicle: { id: string; code: string; thingName: string | null };
   thingName: string;
@@ -84,11 +97,13 @@ export interface MqttTrackerLink {
  * MQTT volta a `speed_control`/`protocol: null`. `Tracker.vehicleId` é único: o rastreador antigo da moto (outro thingName) é
  * desvinculado **antes** do upsert. Reconfere o aluguel aberto e a reserva ativa/em entrega dentro da transação.
  */
-export async function linkMqttTracker(tx: Pick<Prisma.TransactionClient, 'vehicle' | 'tracker' | 'rental' | 'reservation'>, link: MqttTrackerLink): Promise<void> {
+export async function linkMqttTracker(tx: Pick<Prisma.TransactionClient, 'vehicle' | 'tracker' | 'rental' | 'reservation' | '$queryRaw'>, link: MqttTrackerLink): Promise<void> {
   const { vehicle, thingName, imei, certificateArn } = link;
+  // Serializa com instalar/trocar/remover pelo painel e o PATCH do thingName da mesma moto.
+  await lockVehicleTrackerChange(tx, vehicle.id);
   await assertVehicleFreeForProvisioning(tx, vehicle);
   if (vehicle.thingName !== thingName) await tx.vehicle.update({ where: { id: vehicle.id }, data: { thingName } });
-  await tx.tracker.updateMany({ where: { vehicleId: vehicle.id, NOT: { thingName } }, data: { vehicleId: null } });
+  await unlinkPreviousTracker(tx, vehicle.id, thingName);
   await tx.tracker.upsert({
     where: { thingName },
     create: { thingName, vehicleId: vehicle.id, imei, certificateArn, controlMode: 'speed_control', protocol: null },

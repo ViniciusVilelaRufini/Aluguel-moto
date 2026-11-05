@@ -1,12 +1,17 @@
 import { MemoryRedisStore, type RedisStore } from '../redis/redis-store';
 import { assertNoPendingLock, assertVehicleFreeForProvisioning, connectProvisioningRedis, linkMqttTracker } from './provision-tracker';
 
-function fakes(openRental = false, reservation = false) {
+function fakes(openRental = false, reservation = false, previous: Array<Record<string, unknown>> = []) {
   const calls: string[] = [];
   const tx = {
+    $queryRaw: jest.fn(async () => []),
     vehicle: { update: jest.fn(async () => void calls.push('vehicle.update')) },
     tracker: {
-      updateMany: jest.fn(async () => void calls.push('tracker.updateMany')),
+      findMany: jest.fn(async () => {
+        calls.push('tracker.findMany');
+        return previous;
+      }),
+      update: jest.fn(async () => void calls.push('tracker.update')),
       upsert: jest.fn(async () => void calls.push('tracker.upsert')),
     },
     rental: { findFirst: jest.fn().mockResolvedValue(openRental ? { id: 'r-1' } : null) },
@@ -28,11 +33,26 @@ describe('linkMqttTracker (provision-tracker.ts, rastreador MQTT speed_control)'
   });
 
   it('desvincula o rastreador antigo da moto ANTES do upsert (Tracker.vehicleId é único)', async () => {
-    const f = fakes();
+    const f = fakes(false, false, [{ id: 'trk-old', controlMode: 'speed_control', imei: null, certificateArn: 'arn:old' }]);
     await linkMqttTracker(f.tx as any, { vehicle: { ...vehicle, thingName: 'moto-0901' }, thingName: 'moto-0061' });
-    expect(f.tx.tracker.updateMany).toHaveBeenCalledWith({ where: { vehicleId: 'veh-1', NOT: { thingName: 'moto-0061' } }, data: { vehicleId: null } });
-    expect(f.calls).toEqual(['vehicle.update', 'tracker.updateMany', 'tracker.upsert']);
+    expect((f.tx.tracker.findMany.mock.calls[0] as any[])[0].where).toEqual({ vehicleId: 'veh-1', NOT: { thingName: 'moto-0061' } });
+    expect(f.tx.tracker.update).toHaveBeenCalledWith({ where: { id: 'trk-old' }, data: { vehicleId: null } });
+    expect(f.calls).toEqual(['vehicle.update', 'tracker.findMany', 'tracker.update', 'tracker.upsert']);
     expect(f.tx.vehicle.update).toHaveBeenCalledWith({ where: { id: 'veh-1' }, data: { thingName: 'moto-0061' } });
+  });
+
+  it('M5: o GT06 antigo da moto volta ao estoque (gt06-<IMEI>) em vez de ficar com o moto-NNNN', async () => {
+    const f = fakes(false, false, [{ id: 'trk-old', controlMode: 'relay_only', imei: '869890080270059', certificateArn: null }]);
+    await linkMqttTracker(f.tx as any, { vehicle, thingName: 'moto-0061' });
+    expect(f.tx.tracker.update).toHaveBeenCalledWith({ where: { id: 'trk-old' }, data: { thingName: 'gt06-869890080270059', vehicleId: null } });
+  });
+
+  it('M5: trava consultiva da troca de rastreador da moto no começo da transação', async () => {
+    const f = fakes();
+    await linkMqttTracker(f.tx as any, { vehicle, thingName: 'moto-0061' });
+    expect(f.tx.$queryRaw).toHaveBeenCalledTimes(1);
+    expect((f.tx.$queryRaw.mock.calls[0] as any[]).slice(1)).toEqual(['tracker-install:veh-1']);
+    expect(f.tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(f.tx.tracker.findMany.mock.invocationCallOrder[0]);
   });
 
   it('sem IMEI/certificado: não apaga o que já existe no update (undefined), create grava null', async () => {
