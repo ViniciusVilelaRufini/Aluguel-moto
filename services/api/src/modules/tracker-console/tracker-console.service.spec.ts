@@ -25,6 +25,8 @@ function setup() {
   prisma.tracker.findUnique.mockResolvedValue(tracker() as any);
   prisma.trackerConsoleCommand.updateMany.mockResolvedValue({ count: 0 } as any);
   prisma.trackerConsoleCommand.findFirst.mockResolvedValue(null);
+  prisma.vehicleCommand.findFirst.mockResolvedValue(null);
+  prisma.rental.findFirst.mockResolvedValue(null);
   prisma.trackerConsoleCommand.create.mockImplementation((async (a: any) => row({ ...a.data })) as any);
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const iot = { publishConsole: jest.fn().mockResolvedValue(undefined) };
@@ -103,6 +105,41 @@ describe('TrackerConsoleService', () => {
       expect(upd.where).toMatchObject({ vehicleId: VEHICLE_ID, status: 'pending', createdAt: { lt: new Date(now.getTime() - 90_000) } });
       expect(upd.data).toMatchObject({ status: 'failed', failReason: 'timeout' });
       expect(iot.publishConsole).toHaveBeenCalledTimes(1);
+    });
+
+    it('M4: serializa pela trava consultiva com $queryRaw (padrão do repo), nunca $executeRaw', async () => {
+      const { prisma, service } = setup();
+      await service.send(VEHICLE_ID, { text: 'STATUS#' }, admin);
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+      const [strings, key] = (prisma.$queryRaw as any).mock.calls[0];
+      expect(strings.join('?')).toBe('SELECT pg_advisory_xact_lock(hashtext(?))::text');
+      expect(key).toBe(`tracker-console:${VEHICLE_ID}`);
+      expect(prisma.$executeRaw).not.toHaveBeenCalled();
+    });
+
+    it('I2: bloqueio/desbloqueio em andamento (pending/in_progress) → 409, nada publicado', async () => {
+      const { prisma, service, iot } = setup();
+      prisma.vehicleCommand.findFirst.mockResolvedValue({ id: 'cmd' } as any);
+      await expect(service.send(VEHICLE_ID, { text: 'STATUS#' }, admin)).rejects.toMatchObject({ detail: 'Há um bloqueio/desbloqueio em andamento nesta moto.' });
+      expect(await status(service.send(VEHICLE_ID, { text: 'STATUS#' }, admin))).toBe(409);
+      expect(prisma.vehicleCommand.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { vehicleId: VEHICLE_ID, type: { in: ['lock', 'unlock'] }, status: { in: ['pending', 'in_progress'] } } }),
+      );
+      expect(prisma.trackerConsoleCommand.create).not.toHaveBeenCalled();
+      expect(iot.publishConsole).not.toHaveBeenCalled();
+    });
+
+    it('M5: change/connection com aluguel aberto → 409; leitura continua liberada', async () => {
+      const { prisma, service, iot } = setup();
+      prisma.rental.findFirst.mockResolvedValue({ id: 'r1' } as any);
+      await expect(service.send(VEHICLE_ID, { text: 'TIMER,30,3600#', confirm: true }, admin)).rejects.toMatchObject({
+        detail: 'A moto está em aluguel; envie comandos de configuração depois do fim do aluguel.',
+      });
+      expect(await status(service.send(VEHICLE_ID, { text: 'RESET#', confirm: true }, admin))).toBe(409);
+      expect(prisma.rental.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vehicleId: VEHICLE_ID, status: { in: ['active', 'paused', 'ending'] } } }));
+      expect(iot.publishConsole).not.toHaveBeenCalled();
+      await service.send(VEHICLE_ID, { text: 'STATUS#' }, admin);
+      expect(iot.publishConsole).toHaveBeenCalledWith(THING, CMD_ID, 'STATUS#');
     });
 
     it('falha ao publicar → comando fica failed/error', async () => {
