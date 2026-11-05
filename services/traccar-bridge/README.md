@@ -102,7 +102,16 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   recomeça o fluxo). WebSocket da ponte reaberto → esquece o bit de corte de todas as motos e ignora o `blocked` do replay de
   últimas posições que o Traccar manda ao conectar. Watchdog do WebSocket: sem mensagem (o Traccar manda keepalive `{}` a cada
   55 s) por 130 s, derruba e reconecta.
-- `motos/{t}/comandos` (buzina) é ignorado (log `command_ignored_no_horn`).
+- `motos/{t}/comandos` com `acao: "buzina"` é ignorado (log `command_ignored_no_horn`).
+- **Console do GT06** (`acao: "console"`, `comando_id` + `texto` de 1 a 100): a ponte envia o texto, intacto (APN em minúsculas
+  continua minúsculo), ao Traccar como `custom` com `attributes: { data, noQueue: true }` (`TraccarRest.sendCustom`) e guarda o
+  comando numa fila por moto (`src/console.ts`). Traccar com 202 = aparelho offline → `console_falha` `offline` na hora (nada
+  fica na fila); erro HTTP → `console_falha` `erro`. O aparelho responde como posição com `attributes.result`: texto que não
+  é de relé (`parseRelayReply` indefinido) vai ao pendente mais antigo como `console_resposta` (`comando_id`, `texto`); "RELAY n
+  OK" segue só pelo fluxo do relé e nunca consome um pendente. Sem resposta em 60 s (`CONSOLE_TIMEOUT_MS`, varredura a cada 5 s,
+  relógio injetável) → `console_falha` `timeout`. Eventos saem em `motos/{t}/eventos` (QoS 1). Payload inválido → log
+  `console_invalid`, nada enviado. Os logs só levam `thingName` e `comandoId`, nunca o texto nem a resposta (podem conter
+  localização). Replay de conexão (resposta antiga) nunca vira resposta de console.
 - **Registro** IMEI → thingName: `Tracker` com `controlMode = relay_only` (papel `volti_bridge`, só SELECT em 3 colunas), relido a
   cada `REGISTRY_REFRESH_MS` e, para IMEI desconhecido, no máximo a cada 10 s **sem segurar a fila de entrada** (a mensagem que
   disparou a releitura é descartada como desconhecida; as seguintes já mapeiam; uma releitura em voo por vez). Log

@@ -72,4 +72,21 @@ describe('TraccarRest (B-I3: toda chamada HTTP com prazo)', () => {
     await expect(resume).rejects.toThrow('traccar_command_failed_401');
     expect(seen).toEqual(['http://traccar/api/session', 'http://traccar/api/commands/send', 'http://traccar/api/session', 'http://traccar/api/commands/send']);
   });
+
+  it('sendCustom monta o corpo custom/noQueue com o texto intacto e mapeia 200/202; outro status lança', async () => {
+    const bodies: unknown[] = [];
+    let status = 200;
+    const fetchImpl = (async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/session')) return new Response('{}', { status: 200, headers: { 'set-cookie': 'JSESSIONID=abc; Path=/' } });
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response('{}', { status });
+    }) as unknown as typeof fetch;
+    const rest = new TraccarRest('http://traccar', 'e', 'p', fetchImpl);
+    await expect(rest.sendCustom(7, 'APN,indica.algar.br#')).resolves.toBe('sent');
+    expect(bodies[0]).toEqual({ deviceId: 7, type: 'custom', attributes: { data: 'APN,indica.algar.br#', noQueue: true } });
+    status = 202;
+    await expect(rest.sendCustom(7, 'STATUS#')).resolves.toBe('offline');
+    status = 400;
+    await expect(rest.sendCustom(7, 'STATUS#')).rejects.toThrow('traccar_command_failed_400');
+  });
 });

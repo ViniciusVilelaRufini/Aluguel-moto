@@ -89,6 +89,21 @@ export class TraccarRest {
     return 'sent';
   }
 
+  /**
+   * Comando de texto do GT06 (console do painel): `custom` com `attributes.data`, sempre `noQueue`. 200 = enviado ao aparelho;
+   * 202 = aparelho sem sessão (offline); outro status → exceção.
+   */
+  async sendCustom(deviceId: number, data: string): Promise<'sent' | 'offline'> {
+    const res = await this.request('/api/commands/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deviceId, type: 'custom', attributes: { data, noQueue: true } }),
+    });
+    if (res.status === 202) return 'offline';
+    if (!res.ok) throw new Error(`traccar_command_failed_${res.status}`);
+    return 'sent';
+  }
+
   /** Só no compose local: o primeiro usuário de um Traccar vazio vira administrador. `false` se já houver usuários. */
   async bootstrapFirstUser(name: string): Promise<boolean> {
     const res = await this.fetch(`${this.baseUrl}/api/users`, {
