@@ -357,11 +357,12 @@ export class Bridge {
           this.log.info({ msg: 'traccar_device_renamed', thingName: thing, from, imei: maskImei(imei) });
         }
       } catch (err) {
-        // 400 ao criar = uniqueId duplicado: o aparelho existe mas o usuário da ponte não o enxerga. Uma vez por IMEI.
+        // 400 ao criar: o aparelho existe mas o usuário da ponte não o enxerga (de outro usuário) OU a ponte não tem permissão de
+        // criar (`deviceReadonly`/`deviceLimit`; o `gt06.sh init` corrige). Uma vez por IMEI.
         if (!existing && (err as Error).message.endsWith('_400')) {
           if (!this.notVisibleLogged.has(imei)) {
             this.notVisibleLogged.add(imei);
-            this.log.error({ msg: 'traccar_device_not_visible', thingName: thing, imei: maskImei(imei) });
+            this.log.error({ msg: 'traccar_device_not_visible', thingName: thing, imei: maskImei(imei), hint: 'aparelho de outro usuário OU ponte sem permissão (rode gt06.sh init)' });
           }
           continue;
         }

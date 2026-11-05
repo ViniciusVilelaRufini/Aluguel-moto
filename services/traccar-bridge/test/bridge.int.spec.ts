@@ -1235,7 +1235,9 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     c.traccar.deviceWriteFailStatus = 400;
     await c.bridge.refreshRegistry();
     await c.bridge.refreshRegistry();
-    expect(c.logs.filter((l) => l.msg === 'traccar_device_not_visible')).toEqual([{ level: 'error', msg: 'traccar_device_not_visible', thingName: 'gt06-***********3430', imei: '***********3430' }]);
+    expect(c.logs.filter((l) => l.msg === 'traccar_device_not_visible')).toEqual([
+      { level: 'error', msg: 'traccar_device_not_visible', thingName: 'gt06-***********3430', imei: '***********3430', hint: 'aparelho de outro usuário OU ponte sem permissão (rode gt06.sh init)' },
+    ]);
     expect(c.logs.some((l) => l.msg === 'traccar_device_create_failed')).toBe(false);
   });
 
