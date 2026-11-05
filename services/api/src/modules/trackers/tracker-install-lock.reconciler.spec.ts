@@ -9,7 +9,7 @@ const VEHICLE_ID = '33333333-3333-4333-8333-333333333333';
 const THING = 'moto-0059';
 const INSTALLED_AT = Date.parse('2026-11-05T12:00:00Z');
 const at = (s: number) => new Date(INSTALLED_AT + s * 1000).toISOString();
-const reported = (over: Partial<IotReportedEvent> = {}): IotReportedEvent => ({ thingName: THING, vehicleId: VEHICLE_ID, locked: false, heard: true, ts: at(30), ...over });
+const reported = (over: Partial<IotReportedEvent> = {}): IotReportedEvent => ({ thingName: THING, vehicleId: VEHICLE_ID, locked: false, heard: true, ts: at(50), ...over });
 
 function setup() {
   const prisma = mockDeep<PrismaClient>();
@@ -19,7 +19,7 @@ function setup() {
   const redis = new MemoryRedisStore();
   const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'cmd-1', status: 'in_progress' }) };
   const reconciler = new TrackerInstallLockReconciler(prisma as any, redis, commands as any);
-  jest.spyOn(Date, 'now').mockReturnValue(INSTALLED_AT + 30_000);
+  jest.spyOn(Date, 'now').mockReturnValue(INSTALLED_AT + 50_000);
   return { prisma, redis, commands, reconciler };
 }
 const mark = (redis: MemoryRedisStore) => redis.set(trackerInstalledKey(THING), String(INSTALLED_AT), 600_000);
@@ -54,7 +54,7 @@ describe('TrackerInstallLockReconciler (I1: J16 novo chega com o relé solto)', 
   it('dois reported ao mesmo tempo (outra instância): só um pede a trava', async () => {
     const { redis, commands, reconciler } = setup();
     await mark(redis);
-    await Promise.all([reconciler.onReported(reported()), reconciler.onReported(reported({ ts: at(31) }))]);
+    await Promise.all([reconciler.onReported(reported()), reconciler.onReported(reported({ ts: at(51) }))]);
     expect(commands.dispatch).toHaveBeenCalledTimes(1);
   });
 
@@ -96,6 +96,19 @@ describe('TrackerInstallLockReconciler (I1: J16 novo chega com o relé solto)', 
     await reconciler.onReported(reported({ heard: false, locked: true, ts: at(-60) }));
     expect(commands.dispatch).not.toHaveBeenCalled();
     expect(await redis.get(trackerInstalledKey(THING))).toBe(String(INSTALLED_AT));
+  });
+
+  it('N2: reported nos primeiros 45 s (aparelho antigo ainda com o thingName da moto) é ignorado e a marca fica', async () => {
+    const { redis, commands, reconciler } = setup();
+    await mark(redis);
+    await reconciler.onReported(reported({ locked: true, ts: at(20) }));
+    expect(await redis.get(trackerInstalledKey(THING))).toBe(String(INSTALLED_AT));
+    await reconciler.onReported(reported({ locked: false, ts: at(44) }));
+    expect(commands.dispatch).not.toHaveBeenCalled();
+    expect(await redis.get(trackerInstalledKey(THING))).toBe(String(INSTALLED_AT));
+    await reconciler.onReported(reported({ locked: false, ts: at(50) }));
+    expect(commands.dispatch).toHaveBeenCalledTimes(1);
+    expect(await redis.get(trackerInstalledKey(THING))).toBeNull();
   });
 
   it('falha ao pedir a trava só é registrada', async () => {

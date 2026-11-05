@@ -12,6 +12,12 @@ import { trackerInstalledKey } from './trackers.service';
 export const TRACKER_INSTALL_LOCK_PURPOSE = 'tracker_install';
 
 /**
+ * N2: até a ponte reler o cadastro (30 s) o aparelho ANTIGO pode continuar reportando com o thingName da moto. Reported antes de
+ * marca + 45 s não diz nada do aparelho novo: é ignorado e a marca não é consumida.
+ */
+export const TRACKER_INSTALL_SETTLE_MS = 45_000;
+
+/**
  * I1 (segurança): o J16 novo chega com o relé fechado (moto destravada) e nada o reconciliava — uma moto livre ficava usável.
  * Depois de instalar/trocar, `TrackersService` grava `tracker-installed:<thing>` (10 min). No primeiro `reported` com a trava
  * vindo do aparelho depois da instalação, a marca é consumida (uma vez só, entre instâncias: `delIfEquals`):
@@ -45,9 +51,10 @@ export class TrackerInstallLockReconciler {
     const key = trackerInstalledKey(ev.thingName);
     const mark = await this.redis.get(key);
     if (mark === null) return;
-    // Reported anterior à instalação (shadow do aparelho antigo relido pelo polling) não diz nada do novo.
+    // Reported anterior à instalação (shadow do aparelho antigo relido pelo polling) ou nos primeiros 45 s (aparelho antigo ainda
+    // com o thingName da moto até a ponte reler o cadastro) não diz nada do novo.
     const reportedAt = Date.parse(ev.ts);
-    if (!Number.isFinite(reportedAt) || reportedAt < Number(mark)) return;
+    if (!Number.isFinite(reportedAt) || reportedAt < Number(mark) + TRACKER_INSTALL_SETTLE_MS) return;
     if (!(await this.redis.delIfEquals(key, mark))) return;
     if (locked) {
       this.logger.log({ msg: 'tracker_install_already_locked', vehicleId: ev.vehicleId });
