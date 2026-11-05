@@ -26,6 +26,7 @@ vi.mock('@tanstack/react-query', async (orig) => {
     ...real,
     useQuery: (o: { queryKey: unknown[]; enabled?: boolean }) => ({ data: o.queryKey[0] === 'vehicle' ? fresh : undefined, isLoading: false, error: null }),
     useQueryClient: () => ({ invalidateQueries() {}, setQueryData() {} }),
+    useMutation: () => ({ mutateAsync: async () => ({}), mutate() {}, isPending: false, error: null }),
   };
 });
 

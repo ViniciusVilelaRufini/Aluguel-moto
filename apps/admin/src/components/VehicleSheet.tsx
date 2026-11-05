@@ -12,6 +12,8 @@ import { commandSupported, lockDescription, lockMovingWarning, TRACKER_CONTROL_L
 import { GPS_SLEEP_LOCK_WARNING, addressView, batteryView, gpsView, positionView, sheetVehicle, speedLimitChip } from '@/lib/vehicle-live';
 import { useNow } from '@/lib/use-now';
 import { RelayOnlyNotice } from './vehicles/RelayOnlyNotice';
+import { SimCardSection } from './tracker/SimCardSection';
+import { TrackerConsole } from './tracker/TrackerConsole';
 import { formatDateTime, timeAgo } from '@/lib/format';
 import { assertSpeedLimit } from '@/lib/speed-limit';
 import { MAX_SPEED_KMH, type CommandStatus, type CommandStatusReason, type CommandType, type S } from '@/lib/types';
@@ -254,6 +256,9 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
       ) : (
         <Alert tone="info" icon="Info">Seu perfil não envia comandos para a moto.</Alert>
       )}
+
+      <SimCardSection vehicleId={vehicleId} simCard={v.simCard} groups={groups} />
+      <TrackerConsole vehicleId={vehicleId} groups={groups} mode={mode} simApn={v.simCard?.apn ?? null} />
 
       {/* A moto que não trava (ex.: sem GPS em local coberto) prende o aluguel em "encerrando": a saída fica aqui, sem abrir o aluguel. */}
       {/* O cliente devolve no balcão: o atendente registra a chegada (checklist, fotos, bateria) e o aluguel encerra. */}
