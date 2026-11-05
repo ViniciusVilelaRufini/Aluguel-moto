@@ -17,7 +17,8 @@ const IMEI = '869890080273430';
 const OLD_IMEI = '869890080270059';
 const NOW = new Date('2026-11-05T12:00:00Z');
 
-const vehicleRow = { id: VEHICLE_ID, code: 'VLT-0059', thingName: 'moto-0059' };
+const VEHICLE_SEEN = new Date('2026-11-05T11:58:00Z');
+const vehicleRow = { id: VEHICLE_ID, code: 'VLT-0059', thingName: 'moto-0059', lastSeenAt: VEHICLE_SEEN };
 const simSummary = { id: SIM_ID, iccid: '8955170110123456789', msisdn: null, carrier: 'Algar', apn: null, status: 'active' };
 
 const trackerRow = (over: Record<string, unknown> = {}) => ({
@@ -50,9 +51,10 @@ function setup() {
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const redis = new MemoryRedisStore();
   const modes = { byVehicle: jest.fn(), invalidate: jest.fn() };
-  const service = new TrackersService(prisma as any, audit as any, redis, modes);
+  const live = { setOnline: jest.fn().mockResolvedValue({}) };
+  const service = new TrackersService(prisma as any, audit as any, redis, modes, live);
   jest.spyOn(Date, 'now').mockReturnValue(NOW.getTime());
-  return { prisma, audit, redis, modes, service };
+  return { prisma, audit, redis, modes, live, service };
 }
 
 afterEach(() => jest.restoreAllMocks());
@@ -166,6 +168,8 @@ describe('TrackersService', () => {
       }) as any);
       await service.install(VEHICLE_ID, TRACKER_ID, operacao);
       expect(order).toEqual([`${OLD_TRACKER_ID}:gt06-${OLD_IMEI}:null`, `${TRACKER_ID}:moto-0059:${VEHICLE_ID}`]);
+      // M3: o antigo leva o último sinal da moto para o estoque.
+      expect(prisma.tracker.update.mock.calls[0][0].data).toMatchObject({ lastSeenAt: VEHICLE_SEEN });
       expect(prisma.vehicle.update).toHaveBeenCalledWith({ where: { id: VEHICLE_ID }, data: { lastSeenAt: null } });
       const actions = audit.record.mock.calls.map(([e]) => [e.action, e.entityId, e.metadata]);
       expect(actions).toEqual([
@@ -243,13 +247,63 @@ describe('TrackersService', () => {
     });
   });
 
+  describe('depois de instalar/trocar/remover (I1/I2)', () => {
+    it('instalar: moto offline no estado ao vivo e marca tracker-installed:<thing> (10 min)', async () => {
+      const { prisma, redis, live, service } = setup();
+      trackers(prisma, trackerRow(), null);
+      prisma.tracker.update.mockResolvedValue(installedRow() as any);
+      const set = jest.spyOn(redis, 'set');
+      await service.install(VEHICLE_ID, TRACKER_ID, operacao);
+      expect(live.setOnline).toHaveBeenCalledWith('moto-0059', false);
+      expect(set).toHaveBeenCalledWith('tracker-installed:moto-0059', String(NOW.getTime()), 10 * 60_000);
+    });
+
+    it('trocar: também marca e derruba o estado ao vivo', async () => {
+      const { prisma, redis, live, service } = setup();
+      trackers(prisma, trackerRow(), trackerRow({ id: OLD_TRACKER_ID, imei: OLD_IMEI, vehicleId: VEHICLE_ID, thingName: 'moto-0059' }));
+      prisma.tracker.update.mockResolvedValue(installedRow() as any);
+      await service.install(VEHICLE_ID, TRACKER_ID, operacao);
+      expect(live.setOnline).toHaveBeenCalledWith('moto-0059', false);
+      expect(await redis.get('tracker-installed:moto-0059')).toBe(String(NOW.getTime()));
+    });
+
+    it('remover: moto offline no estado ao vivo, sem marca de instalação', async () => {
+      const { prisma, redis, live, service } = setup();
+      trackers(prisma, null, installedRow());
+      prisma.tracker.update.mockResolvedValue(trackerRow() as any);
+      await service.remove(VEHICLE_ID, operacao);
+      expect(live.setOnline).toHaveBeenCalledWith('moto-0059', false);
+      expect(await redis.get('tracker-installed:moto-0059')).toBeNull();
+    });
+
+    it('o mesmo rastreador (nada gravado) e a recusa (409) não mexem no estado ao vivo', async () => {
+      const s = setup();
+      trackers(s.prisma, installedRow(), installedRow());
+      await s.service.install(VEHICLE_ID, TRACKER_ID, operacao);
+      trackers(s.prisma, trackerRow(), null);
+      s.prisma.rental.findFirst.mockResolvedValue({ id: 'r-1' } as any);
+      await problem(s.service.install(VEHICLE_ID, TRACKER_ID, operacao));
+      expect(s.live.setOnline).not.toHaveBeenCalled();
+      expect(await s.redis.get('tracker-installed:moto-0059')).toBeNull();
+    });
+
+    it('falha do Redis depois do commit não derruba a resposta', async () => {
+      const { prisma, redis, live, service } = setup();
+      trackers(prisma, trackerRow(), null);
+      prisma.tracker.update.mockResolvedValue(installedRow() as any);
+      jest.spyOn(redis, 'set').mockRejectedValue(new Error('redis fora'));
+      live.setOnline.mockRejectedValue(new Error('redis fora'));
+      await expect(service.install(VEHICLE_ID, TRACKER_ID, operacao)).resolves.toMatchObject({ installed: true });
+    });
+  });
+
   describe('remove', () => {
     it('devolve ao estoque (gt06-<IMEI>, sem moto) e mantém o chip', async () => {
       const { prisma, audit, modes, service } = setup();
       trackers(prisma, null, installedRow({ simCard: simSummary }));
       prisma.tracker.update.mockResolvedValue(trackerRow({ simCard: simSummary }) as any);
       const out = await service.remove(VEHICLE_ID, operacao);
-      expect(prisma.tracker.update.mock.calls[0][0]).toMatchObject({ where: { id: TRACKER_ID }, data: { thingName: 'gt06-869890080273430', vehicleId: null } });
+      expect(prisma.tracker.update.mock.calls[0][0]).toMatchObject({ where: { id: TRACKER_ID }, data: { thingName: 'gt06-869890080273430', vehicleId: null, lastSeenAt: VEHICLE_SEEN } });
       expect(prisma.simCard.update).not.toHaveBeenCalled();
       expect(prisma.simCard.updateMany).not.toHaveBeenCalled();
       expect(out).toMatchObject({ installed: false, vehicleId: null, simCard: { id: SIM_ID } });

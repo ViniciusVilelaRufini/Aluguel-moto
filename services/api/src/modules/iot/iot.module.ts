@@ -113,6 +113,6 @@ import { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
     IotRuntime,
   ],
   // TRACKER_MODES: o módulo trackers invalida o cache de modo da moto ao instalar/remover rastreador.
-  exports: [IOT_GATEWAY, IOT_CONFIG, TRACKER_MODES],
+  exports: [IOT_GATEWAY, IOT_CONFIG, TRACKER_MODES, LiveStateStore],
 })
 export class IotModule {}
