@@ -301,6 +301,57 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
       expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_resposta', comando_id: CID });
     });
 
+    it('mesma posição com result reentregue → só uma console_resposta; o segundo pendente continua', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await sendConsole(c, CID2, 'WHERE#');
+      await waitFor(() => c.traccar.commands.length === 2);
+      const pos = consoleReply(70, c.now.value, STATUS_REPLY);
+      c.traccar.push({ positions: [pos] });
+      c.traccar.push({ positions: [pos] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      await sleep(80);
+      expect(consoleEvents(c)).toHaveLength(1);
+      c.traccar.push({ positions: [consoleReply(71, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 2);
+      expect(consoleEvents(c)[1]).toMatchObject({ comando_id: CID2 });
+    });
+
+    it('com engineStop em curso, result que não é de relé não consome o pendente de console', async () => {
+      c = await start();
+      c.traccar.push({ positions: [position({ id: 20, deviceId: 1, fixTime: iso(T0 - 2_000), serverTime: iso(T0 - 1_000), speed: 0 })] });
+      await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      await sendDelta(c, { travada: true });
+      await waitFor(() => c.traccar.commands.length === 2);
+      c.now.value += 1_000;
+      c.traccar.push({ positions: [consoleReply(72, c.now.value, STATUS_REPLY)] });
+      await sleep(80);
+      expect(consoleEvents(c)).toEqual([]);
+      c.traccar.push({ positions: [consoleReply(73, c.now.value, STOP_OK)] }); // fecha o comando de motor
+      await waitFor(() => reportedTravada(c).length === 1);
+      c.now.value += 1_000;
+      c.traccar.push({ positions: [consoleReply(74, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_resposta', comando_id: CID });
+    });
+
+    it('troca de IMEI no registro → console_falha erro para cada pendente descartado', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await sendConsole(c, CID2, 'WHERE#');
+      await waitFor(() => c.traccar.commands.length === 2);
+      c.registry.clear();
+      c.registry.set(NEW_IMEI, T);
+      await c.bridge.refreshRegistry();
+      await waitFor(() => consoleEvents(c).length === 2);
+      expect(consoleEvents(c)).toEqual([
+        expect.objectContaining({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' }),
+        expect.objectContaining({ tipo: 'console_falha', comando_id: CID2, motivo: 'erro' }),
+      ]);
+    });
+
     it('aparelho offline (202 do Traccar) → console_falha offline na hora, sem pendente', async () => {
       c = await start();
       c.traccar.customStatus = 202;

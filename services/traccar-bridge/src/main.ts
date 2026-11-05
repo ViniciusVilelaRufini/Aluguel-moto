@@ -64,6 +64,7 @@ async function main(): Promise<void> {
   log.info({ msg: 'bridge_started', iotMode: cfg.iotMode });
   const stop = async () => {
     socket.close();
+    bridge.close();
     await mqtt.endAsync(true).catch(() => undefined);
     process.exit(0);
   };

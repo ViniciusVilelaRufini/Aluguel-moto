@@ -123,6 +123,7 @@ export class Bridge {
   private lastVersionCheck = Number.NEGATIVE_INFINITY;
   private listening = false;
   private readonly consoleQueue = new ConsoleQueue(CONSOLE_TIMEOUT_MS);
+  private readonly lastConsolePosition = new Map<string, number>();
   private consoleTimer?: ReturnType<typeof setInterval>;
   private lastMissRefresh = 0;
   /** Releitura do registro em voo (single-flight): chamadas concorrentes esperam a mesma. */
@@ -220,10 +221,15 @@ export class Bridge {
   }
 
   /** Resposta de texto do aparelho (não é a de relé) → `console_resposta` do pendente mais antigo. */
-  private async routeConsoleReply(thing: string, result: string): Promise<void> {
+  private async routeConsoleReply(thing: string, positionId: number, result: string): Promise<void> {
     if (parseRelayReply(result) !== undefined) return;
+    // Mesma posição reentregue pelo Traccar: não consome um segundo pendente.
+    if (this.lastConsolePosition.get(thing) === positionId) return;
+    // Comando de motor/relé em curso: um texto qualquer pode ser dele, não do console.
+    if (this.mem(thing).pendingCommand) return;
     const pending = this.consoleQueue.take(thing);
     if (!pending) return;
+    this.lastConsolePosition.set(thing, positionId);
     this.log.info({ msg: 'console_reply', thingName: thing, comandoId: pending.comandoId });
     await this.publish(TOPICS.events(thing), { tipo: 'console_resposta', comando_id: pending.comandoId, texto: result, timestamp: new Date(this.now()).toISOString() }, 1);
   }
@@ -488,7 +494,11 @@ export class Bridge {
     this.lastGpsSleep.delete(thing);
     this.alarmIds.delete(thing);
     this.awaitingGet.delete(thing);
-    this.consoleQueue.clear(thing);
+    this.lastConsolePosition.delete(thing);
+    // Aparelho trocado: quem esperava resposta falha (a API não fica com comando pendente de outro aparelho).
+    for (const p of this.consoleQueue.clear(thing)) {
+      void this.consoleFail(thing, p.comandoId, 'erro').catch((err: Error) => this.log.error({ msg: 'console_fail_publish_failed', thingName: thing, error: err.message }));
+    }
   }
 
   private async thingOfDevice(deviceId: number): Promise<string | null> {
@@ -529,7 +539,7 @@ export class Bridge {
     }
     const now = this.now();
     // Replay de conexão já saiu sem `result` em `p`: não é resposta nova.
-    if (typeof p.attributes?.result === 'string') await this.routeConsoleReply(thing, p.attributes.result);
+    if (typeof p.attributes?.result === 'string') await this.routeConsoleReply(thing, p.id, p.attributes.result);
     const before = this.mem(thing);
     let r = applyPosition(p, before, this.opts.battery, now);
     if (r.held === 'awaiting_battery') {

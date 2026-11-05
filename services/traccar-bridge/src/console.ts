@@ -61,7 +61,9 @@ export class ConsoleQueue {
   }
 
   /** Aparelho do thing mudou: nada pendente vale. */
-  clear(thing: string): void {
+  clear(thing: string): PendingConsole[] {
+    const list = this.pending.get(thing) ?? [];
     this.pending.delete(thing);
+    return list;
   }
 }
