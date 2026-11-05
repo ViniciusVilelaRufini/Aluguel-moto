@@ -46,7 +46,7 @@ interface Ctx {
   registryCtl: { hang: boolean; calls: number };
 }
 
-interface StartOpts { beforeStart?: (broker: FakeBroker) => Promise<void>; iotMode?: 'local' | 'aws'; version?: string | undefined; notifications?: boolean; publishTimeoutMs?: number; subscribeTimeoutMs?: number; serverStatus?: number; socketDeviceIds?: number[] }
+interface StartOpts { consoleSweepMs?: number; beforeStart?: (broker: FakeBroker) => Promise<void>; iotMode?: 'local' | 'aws'; version?: string | undefined; notifications?: boolean; publishTimeoutMs?: number; subscribeTimeoutMs?: number; serverStatus?: number; socketDeviceIds?: number[] }
 
 async function start(opts: StartOpts | 'local' | 'aws' = {}): Promise<Ctx> {
   const o: StartOpts = typeof opts === 'string' ? { iotMode: opts } : opts;
@@ -79,7 +79,7 @@ async function start(opts: StartOpts | 'local' | 'aws' = {}): Promise<Ctx> {
   const socketRef: { current?: TraccarSocket } = {};
   const bridge = new Bridge(mqtt, rest, { things }, {
     iotMode: o.iotMode ?? 'local', battery: '72v', now: () => now.value, log, publishTimeoutMs: o.publishTimeoutMs, subscribeTimeoutMs: o.subscribeTimeoutMs,
-    reopenSocket: () => socketRef.current?.reopen() ?? false,
+    reopenSocket: () => socketRef.current?.reopen() ?? false, consoleSweepMs: o.consoleSweepMs,
   });
   await bridge.start();
   const socket = new TraccarSocket(traccar.url, rest, (m) => void bridge.enqueue(m), silentLogger, () => void bridge.onSocketOpen());
@@ -113,6 +113,7 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
   let c: Ctx;
   afterEach(async () => {
     c.socket.close();
+    (c.bridge as unknown as { close?: () => void }).close?.();
     await c.traccar.stop();
     expect(JSON.stringify(c.logs)).not.toContain(IMEI); // IMEI nunca completo nos logs
     expect(JSON.stringify(c.logs)).not.toContain(OTHER_IMEI);
@@ -251,6 +252,262 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     await c.api.publishAsync(`motos/${T}/comandos`, JSON.stringify({ comando_id: 'h1', acao: 'buzina' }));
     await waitFor(() => c.logs.some((l) => l.msg === 'command_ignored_no_horn'));
     expect(c.traccar.commands).toEqual([]);
+  });
+
+  describe('console GT06', () => {
+    const CID = '6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a11';
+    const CID2 = '6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a12';
+    const STATUS_REPLY = 'Battery:4.27V;Exvkk:12.38,0;GPRS:Online;CSQ:12;ACC:ON;GPS:ON;Gid:11;Relay:1;Slp:0;';
+    const sendConsole = (cc: Ctx, id: string, texto: unknown) => cc.api.publishAsync(`motos/${T}/comandos`, JSON.stringify({ comando_id: id, acao: 'console', texto }));
+    const consoleEvents = (cc: Ctx) => out(cc, `motos/${T}/eventos`).filter((e) => String(e.tipo).startsWith('console_'));
+    const consoleReply = (id: number, at: number, result: string) => relayReply(id, at, result);
+
+    it('envia o texto intacto ao Traccar (custom + noQueue) e devolve a resposta pelo comando_id', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'APN,indica.algar.br#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      expect(c.traccar.commandBodies[0]).toEqual({ deviceId: 1, type: 'custom', attributes: { data: 'APN,indica.algar.br#', noQueue: true } });
+      c.traccar.push({ positions: [consoleReply(60, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      const ev = consoleEvents(c)[0];
+      expect(ev).toMatchObject({ tipo: 'console_resposta', comando_id: CID, texto: STATUS_REPLY });
+      expect(validEvent(ev)).toBe(true);
+      // O pendente saiu da fila: outra resposta de texto não gera nada.
+      c.traccar.push({ positions: [consoleReply(61, c.now.value, STATUS_REPLY)] });
+      await sleep(50);
+      expect(consoleEvents(c)).toHaveLength(1);
+    });
+
+    it('a resposta vai para o pendente mais antigo', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await sendConsole(c, CID2, 'WHERE#');
+      await waitFor(() => c.traccar.commands.length === 2);
+      c.traccar.push({ positions: [consoleReply(62, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ comando_id: CID });
+    });
+
+    it('RELAY 1 OK com console pendente continua sendo do relé: nada para o console, pendente segue', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      c.traccar.push({ positions: [consoleReply(63, c.now.value, STOP_OK)] });
+      await sleep(80);
+      expect(consoleEvents(c)).toEqual([]);
+      expect(reportedTravada(c)).toEqual([true]);
+      c.traccar.push({ positions: [consoleReply(64, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_resposta', comando_id: CID });
+    });
+
+    it('mesma posição com result reentregue → só uma console_resposta; o segundo pendente continua', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await sendConsole(c, CID2, 'VERSION#');
+      await waitFor(() => c.traccar.commands.length === 2);
+      const pos = consoleReply(70, c.now.value, STATUS_REPLY);
+      c.traccar.push({ positions: [pos] });
+      c.traccar.push({ positions: [pos] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      await sleep(80);
+      expect(consoleEvents(c)).toHaveLength(1);
+      c.traccar.push({ positions: [consoleReply(71, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 2);
+      expect(consoleEvents(c)[1]).toMatchObject({ comando_id: CID2 });
+    });
+
+    it('com engineStop em curso, result que não é de relé não consome o pendente de console', async () => {
+      c = await start();
+      c.traccar.push({ positions: [position({ id: 20, deviceId: 1, fixTime: iso(T0 - 2_000), serverTime: iso(T0 - 1_000), speed: 0 })] });
+      await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      await sendDelta(c, { travada: true });
+      await waitFor(() => c.traccar.commands.length === 2);
+      c.now.value += 1_000;
+      c.traccar.push({ positions: [consoleReply(72, c.now.value, STATUS_REPLY)] });
+      await sleep(80);
+      expect(consoleEvents(c)).toEqual([]);
+      c.traccar.push({ positions: [consoleReply(73, c.now.value, STOP_OK)] }); // fecha o comando de motor
+      await waitFor(() => reportedTravada(c).length === 1);
+      c.now.value += 1_000;
+      c.traccar.push({ positions: [consoleReply(74, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_resposta', comando_id: CID });
+    });
+
+    it('troca de IMEI no registro → console_falha erro para cada pendente descartado', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await sendConsole(c, CID2, 'WHERE#');
+      await waitFor(() => c.traccar.commands.length === 2);
+      c.registry.clear();
+      c.registry.set(NEW_IMEI, T);
+      await c.bridge.refreshRegistry();
+      await waitFor(() => consoleEvents(c).length === 2);
+      expect(consoleEvents(c)).toEqual([
+        expect.objectContaining({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' }),
+        expect.objectContaining({ tipo: 'console_falha', comando_id: CID2, motivo: 'erro' }),
+      ]);
+    });
+
+    it('I1: Traccar enfileirou (202, ignora noQueue) → console_falha erro + log console_queued_by_traccar, sem pendente', async () => {
+      c = await start();
+      c.traccar.queueCommands = true;
+      c.traccar.honorNoQueue = false;
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
+      expect(validEvent(consoleEvents(c)[0])).toBe(true);
+      expect(c.logs.some((l) => l.msg === 'console_queued_by_traccar' && l.level === 'error')).toBe(true);
+      c.traccar.push({ positions: [consoleReply(65, c.now.value, STATUS_REPLY)] });
+      await sleep(50);
+      expect(consoleEvents(c)).toHaveLength(1);
+    });
+
+    it('I1: dispositivo sem sessão no Traccar (400 com noQueue) → console_falha offline, nada na fila do Traccar', async () => {
+      c = await start();
+      c.traccar.queueCommands = true;
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'offline' });
+      expect(c.traccar.queued).toEqual([]);
+    });
+
+    it('I1: status conhecido offline → console_falha offline sem chamar o Traccar', async () => {
+      c = await start();
+      setStatus(c, 'offline');
+      await waitFor(() => c.logs.some((l) => l.msg === 'device_offline'));
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'offline' });
+      expect(c.traccar.commands).toEqual([]);
+    });
+
+    it('I1: Traccar < 6.7.0 (sem noQueue) → console_falha erro sem enviar', async () => {
+      c = await start({ version: '6.6' });
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
+      expect(c.traccar.commands).toEqual([]);
+    });
+
+    it('N2: 400 sem indicar aparelho sem sessão (status online) → console_falha erro', async () => {
+      c = await start();
+      c.traccar.commandFailStatus = 400;
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
+    });
+
+    it('N2: 400 genérico com o aparelho ficando offline durante o envio → console_falha offline', async () => {
+      c = await start();
+      c.traccar.commandFailStatus = 400;
+      c.traccar.commandDelayMs = 80;
+      c.traccar.onCommand = () => setStatus(c, 'offline');
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'offline' });
+    });
+
+    it('erro do Traccar no envio (500) → console_falha erro', async () => {
+      c = await start();
+      c.traccar.commandFailStatus = 500;
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
+    });
+
+    it.each(['RELAY,1#', 'relay,0#', 'dyd#', 'HFYD,000000#', 'Stop#', 'resume#'])('C1: texto de relé (%s) → console_falha erro, nunca enviado', async (texto) => {
+      c = await start();
+      await sendConsole(c, CID, texto);
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
+      expect(c.traccar.commands).toEqual([]);
+      expect(c.logs.some((l) => l.msg === 'console_relay_refused')).toBe(true);
+    });
+
+    it('M3: mesmo comando_id reentregue (QoS 1) → um só envio', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.logs.some((l) => l.msg === 'console_duplicate_ignored'));
+      expect(c.traccar.commands).toHaveLength(1);
+      c.traccar.push({ positions: [consoleReply(80, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      await sendConsole(c, CID, 'STATUS#'); // já concluído
+      await waitFor(() => c.logs.filter((l) => l.msg === 'console_duplicate_ignored').length === 2);
+      expect(c.traccar.commands).toHaveLength(1);
+    });
+
+    it('M2: resposta que não casa com STATUS# pendente não é atribuída (log sem texto); a coerente é', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      c.traccar.push({ positions: [consoleReply(81, c.now.value, 'IMEI:860000000000901;TIMER:10;')] });
+      await waitFor(() => c.logs.some((l) => l.msg === 'console_reply_unmatched'));
+      expect(consoleEvents(c)).toEqual([]);
+      expect(JSON.stringify(c.logs.filter((l) => l.msg === 'console_reply_unmatched'))).not.toContain('TIMER');
+      c.traccar.push({ positions: [consoleReply(82, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_resposta', comando_id: CID, texto: STATUS_REPLY });
+    });
+
+    it('I2: STATUS# pendente, engineStop enviado, resposta do STATUS chega → não é ack do engineStop (heartbeat dentro da carência não vale)', async () => {
+      c = await start();
+      c.traccar.push({ positions: [position({ id: 20, deviceId: 1, fixTime: iso(T0 - 2_000), serverTime: iso(T0 - 1_000), speed: 0 })] });
+      await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      await sendDelta(c, { travada: true });
+      await waitFor(() => c.traccar.commands.length === 2);
+      const before = reportedTravada(c);
+      c.now.value += 1_000;
+      c.traccar.push({ positions: [consoleReply(83, c.now.value, STATUS_REPLY)] });
+      c.now.value += 1_000;
+      // Status ainda com o bit antigo, dentro da carência: só valeria se a resposta do STATUS tivesse sido tomada como ack.
+      c.traccar.push({ positions: [heartbeat(84, c.now.value, false)] });
+      await sleep(100);
+      expect(reportedTravada(c)).toEqual(before);
+    });
+
+    it('sem resposta em 60 s (relógio injetado) → console_falha timeout', async () => {
+      c = await start({ consoleSweepMs: 10 });
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      c.now.value += 59_000;
+      await sleep(40);
+      expect(consoleEvents(c)).toEqual([]);
+      c.now.value += 1_000;
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'timeout' });
+      expect(validEvent(consoleEvents(c)[0])).toBe(true);
+    });
+
+    it.each([
+      ['sem comando_id', { acao: 'console', texto: 'STATUS#' }],
+      ['texto vazio', { comando_id: CID, acao: 'console', texto: '' }],
+      ['texto com mais de 100', { comando_id: CID, acao: 'console', texto: 'A'.repeat(101) }],
+    ])('payload inválido (%s) → ignorado com log console_invalid, nada enviado', async (_n, body) => {
+      c = await start();
+      await c.api.publishAsync(`motos/${T}/comandos`, JSON.stringify(body));
+      await waitFor(() => c.logs.some((l) => l.msg === 'console_invalid'));
+      expect(c.traccar.commands).toEqual([]);
+      expect(consoleEvents(c)).toEqual([]);
+    });
+
+    it('logs do console não carregam o texto nem a resposta', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'APN,indica.algar.br#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      c.traccar.push({ positions: [consoleReply(66, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      const blob = JSON.stringify(c.logs);
+      expect(blob).not.toContain('algar');
+      expect(blob).not.toContain('Battery:');
+    });
   });
 
   it('modo aws: sem tópicos de presença (o IoT Core gera os eventos de ciclo de vida)', async () => {

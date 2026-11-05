@@ -244,7 +244,7 @@ export class IotStack extends Stack {
     // `bateria_conhecida` e `satelites` são opcionais (ausente = true / desconhecido): atributo ausente não entra no objeto
     // projetado pelo IoT SQL (a API trata `null` como ausente).
     const telemetryFields = ['lat', 'lng', 'velocidade_kmh', 'bateria_pct', 'bateria_conhecida', 'travada', 'ignicao', 'sinal', 'timestamp', 'satelites'];
-    const eventFields = ['tipo', 'timestamp'];
+    const eventFields = ['tipo', 'timestamp', 'comando_id', 'texto', 'motivo'];
     const toTelemetryQueue = [{ sqs: { queueUrl: messaging.telemetry.queue.queueUrl, roleArn: sqsRole.roleArn, useBase64: false } }];
     new iot.CfnTopicRule(this, 'TelemetryRule', {
       ruleName: `volti_${env}_telemetry`,

@@ -316,3 +316,15 @@ export function makeCounterState() {
     idempotent: new Map<string, { status?: number; json: unknown }>(),
   };
 }
+
+export function makeSimCards(): S<'SimCard'>[] {
+  const base = { msisdn: null, carrier: 'Algar', apn: 'indica.algar.br', status: 'active' as const, notes: null, vehicleId: null, vehicleCode: null, createdAt: '2026-11-01T12:00:00.000Z', updatedAt: '2026-11-01T12:00:00.000Z' };
+  return [
+    { ...base, id: 'sim-1', iccid: '8955171234567890123', msisdn: '+5511999990001' },
+    { ...base, id: 'sim-2', iccid: '8955171234567890124' },
+  ];
+}
+
+export function makeTrackerConsole(): S<'TrackerConsoleCommand'>[] {
+  return [];
+}

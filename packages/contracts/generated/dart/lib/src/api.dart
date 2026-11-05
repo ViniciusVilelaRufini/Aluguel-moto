@@ -31,6 +31,7 @@ import 'package:volti_api/src/api/referrals_api.dart';
 import 'package:volti_api/src/api/rentals_api.dart';
 import 'package:volti_api/src/api/reports_api.dart';
 import 'package:volti_api/src/api/reservations_api.dart';
+import 'package:volti_api/src/api/sim_cards_api.dart';
 import 'package:volti_api/src/api/staff_api.dart';
 import 'package:volti_api/src/api/stations_api.dart';
 import 'package:volti_api/src/api/support_api.dart';
@@ -289,6 +290,12 @@ class VoltiApi {
   /// by doing that all interceptors will not be executed
   ReservationsApi getReservationsApi() {
     return ReservationsApi(dio, serializers);
+  }
+
+  /// Get SimCardsApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  SimCardsApi getSimCardsApi() {
+    return SimCardsApi(dio, serializers);
   }
 
   /// Get StaffApi instance, base route and serializer can be overridden by a given but be careful,

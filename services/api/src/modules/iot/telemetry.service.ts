@@ -7,7 +7,7 @@ import type { Clock } from './clock';
 import type { PositionInput, RentalLookup } from './geofence/geofence.service';
 import type { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
 import { DEFAULT_QUEUE_LAG_MS, DEFAULT_RECONNECT_GAP_MS, MAX_CLOCK_SKEW_MS } from './live-state.store';
-import { isWeakFix, parseDeviceEvent, parseTelemetry } from './mqtt-contract';
+import { isConsoleEventType, isWeakFix, parseConsoleEvent, parseDeviceEvent, parseTelemetry } from './mqtt-contract';
 import type { InboundHandler, ReportedMeta, ReportedState } from './shadow-transport';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -204,6 +204,23 @@ export class TelemetryService implements InboundHandler {
 
   deviceEvent(thingName: string, raw: unknown): Promise<void> {
     return this.serial(thingName, async () => {
+      // Console do rastreador: evento interno próprio, nunca alerta (nada do texto vai para o log).
+      if (isConsoleEventType((raw as { tipo?: unknown } | null)?.tipo)) {
+        const consoleEv = parseConsoleEvent(raw);
+        if (!consoleEv) {
+          this.logger.warn({ msg: 'console_event_invalid', thingName });
+          return;
+        }
+        if (!(await this.vehicleIdOf(thingName))) return;
+        // I3: `console_falha` é produzido pela ponte (timeout/offline/erro), não pelo aparelho: não é sinal de vida.
+        if (consoleEv.kind === 'resposta') {
+          await this.gateway.live.load(thingName);
+          if (this.heard(thingName, this.clock.now())) await this.reconnect(thingName);
+        }
+        this.logger.log({ msg: 'console_event', thingName, kind: consoleEv.kind });
+        this.events.emit(EV.TRACKER_CONSOLE_EVENT, { thingName, ...consoleEv });
+        return;
+      }
       const msg = parseDeviceEvent(raw);
       if (!msg) {
         this.logger.warn({ msg: 'device_event_invalid', thingName });

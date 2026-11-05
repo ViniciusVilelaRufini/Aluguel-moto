@@ -30,7 +30,7 @@ function setup(opts: { rentalId?: string; consent?: boolean } = {}) {
   const clock = new FakeClock(Date.parse('2026-10-21T15:00:00Z'));
   const events = new EventEmitter2();
   const emitted: Record<string, any[]> = {};
-  for (const name of [EV.IOT_TELEMETRY, EV.IOT_DEVICE_EVENT, EV.IOT_CONNECTIVITY, EV.IOT_REPORTED]) {
+  for (const name of [EV.IOT_TELEMETRY, EV.IOT_DEVICE_EVENT, EV.IOT_CONNECTIVITY, EV.IOT_REPORTED, EV.TRACKER_CONSOLE_EVENT]) {
     emitted[name] = [];
     events.on(name, (e: unknown) => emitted[name].push(e));
   }
@@ -174,6 +174,35 @@ describe('TelemetryService', () => {
     await svc.deviceEvent(T, { tipo: 'queda', timestamp: '2026-10-21T15:00:01.000Z' });
     await svc.deviceEvent(T, { tipo: 'inexistente', timestamp: '2026-10-21T15:00:01.000Z' });
     expect(emitted[EV.IOT_DEVICE_EVENT]).toEqual([{ thingName: T, vehicleId: VEHICLE_ID, type: 'queda', ts: '2026-10-21T15:00:01.000Z' }]);
+  });
+
+  it('console_resposta/console_falha → tracker-console.event e nunca iot.device-event (sem alerta)', async () => {
+    const { svc, emitted } = setup();
+    const CMD = '6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a11';
+    await svc.deviceEvent(T, { tipo: 'console_resposta', timestamp: '2026-10-21T15:00:01.000Z', comando_id: CMD, texto: 'Battery:4.27V;' });
+    await svc.deviceEvent(T, { tipo: 'console_falha', timestamp: '2026-10-21T15:00:02.000Z', comando_id: CMD, motivo: 'offline' });
+    await svc.deviceEvent(T, { tipo: 'console_falha', timestamp: '2026-10-21T15:00:02.000Z', comando_id: CMD, motivo: 'xx' });
+    await svc.deviceEvent(T, { tipo: 'console_resposta', timestamp: '2026-10-21T15:00:02.000Z', texto: 'sem id' });
+    expect(emitted[EV.IOT_DEVICE_EVENT]).toEqual([]);
+    expect(emitted[EV.TRACKER_CONSOLE_EVENT]).toEqual([
+      { thingName: T, comandoId: CMD, kind: 'resposta', texto: 'Battery:4.27V;' },
+      { thingName: T, comandoId: CMD, kind: 'falha', motivo: 'offline' },
+    ]);
+  });
+
+  it('I3: console_falha é da ponte, não do aparelho: não é sinal de vida (sem noteHeard/reconexão); console_resposta é', async () => {
+    const { svc, gateway, clock, emitted } = setup();
+    const CMD = '6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a11';
+    const noteHeard = jest.spyOn(gateway.live, 'noteHeard');
+    const reconnected = jest.spyOn(gateway, 'onReconnected');
+    await svc.deviceEvent(T, { tipo: 'console_falha', timestamp: '2026-10-21T15:00:00.000Z', comando_id: CMD, motivo: 'timeout' });
+    await clock.advance(600_000);
+    await svc.deviceEvent(T, { tipo: 'console_falha', timestamp: '2026-10-21T15:10:00.000Z', comando_id: CMD, motivo: 'offline' });
+    expect(noteHeard).not.toHaveBeenCalled();
+    expect(reconnected).not.toHaveBeenCalled();
+    expect(emitted[EV.TRACKER_CONSOLE_EVENT]).toHaveLength(2);
+    await svc.deviceEvent(T, { tipo: 'console_resposta', timestamp: '2026-10-21T15:10:00.000Z', comando_id: CMD, texto: 'Battery:4.27V;' });
+    expect(noteHeard).toHaveBeenCalledTimes(1);
   });
 
   it('a velocidade da telemetria alimenta a rampa: moto andando para abaixo de 3 → travada publicada', async () => {

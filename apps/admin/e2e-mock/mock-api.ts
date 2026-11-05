@@ -53,6 +53,8 @@ function makeDb(group: NonNullable<MockOptions['group']>) {
     coupons: F.makeCoupons(),
     coverages: F.makeCoverages(),
     models: F.makeModels(),
+    simCards: F.makeSimCards(),
+    trackerConsole: F.makeTrackerConsole(),
     staff: F.makeStaff(),
     audit: F.makeAudit(),
     fieldTasks: F.makeFieldTasks(),
@@ -165,6 +167,62 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
     return ok({ id: 'cmd-1', vehicleId: id, type: b.type, status: 'pending', reason: b.reason, speedLimitKmh: b.speedLimitKmh, on: b.on, requestedByName: 'Ana QA', requestedByType: 'staff', createdAt: now, updatedAt: now }, 202);
   }
   if (method === 'GET' && match(/^\/commands\/[^/]+$/)) return ok({ id, vehicleId: 'veh-001', type: 'lock', status: 'confirmed', reason: 'teste', createdAt: now, updatedAt: now, confirmedAt: now });
+  // Chips (SIM) e console do rastreador
+  if (method === 'GET' && p === '/sim-cards') {
+    const qq = (q.get('q') ?? '').toLowerCase();
+    const unlinked = q.get('unlinked') === 'true';
+    const st = q.get('status');
+    return ok({ items: db.simCards.filter((s) => (!unlinked || !s.vehicleId) && (!st || s.status === st) && (!qq || s.iccid.includes(qq) || (s.msisdn ?? '').includes(qq))) });
+  }
+  if (method === 'POST' && p === '/sim-cards') {
+    if (db.simCards.some((s) => s.iccid === b.iccid)) return { status: 409, json: problem(409, 'ICCID já cadastrado', 'conflict') };
+    const veh = db.vehicles.find((x) => x.id === b.vehicleId);
+    const s = { msisdn: null, apn: null, status: 'active', notes: null, vehicleId: null, vehicleCode: null, ...b, id: `sim-${db.simCards.length + 1}`, createdAt: now, updatedAt: now, ...(veh ? { vehicleId: veh.id, vehicleCode: veh.code } : {}) };
+    db.simCards.push(s as never);
+    if (veh) (veh as { simCard?: unknown }).simCard = { id: s.id, iccid: s.iccid, msisdn: s.msisdn, carrier: s.carrier, apn: s.apn, status: s.status };
+    return ok(s, 201);
+  }
+  if (method === 'PATCH' && match(/^\/sim-cards\/[^/]+$/)) {
+    const s = find(db.simCards); if (!s) return notFound();
+    const { vehicleId, ...rest } = b;
+    Object.assign(s, rest, { updatedAt: now });
+    if ('vehicleId' in b) {
+      db.vehicles.forEach((x) => { if (x.id === s.vehicleId) (x as { simCard?: unknown }).simCard = null; });
+      const veh = vehicleId ? db.vehicles.find((x) => x.id === vehicleId) : undefined;
+      Object.assign(s, { vehicleId: veh?.id ?? null, vehicleCode: veh?.code ?? null });
+      if (veh) (veh as { simCard?: unknown }).simCard = { id: s.id, iccid: s.iccid, msisdn: s.msisdn, carrier: s.carrier, apn: s.apn, status: s.status };
+    }
+    return ok(s);
+  }
+  if (method === 'GET' && match(/^\/vehicles\/[^/]+\/tracker-console$/)) {
+    const limit = Number(q.get('limit') ?? 20);
+    // O rastreador responde entre uma consulta e a seguinte: o pendente vira respondido no GET.
+    db.trackerConsole.forEach((c) => {
+      if (c.vehicleId !== id || c.status !== 'pending') return;
+      const isStatus = /^STATUS#$/i.test(c.text);
+      Object.assign(c, {
+        status: 'answered', respondedAt: now, response: isStatus ? 'BAT:4.05V,EXT:12.10V,GPRS:ON,CSQ:21' : 'OK',
+        statusReport: isStatus ? { batteryVolts: 4.05, externalVolts: 12.1, gprsOnline: true, acc: false, gpsOn: true, relay: false, sleep: false, csq: 21 } : null,
+      });
+    });
+    return ok({ items: db.trackerConsole.filter((c) => c.vehicleId === id).slice(0, limit) });
+  }
+  if (method === 'POST' && match(/^\/vehicles\/[^/]+\/tracker-console$/)) {
+    const veh = find(db.vehicles);
+    if (!veh) return notFound();
+    if (veh.trackerControlMode !== 'relay_only') return { status: 409, json: problem(409, 'O rastreador desta moto não aceita comandos de console', 'conflict') };
+    const text = String(b.text ?? '');
+    if (!/^[A-Za-z0-9,.\-_:]{1,99}#$/.test(text)) return { status: 400, json: problem(400, 'Texto inválido', 'validation') };
+    const risk = !text.includes(',') && !/^RESET/i.test(text) ? 'read' : /^(RESET|APN,|SERVER,)/i.test(text) ? 'connection' : 'change';
+    if (risk !== 'read' && b.confirm !== true) return { status: 400, json: problem(400, 'Confirme o comando', 'validation') };
+    if (db.trackerConsole.some((c) => c.vehicleId === id && c.status === 'pending')) return { status: 409, json: problem(409, 'Já há um comando aguardando resposta', 'conflict') };
+    const cmd = {
+      id: `console-${db.trackerConsole.length + 1}`, vehicleId: id!, text, risk, status: 'pending', failReason: null,
+      response: null, statusReport: null, requestedById: 'staff-1', createdAt: now, respondedAt: null,
+    };
+    db.trackerConsole.unshift(cmd as never);
+    return ok(cmd, 202);
+  }
   if (method === 'GET' && p === '/vehicle-models') return ok({ items: db.models });
   if (method === 'POST' && p === '/vehicle-models') { const m = { ...db.models[0]!, ...b, id: `model-${db.models.length + 1}`, createdAt: now, updatedAt: now }; db.models.push(m as never); return ok(m, 201); }
   if (method === 'PATCH' && match(/^\/vehicle-models\/[^/]+$/)) { const m = find(db.models); if (!m) return notFound(); Object.assign(m, b); return ok(m); }

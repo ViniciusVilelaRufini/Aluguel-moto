@@ -5,6 +5,8 @@ import type { CommandFailureReason } from '../ports/iot-gateway.port';
 export const EV = {
   IOT_TELEMETRY: 'iot.telemetry',
   IOT_DEVICE_EVENT: 'iot.device-event',
+  /** Resposta/falha de um comando de console do rastreador (nunca vira alerta). */
+  TRACKER_CONSOLE_EVENT: 'tracker-console.event',
   IOT_COMMAND_UPDATED: 'iot.command-updated',
   IOT_CONNECTIVITY: 'iot.connectivity',
   /** `reported` do rastreador (status/heartbeat via ponte, eco de comando) ou lido do shadow (polling). */
@@ -137,6 +139,14 @@ export interface IotDeviceEvent {
   vehicleId: string;
   type: DeviceEventType;
   ts: string;
+}
+
+export interface TrackerConsoleEvent {
+  thingName: string;
+  comandoId: string;
+  kind: 'resposta' | 'falha';
+  texto?: string;
+  motivo?: 'offline' | 'timeout' | 'erro';
 }
 
 export interface IotCommandUpdatedEvent {

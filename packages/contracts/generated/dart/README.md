@@ -303,6 +303,11 @@ Class | Method | HTTP request | Description
 [*ReservationsApi*](doc/ReservationsApi.md) | [**createReservation**](doc/ReservationsApi.md#createreservation) | **POST** /reservations | Reservar moto
 [*ReservationsApi*](doc/ReservationsApi.md) | [**createTestHandover**](doc/ReservationsApi.md#createtesthandover) | **POST** /reservations/{id}/test-handover | Entrega simulada (só em ambiente de teste)
 [*ReservationsApi*](doc/ReservationsApi.md) | [**getCurrentReservation**](doc/ReservationsApi.md#getcurrentreservation) | **GET** /reservations/current | Reserva ativa do cliente
+[*SimCardsApi*](doc/SimCardsApi.md) | [**createSimCard**](doc/SimCardsApi.md#createsimcard) | **POST** /sim-cards | Cadastrar chip
+[*SimCardsApi*](doc/SimCardsApi.md) | [**listSimCards**](doc/SimCardsApi.md#listsimcards) | **GET** /sim-cards | Chips cadastrados
+[*SimCardsApi*](doc/SimCardsApi.md) | [**listTrackerConsoleCommands**](doc/SimCardsApi.md#listtrackerconsolecommands) | **GET** /vehicles/{id}/tracker-console | Histórico do console do rastreador
+[*SimCardsApi*](doc/SimCardsApi.md) | [**sendTrackerConsoleCommand**](doc/SimCardsApi.md#sendtrackerconsolecommand) | **POST** /vehicles/{id}/tracker-console | Enviar comando de texto ao rastreador
+[*SimCardsApi*](doc/SimCardsApi.md) | [**updateSimCard**](doc/SimCardsApi.md#updatesimcard) | **PATCH** /sim-cards/{id} | Atualizar chip
 [*StaffApi*](doc/StaffApi.md) | [**createStaffUser**](doc/StaffApi.md#createstaffuser) | **POST** /staff | Convidar usuário interno
 [*StaffApi*](doc/StaffApi.md) | [**getStaffUser**](doc/StaffApi.md#getstaffuser) | **GET** /staff/{id} | Detalhe do usuário interno
 [*StaffApi*](doc/StaffApi.md) | [**listStaffUsers**](doc/StaffApi.md#liststaffusers) | **GET** /staff | Usuários internos
@@ -417,6 +422,7 @@ Class | Method | HTTP request | Description
  - [CouponPage](doc/CouponPage.md)
  - [CouponValidation](doc/CouponValidation.md)
  - [CoverageItem](doc/CoverageItem.md)
+ - [CreateSimCardRequest](doc/CreateSimCardRequest.md)
  - [CurrentRental](doc/CurrentRental.md)
  - [CurrentReservation](doc/CurrentReservation.md)
  - [Customer](doc/Customer.md)
@@ -590,9 +596,14 @@ Class | Method | HTTP request | Description
  - [RevenueReport](doc/RevenueReport.md)
  - [RevenueRow](doc/RevenueRow.md)
  - [SendCommandRequest](doc/SendCommandRequest.md)
+ - [SendTrackerConsoleRequest](doc/SendTrackerConsoleRequest.md)
  - [ServiceUnlockRequest](doc/ServiceUnlockRequest.md)
  - [ServiceVehicleStatus](doc/ServiceVehicleStatus.md)
  - [SharedLocation](doc/SharedLocation.md)
+ - [SimCard](doc/SimCard.md)
+ - [SimCardList](doc/SimCardList.md)
+ - [SimCardStatus](doc/SimCardStatus.md)
+ - [SimCardSummary](doc/SimCardSummary.md)
  - [SpeedLimiterCheck](doc/SpeedLimiterCheck.md)
  - [StaffGroup](doc/StaffGroup.md)
  - [StaffUser](doc/StaffUser.md)
@@ -636,7 +647,14 @@ Class | Method | HTTP request | Description
  - [TopUpStatus](doc/TopUpStatus.md)
  - [Track](doc/Track.md)
  - [TrackPoint](doc/TrackPoint.md)
+ - [TrackerConsoleCommand](doc/TrackerConsoleCommand.md)
+ - [TrackerConsoleFailReason](doc/TrackerConsoleFailReason.md)
+ - [TrackerConsoleList](doc/TrackerConsoleList.md)
+ - [TrackerConsoleRisk](doc/TrackerConsoleRisk.md)
+ - [TrackerConsoleStatus](doc/TrackerConsoleStatus.md)
  - [TrackerControlMode](doc/TrackerControlMode.md)
+ - [TrackerStatusReport](doc/TrackerStatusReport.md)
+ - [UpdateSimCardRequest](doc/UpdateSimCardRequest.md)
  - [UploadContentType](doc/UploadContentType.md)
  - [UploadRequest](doc/UploadRequest.md)
  - [ValidationIssue](doc/ValidationIssue.md)

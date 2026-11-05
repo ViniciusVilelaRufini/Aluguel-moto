@@ -22,6 +22,7 @@ function iotMock(): jest.Mocked<IotGateway> {
     setSpeedLimit: jest.fn(ok),
     setStolenMode: jest.fn(ok),
     getLiveState: jest.fn().mockResolvedValue(null),
+    publishConsole: jest.fn().mockResolvedValue(undefined),
   };
 }
 

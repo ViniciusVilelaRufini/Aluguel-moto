@@ -20,8 +20,8 @@ Fonte da verdade da comunicação entre os rastreadores (GPS + 4G + relé/contro
 | Tópico | Sentido | QoS | Payload (schema) | Quando |
 |---|---|---|---|---|
 | `motos/{thingName}/telemetria` | rastreador → nuvem | 0 | [`telemetria.schema.json`](schemas/telemetria.schema.json) | a cada **5 s** destravada (em aluguel) ou em modo roubada; a cada **60 s** parada/travada; e logo ao conectar |
-| `motos/{thingName}/eventos` | rastreador → nuvem | 1 | [`eventos.schema.json`](schemas/eventos.schema.json) | na detecção: `queda`, `violacao`, `bateria_critica`, `movimento_sem_aluguel` |
-| `motos/{thingName}/comandos` | nuvem → rastreador | 1 | [`comandos.schema.json`](schemas/comandos.schema.json) | ações sem estado (hoje só `buzina`) |
+| `motos/{thingName}/eventos` | rastreador → nuvem | 1 | [`eventos.schema.json`](schemas/eventos.schema.json) | na detecção: `queda`, `violacao`, `bateria_critica`, `movimento_sem_aluguel`; e, vindos da ponte GT06, `console_resposta` (exige `comando_id`, `texto`) e `console_falha` (exige `comando_id`, `motivo`: `offline`, `timeout` ou `erro`) como desfecho de um comando de console |
+| `motos/{thingName}/comandos` | nuvem → rastreador | 1 | [`comandos.schema.json`](schemas/comandos.schema.json) | ações sem estado: `buzina` (`{ comando_id, acao }`) e `console` (`{ comando_id, acao: "console", texto }`, 1–100 caracteres, só rastreador `relay_only`; a ponte envia `texto` ao aparelho e devolve o desfecho em `eventos`, casado por `comando_id`) |
 | `$aws/things/{thingName}/shadow/update` | rastreador → shadow | 1 | [`shadow-update.schema.json`](schemas/shadow-update.schema.json) (só `state.reported`) | na conexão (reported completo), depois de aplicar um delta, ao travar, e a cada 1 s enquanto desacelera para um limite novo |
 | `$aws/things/{thingName}/shadow/update/accepted` | shadow → rastreador | 1 | documento aceito | resposta a cada update |
 | `$aws/things/{thingName}/shadow/update/rejected` | shadow → rastreador | 1 | `{ code, message }` | update inválido |
@@ -78,6 +78,7 @@ Um comando (`VehicleCommand`) é confirmado quando o `reported` alcança o `desi
 | `speed_limit` | `limite_kmh` | `reported.limite_kmh` igual | 30 s |
 | `stolen_mode` | `modo_roubada` | `reported.modo_roubada` igual | 30 s |
 | `horn` | `motos/{t}/comandos` `{ comando_id, acao: "buzina" }` | publicado com a moto online | offline → `failed`/`offline` |
+| console (`TrackerConsoleCommand`, não é `VehicleCommand`) | `motos/{t}/comandos` `{ comando_id, acao: "console", texto }` | evento `console_resposta` com o mesmo `comando_id` | `console_falha` (`offline`, `timeout`, `erro`); pendente há mais de 90 s → `failed`/`timeout` |
 
 A chamada à API espera até `IOT_CONFIRM_WAIT_MS` (3 s); depois disso responde `in_progress` e o desfecho chega por `iot.command-updated` (WebSocket `command.updated`). Moto offline → `pending`/`offline`; o prazo começa quando ela reconecta. Um comando novo sobre o mesmo campo substitui o anterior (que termina `failed`).
 

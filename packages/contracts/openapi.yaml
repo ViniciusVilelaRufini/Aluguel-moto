@@ -117,6 +117,8 @@ tags:
     description: Planos, cotação, cupons e taxas.
   - name: commands
     description: Comandos remotos à moto (bloquear, desbloquear, buzina, limitar velocidade, modo roubada).
+  - name: sim-cards
+    description: Chips (SIM) dos rastreadores e console de comandos de texto do rastreador (só admin).
   - name: payments
     description: Cartões tokenizados, pagamentos, cauções, estornos e assinaturas.
   - name: wallet
@@ -989,6 +991,149 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/VehicleCommand' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────────── chips e console do rastreador ─────────────────────────────
+  /sim-cards:
+    get:
+      tags: [sim-cards]
+      operationId: listSimCards
+      summary: Chips cadastrados
+      description: Ordenados do mais recente ao mais antigo. `vehicleId`/`vehicleCode` = moto do rastreador ao qual o chip está vinculado.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, suporte]
+      parameters:
+        - name: q
+          in: query
+          description: Busca parcial em ICCID e número da linha.
+          schema: { type: string, minLength: 1, maxLength: 40 }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/SimCardStatus' }
+        - name: unlinked
+          in: query
+          description: '`true` = só chips sem rastreador.'
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: Chips.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimCardList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [sim-cards]
+      operationId: createSimCard
+      summary: Cadastrar chip
+      description: |
+        Com `vehicleId`, vincula o chip ao rastreador da moto. `409` se o ICCID já existe, se a moto não tem rastreador ou
+        se o rastreador já tem outro chip.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSimCardRequest' }
+      responses:
+        '201':
+          description: Chip criado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimCard' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /sim-cards/{id}:
+    patch:
+      tags: [sim-cards]
+      operationId: updateSimCard
+      summary: Atualizar chip
+      description: |
+        `vehicleId: null` desvincula do rastreador; um `vehicleId` vincula (ou move) ao rastreador da moto. `409` se o ICCID
+        já existe, se a moto não tem rastreador, se o rastreador já tem outro chip ou se o chip já está vinculado a outro rastreador.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSimCardRequest' }
+      responses:
+        '200':
+          description: Chip atualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SimCard' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /vehicles/{id}/tracker-console:
+    post:
+      tags: [sim-cards]
+      operationId: sendTrackerConsoleCommand
+      summary: Enviar comando de texto ao rastreador
+      description: |
+        Console do rastreador J16 (GT06), só `admin`. O texto tem de 1 a 100 caracteres, casa com
+        `^[A-Za-z0-9,.\-_:]{1,99}#$` e não pode ser `GMT`, `FACTORY`, `FORMAT`, `PWD` nem `PASSWORD`. Risco: `read` = sem
+        vírgula e diferente de `RESET`; `connection` = `RESET`, ou `APN`/`SERVER` com vírgula; `change` = os demais com
+        vírgula. `change` e `connection` exigem `confirm: true` (senão `400`). A resposta é `202` com o comando em `pending`;
+        o resultado chega pelo histórico (`GET`). Um comando `pending` por moto (outro → `409`); pendente há mais de 90 s
+        vira `failed`/`timeout`. Rastreador que não é `relay_only` ou moto sem rastreador → `409`. Os argumentos mantêm a caixa.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendTrackerConsoleRequest' }
+      responses:
+        '202':
+          description: Comando aceito (`pending`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrackerConsoleCommand' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    get:
+      tags: [sim-cards]
+      operationId: listTrackerConsoleCommands
+      summary: Histórico do console do rastreador
+      description: Mais recentes primeiro. Expira em 90 dias (LGPD).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: Comandos do console.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrackerConsoleList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -6295,6 +6440,11 @@ components:
             ligada. Ausente = desconhecido (sem status nos últimos 3 min, ou rastreador que não informa). Para cliente, vem
             só junto com a posição visível (mesma regra de `positionAt`; nunca com `locationHidden`).
         currentRentalId: { type: string, format: uuid, description: staff. }
+        simCard:
+          oneOf:
+            - { $ref: '#/components/schemas/SimCardSummary' }
+            - { type: 'null' }
+          description: staff. Chip do rastreador da moto; `null` = sem chip vinculado.
         vehicleModelId: { type: string, format: uuid }
         categoryLabel: { type: string, examples: [Urbana] }
         pricePerMinuteCents: { type: integer, minimum: 0, examples: [79] }
@@ -6423,6 +6573,120 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         confirmedAt: { type: string, format: date-time }
+    SimCardStatus:
+      type: string
+      enum: [active, suspended, cancelled]
+    SimCard:
+      type: object
+      required: [id, iccid, msisdn, carrier, apn, status, notes, vehicleId, vehicleCode, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        iccid: { type: string, pattern: '^[0-9]{18,22}$', examples: ['8955170110123456789'] }
+        msisdn: { type: [string, 'null'], pattern: '^\+?[0-9]{10,15}$', description: Número da linha., examples: ['+5511999998888'] }
+        carrier: { type: string, minLength: 1, maxLength: 40, examples: [Algar] }
+        apn: { type: [string, 'null'], minLength: 1, maxLength: 100, examples: [indica.algar.br] }
+        status: { $ref: '#/components/schemas/SimCardStatus' }
+        notes: { type: [string, 'null'], maxLength: 500 }
+        vehicleId: { type: [string, 'null'], format: uuid, description: Moto do rastreador vinculado. }
+        vehicleCode: { type: [string, 'null'], examples: [VLT-0001] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SimCardSummary:
+      type: object
+      required: [id, iccid, msisdn, carrier, apn, status]
+      properties:
+        id: { type: string, format: uuid }
+        iccid: { type: string, pattern: '^[0-9]{18,22}$' }
+        msisdn: { type: [string, 'null'], pattern: '^\+?[0-9]{10,15}$' }
+        carrier: { type: string, minLength: 1, maxLength: 40 }
+        apn: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        status: { $ref: '#/components/schemas/SimCardStatus' }
+    CreateSimCardRequest:
+      type: object
+      required: [iccid, carrier]
+      properties:
+        iccid: { type: string, pattern: '^[0-9]{18,22}$' }
+        msisdn: { type: [string, 'null'], pattern: '^\+?[0-9]{10,15}$' }
+        carrier: { type: string, minLength: 1, maxLength: 40 }
+        apn: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        status: { $ref: '#/components/schemas/SimCardStatus' }
+        notes: { type: [string, 'null'], maxLength: 500 }
+        vehicleId: { type: [string, 'null'], format: uuid, description: Vincula o chip ao rastreador desta moto. }
+    UpdateSimCardRequest:
+      type: object
+      description: 'Todos os campos são opcionais. `vehicleId: null` desvincula.'
+      properties:
+        iccid: { type: string, pattern: '^[0-9]{18,22}$' }
+        msisdn: { type: [string, 'null'], pattern: '^\+?[0-9]{10,15}$' }
+        carrier: { type: string, minLength: 1, maxLength: 40 }
+        apn: { type: [string, 'null'], minLength: 1, maxLength: 100 }
+        status: { $ref: '#/components/schemas/SimCardStatus' }
+        notes: { type: [string, 'null'], maxLength: 500 }
+        vehicleId: { type: [string, 'null'], format: uuid }
+    SimCardList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SimCard' }
+    TrackerConsoleRisk:
+      type: string
+      enum: [read, change, connection]
+    TrackerConsoleStatus:
+      type: string
+      enum: [pending, answered, failed]
+    TrackerConsoleFailReason:
+      type: string
+      enum: [offline, timeout, error]
+    TrackerStatusReport:
+      type: object
+      description: Resposta de `STATUS#` decodificada.
+      required: [batteryVolts, externalVolts, gprsOnline, acc, gpsOn, relay, sleep, csq]
+      properties:
+        batteryVolts: { type: [number, 'null'], format: double }
+        externalVolts: { type: [number, 'null'], format: double }
+        gprsOnline: { type: [boolean, 'null'] }
+        acc: { type: [boolean, 'null'] }
+        gpsOn: { type: [boolean, 'null'] }
+        relay: { type: [boolean, 'null'] }
+        sleep: { type: [boolean, 'null'] }
+        csq: { type: [integer, 'null'] }
+    TrackerConsoleCommand:
+      type: object
+      required: [id, vehicleId, text, risk, status, failReason, response, statusReport, requestedById, createdAt, respondedAt]
+      properties:
+        id: { type: string, format: uuid }
+        vehicleId: { type: string, format: uuid }
+        text: { type: string, minLength: 1, maxLength: 100, examples: ['STATUS#'] }
+        risk: { $ref: '#/components/schemas/TrackerConsoleRisk' }
+        status: { $ref: '#/components/schemas/TrackerConsoleStatus' }
+        failReason:
+          oneOf:
+            - { $ref: '#/components/schemas/TrackerConsoleFailReason' }
+            - { type: 'null' }
+        response: { type: [string, 'null'], description: Texto bruto devolvido pelo rastreador. }
+        statusReport:
+          oneOf:
+            - { $ref: '#/components/schemas/TrackerStatusReport' }
+            - { type: 'null' }
+          description: Só quando a resposta é de `STATUS#`.
+        requestedById: { type: string }
+        createdAt: { type: string, format: date-time }
+        respondedAt: { type: [string, 'null'], format: date-time }
+    SendTrackerConsoleRequest:
+      type: object
+      required: [text]
+      properties:
+        text: { type: string, minLength: 1, maxLength: 100, examples: ['STATUS#'] }
+        confirm: { type: boolean, description: 'Obrigatório (`true`) para risco `change` e `connection`.' }
+    TrackerConsoleList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrackerConsoleCommand' }
     VehicleCommandPage:
       type: object
       required: [items]

@@ -598,6 +598,7 @@ model Vehicle {
   fieldTasks   FieldTask[]
   maintenance  MaintenanceTask[]
   handovers    Handover[]
+  consoleCommands TrackerConsoleCommand[]
 
   @@index([status])
   @@index([depotId, status])
@@ -618,6 +619,58 @@ model Tracker {
   protocol        String?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
+  simCard         SimCard?
+  consoleCommands TrackerConsoleCommand[]
+}
+
+enum SimCardStatus {
+  active
+  suspended
+  cancelled
+}
+
+/// Chip (SIM) do rastreador. Vinculado a no máximo um rastreador (`trackerId` único); CHECK do ICCID na migração.
+model SimCard {
+  id        String        @id @default(uuid()) @db.Uuid
+  iccid     String        @unique
+  msisdn    String?
+  carrier   String
+  apn       String?
+  status    SimCardStatus @default(active)
+  notes     String?
+  trackerId String?       @unique @db.Uuid
+  tracker   Tracker?      @relation(fields: [trackerId], references: [id])
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+enum TrackerConsoleStatus {
+  pending
+  answered
+  failed
+}
+
+/// Comando de texto do console do rastreador (GT06). `text`/`response` são dados operacionais; expiram em 90 dias (job de housekeeping).
+model TrackerConsoleCommand {
+  id            String               @id @default(uuid()) @db.Uuid
+  vehicleId     String               @db.Uuid
+  vehicle       Vehicle              @relation(fields: [vehicleId], references: [id])
+  trackerId     String               @db.Uuid
+  tracker       Tracker              @relation(fields: [trackerId], references: [id])
+  thingName     String
+  text          String
+  /// `read` | `change` | `connection`.
+  risk          String
+  status        TrackerConsoleStatus @default(pending)
+  /// `offline` | `timeout` | `error`.
+  failReason    String?
+  response      String?
+  requestedById String
+  createdAt     DateTime             @default(now())
+  respondedAt   DateTime?
+
+  @@index([vehicleId, createdAt])
+  @@index([createdAt])
 }
 
 model Battery {

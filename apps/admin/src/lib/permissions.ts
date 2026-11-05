@@ -91,9 +91,13 @@ export type Action =
   | 'counter.checkout'
   | 'handover.create'
   | 'handover.createWithoutCode'
-  | 'counter.settle';
+  | 'counter.settle'
+  | 'simCard.manage'
+  | 'trackerConsole.use';
 
 const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
+  'simCard.manage': ['admin'], // POST/PATCH /sim-cards
+  'trackerConsole.use': ['admin'], // POST/GET /vehicles/{id}/tracker-console
   'vehicle.command': ['admin', 'operacao'],
   'vehicle.status': ['admin', 'operacao'],
   'zone.edit': ['admin', 'operacao'],

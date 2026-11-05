@@ -20,10 +20,7 @@ export interface ReportedState {
 }
 
 /** Comando momentâneo em `motos/{thingName}/comandos`. */
-export interface MomentaryCommand {
-  comando_id: string;
-  acao: 'buzina';
-}
+export type MomentaryCommand = { comando_id: string; acao: 'buzina' } | { comando_id: string; acao: 'console'; texto: string };
 
 /**
  * Porta interna do módulo IoT: como o servidor fala com o rastreador.

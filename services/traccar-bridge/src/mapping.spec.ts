@@ -312,6 +312,16 @@ describe('A4-1: comando de motor enviado invalida o bit de corte anterior', () =
     expect(after.memory).toMatchObject({ pendingCommand: undefined, commandAckAt: undefined });
   });
 
+  it('I2: com comando de console pendente, resposta sem estado do relé não é ack do comando de motor; RELAY n OK continua sendo', () => {
+    const sent = markCommandSent(lockedNow, NOW + 1_000, 'stop');
+    const text = applyPosition(ack(NOW + 1_500), sent, '72v', NOW + 1_500, { consolePending: true });
+    expect(text.memory.commandAckAt).toBeUndefined();
+    expect(text.memory.pendingCommand).toBe('stop');
+    const relay = applyPosition({ ...ack(NOW + 1_600), attributes: { result: 'Stop engine Succeed RELAY 1 OK' } }, text.memory, '72v', NOW + 1_600, { consolePending: true });
+    expect(relay.relayReply).toBe(true);
+    expect(currentBlocked(relay.memory)).toBe(true);
+  });
+
   it('resposta anterior ao envio (de outro comando) não conta como ack', () => {
     const sent = markCommandSent(lockedNow, NOW + 1_000, 'stop');
     const old = AP(ack(NOW + 900), sent, NOW + 1_200);

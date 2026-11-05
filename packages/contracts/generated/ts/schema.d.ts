@@ -570,6 +570,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sim-cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chips cadastrados
+         * @description Ordenados do mais recente ao mais antigo. `vehicleId`/`vehicleCode` = moto do rastreador ao qual o chip está vinculado.
+         */
+        get: operations["listSimCards"];
+        put?: never;
+        /**
+         * Cadastrar chip
+         * @description Com `vehicleId`, vincula o chip ao rastreador da moto. `409` se o ICCID já existe, se a moto não tem rastreador ou
+         *     se o rastreador já tem outro chip.
+         */
+        post: operations["createSimCard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/sim-cards/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Atualizar chip
+         * @description `vehicleId: null` desvincula do rastreador; um `vehicleId` vincula (ou move) ao rastreador da moto. `409` se o ICCID
+         *     já existe, se a moto não tem rastreador, se o rastreador já tem outro chip ou se o chip já está vinculado a outro rastreador.
+         */
+        patch: operations["updateSimCard"];
+        trace?: never;
+    };
+    "/vehicles/{id}/tracker-console": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Histórico do console do rastreador
+         * @description Mais recentes primeiro. Expira em 90 dias (LGPD).
+         */
+        get: operations["listTrackerConsoleCommands"];
+        put?: never;
+        /**
+         * Enviar comando de texto ao rastreador
+         * @description Console do rastreador J16 (GT06), só `admin`. O texto tem de 1 a 100 caracteres, casa com
+         *     `^[A-Za-z0-9,.\-_:]{1,99}#$` e não pode ser `GMT`, `FACTORY`, `FORMAT`, `PWD` nem `PASSWORD`. Risco: `read` = sem
+         *     vírgula e diferente de `RESET`; `connection` = `RESET`, ou `APN`/`SERVER` com vírgula; `change` = os demais com
+         *     vírgula. `change` e `connection` exigem `confirm: true` (senão `400`). A resposta é `202` com o comando em `pending`;
+         *     o resultado chega pelo histórico (`GET`). Um comando `pending` por moto (outro → `409`); pendente há mais de 90 s
+         *     vira `failed`/`timeout`. Rastreador que não é `relay_only` ou moto sem rastreador → `409`. Os argumentos mantêm a caixa.
+         */
+        post: operations["sendTrackerConsoleCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vehicle-models": {
         parameters: {
             query?: never;
@@ -4193,6 +4268,8 @@ export interface components {
              * @description staff.
              */
             currentRentalId?: string;
+            /** @description staff. Chip do rastreador da moto; `null` = sem chip vinculado. */
+            simCard?: components["schemas"]["SimCardSummary"] | null;
             /** Format: uuid */
             vehicleModelId?: string;
             /** @example Urbana */
@@ -4353,6 +4430,120 @@ export interface components {
             updatedAt: string;
             /** Format: date-time */
             confirmedAt?: string;
+        };
+        /** @enum {string} */
+        SimCardStatus: "active" | "suspended" | "cancelled";
+        SimCard: {
+            /** Format: uuid */
+            id: string;
+            /** @example 8955170110123456789 */
+            iccid: string;
+            /**
+             * @description Número da linha.
+             * @example +5511999998888
+             */
+            msisdn: string | null;
+            /** @example Algar */
+            carrier: string;
+            /** @example indica.algar.br */
+            apn: string | null;
+            status: components["schemas"]["SimCardStatus"];
+            notes: string | null;
+            /**
+             * Format: uuid
+             * @description Moto do rastreador vinculado.
+             */
+            vehicleId: string | null;
+            /** @example VLT-0001 */
+            vehicleCode: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        SimCardSummary: {
+            /** Format: uuid */
+            id: string;
+            iccid: string;
+            msisdn: string | null;
+            carrier: string;
+            apn: string | null;
+            status: components["schemas"]["SimCardStatus"];
+        };
+        CreateSimCardRequest: {
+            iccid: string;
+            msisdn?: string | null;
+            carrier: string;
+            apn?: string | null;
+            status?: components["schemas"]["SimCardStatus"];
+            notes?: string | null;
+            /**
+             * Format: uuid
+             * @description Vincula o chip ao rastreador desta moto.
+             */
+            vehicleId?: string | null;
+        };
+        /** @description Todos os campos são opcionais. `vehicleId: null` desvincula. */
+        UpdateSimCardRequest: {
+            iccid?: string;
+            msisdn?: string | null;
+            carrier?: string;
+            apn?: string | null;
+            status?: components["schemas"]["SimCardStatus"];
+            notes?: string | null;
+            /** Format: uuid */
+            vehicleId?: string | null;
+        };
+        SimCardList: {
+            items: components["schemas"]["SimCard"][];
+        };
+        /** @enum {string} */
+        TrackerConsoleRisk: "read" | "change" | "connection";
+        /** @enum {string} */
+        TrackerConsoleStatus: "pending" | "answered" | "failed";
+        /** @enum {string} */
+        TrackerConsoleFailReason: "offline" | "timeout" | "error";
+        /** @description Resposta de `STATUS#` decodificada. */
+        TrackerStatusReport: {
+            /** Format: double */
+            batteryVolts: number | null;
+            /** Format: double */
+            externalVolts: number | null;
+            gprsOnline: boolean | null;
+            acc: boolean | null;
+            gpsOn: boolean | null;
+            relay: boolean | null;
+            sleep: boolean | null;
+            csq: number | null;
+        };
+        TrackerConsoleCommand: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            vehicleId: string;
+            /** @example STATUS# */
+            text: string;
+            risk: components["schemas"]["TrackerConsoleRisk"];
+            status: components["schemas"]["TrackerConsoleStatus"];
+            failReason: components["schemas"]["TrackerConsoleFailReason"] | null;
+            /** @description Texto bruto devolvido pelo rastreador. */
+            response: string | null;
+            /** @description Só quando a resposta é de `STATUS#`. */
+            statusReport: components["schemas"]["TrackerStatusReport"] | null;
+            requestedById: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            respondedAt: string | null;
+        };
+        SendTrackerConsoleRequest: {
+            /** @example STATUS# */
+            text: string;
+            /** @description Obrigatório (`true`) para risco `change` e `connection`. */
+            confirm?: boolean;
+        };
+        TrackerConsoleList: {
+            items: components["schemas"]["TrackerConsoleCommand"][];
         };
         VehicleCommandPage: {
             items: components["schemas"]["VehicleCommand"][];
@@ -8075,6 +8266,154 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listSimCards: {
+        parameters: {
+            query?: {
+                /** @description Busca parcial em ICCID e número da linha. */
+                q?: string;
+                status?: components["schemas"]["SimCardStatus"];
+                /** @description `true` = só chips sem rastreador. */
+                unlinked?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chips. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimCardList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createSimCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSimCardRequest"];
+            };
+        };
+        responses: {
+            /** @description Chip criado. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimCard"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    updateSimCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSimCardRequest"];
+            };
+        };
+        responses: {
+            /** @description Chip atualizado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SimCard"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listTrackerConsoleCommands: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Comandos do console. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackerConsoleList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    sendTrackerConsoleCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SendTrackerConsoleRequest"];
+            };
+        };
+        responses: {
+            /** @description Comando aceito (`pending`). */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackerConsoleCommand"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listVehicleModels: {

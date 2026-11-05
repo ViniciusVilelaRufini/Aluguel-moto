@@ -217,6 +217,7 @@ export function applyPosition(
   mem: DeviceMemory,
   battery: BatteryModel,
   now: number = Date.now(),
+  opts: { consolePending?: boolean } = {},
 ): {
   telemetry: TelemetryMessage | null;
   invalid: boolean;
@@ -235,10 +236,11 @@ export function applyPosition(
   const result = typeof a.result === 'string' ? a.result : undefined;
   const relay = result === undefined ? undefined : parseRelayReply(result);
   // P2: resposta do aparelho ao comando pendente (o Traccar a entrega como posição com `attributes.result`). Resposta com o
-  // estado do relé que não é a do comando pendente não conta como ack.
+  // estado do relé que não é a do comando pendente não conta como ack. I2: com comando de console pendente
+  // (`opts.consolePending`), resposta sem o estado do relé pode ser do console e também não conta.
   if (
     next.pendingCommand && result !== undefined && next.commandSentAt !== undefined && at > next.commandSentAt && next.commandAckAt === undefined &&
-    (relay === undefined || relayReplyAccepted(next, at, relay))
+    (relay === undefined ? !opts.consolePending : relayReplyAccepted(next, at, relay))
   ) {
     next.commandAckAt = at;
   }

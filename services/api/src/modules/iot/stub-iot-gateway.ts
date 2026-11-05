@@ -55,6 +55,8 @@ export class StubIotGateway implements IotGateway {
     return this.ok(req);
   }
 
+  async publishConsole(_thingName: string, _commandId: string, _text: string): Promise<void> {}
+
   async getLiveState(thingName: string): Promise<VehicleLiveState | null> {
     const live = this.live.get(thingName);
     if (!live) return null;

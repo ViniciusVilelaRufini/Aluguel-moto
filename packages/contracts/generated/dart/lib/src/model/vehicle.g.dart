@@ -62,6 +62,8 @@ class _$Vehicle extends Vehicle {
   @override
   final String? currentRentalId;
   @override
+  final SimCardSummary? simCard;
+  @override
   final String? vehicleModelId;
   @override
   final String? categoryLabel;
@@ -121,6 +123,7 @@ class _$Vehicle extends Vehicle {
       this.gpsSatellites,
       this.gpsSleep,
       this.currentRentalId,
+      this.simCard,
       this.vehicleModelId,
       this.categoryLabel,
       this.pricePerMinuteCents,
@@ -174,6 +177,7 @@ class _$Vehicle extends Vehicle {
         gpsSatellites == other.gpsSatellites &&
         gpsSleep == other.gpsSleep &&
         currentRentalId == other.currentRentalId &&
+        simCard == other.simCard &&
         vehicleModelId == other.vehicleModelId &&
         categoryLabel == other.categoryLabel &&
         pricePerMinuteCents == other.pricePerMinuteCents &&
@@ -220,6 +224,7 @@ class _$Vehicle extends Vehicle {
     _$hash = $jc(_$hash, gpsSatellites.hashCode);
     _$hash = $jc(_$hash, gpsSleep.hashCode);
     _$hash = $jc(_$hash, currentRentalId.hashCode);
+    _$hash = $jc(_$hash, simCard.hashCode);
     _$hash = $jc(_$hash, vehicleModelId.hashCode);
     _$hash = $jc(_$hash, categoryLabel.hashCode);
     _$hash = $jc(_$hash, pricePerMinuteCents.hashCode);
@@ -268,6 +273,7 @@ class _$Vehicle extends Vehicle {
           ..add('gpsSatellites', gpsSatellites)
           ..add('gpsSleep', gpsSleep)
           ..add('currentRentalId', currentRentalId)
+          ..add('simCard', simCard)
           ..add('vehicleModelId', vehicleModelId)
           ..add('categoryLabel', categoryLabel)
           ..add('pricePerMinuteCents', pricePerMinuteCents)
@@ -404,6 +410,11 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
   set currentRentalId(String? currentRentalId) =>
       _$this._currentRentalId = currentRentalId;
 
+  SimCardSummaryBuilder? _simCard;
+  SimCardSummaryBuilder get simCard =>
+      _$this._simCard ??= SimCardSummaryBuilder();
+  set simCard(SimCardSummaryBuilder? simCard) => _$this._simCard = simCard;
+
   String? _vehicleModelId;
   String? get vehicleModelId => _$this._vehicleModelId;
   set vehicleModelId(String? vehicleModelId) =>
@@ -501,6 +512,7 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
       _gpsSatellites = $v.gpsSatellites;
       _gpsSleep = $v.gpsSleep;
       _currentRentalId = $v.currentRentalId;
+      _simCard = $v.simCard?.toBuilder();
       _vehicleModelId = $v.vehicleModelId;
       _categoryLabel = $v.categoryLabel;
       _pricePerMinuteCents = $v.pricePerMinuteCents;
@@ -571,6 +583,7 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
             gpsSatellites: gpsSatellites,
             gpsSleep: gpsSleep,
             currentRentalId: currentRentalId,
+            simCard: _simCard?.build(),
             vehicleModelId: vehicleModelId,
             categoryLabel: categoryLabel,
             pricePerMinuteCents: pricePerMinuteCents,
@@ -589,6 +602,9 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
     } catch (_) {
       late String _$failedField;
       try {
+        _$failedField = 'simCard';
+        _simCard?.build();
+
         _$failedField = 'service';
         _service?.build();
         _$failedField = 'battery';

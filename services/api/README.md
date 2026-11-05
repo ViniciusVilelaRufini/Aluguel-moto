@@ -387,6 +387,27 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - `GET /customers` traz `stats` por cliente (lote). `GET /customers/{id}/kyc-files` (`admin`, `suporte`): links pré-assinados de 5 min do documento e da selfie (só chaves `kyc/{id}/`), AuditLog `customer.kyc_files_view` sem as chaves.
 - `Vehicle.positionAt`: hora da medição da posição (também da sobreposição do Redis). Para cliente, só junto com a posição visível (devolução sem GPS, 2026-11-04); `GET /vehicles/by-code/{code}` usa o estado ao vivo do Redis como o `GET /vehicles/{id}`. `FieldTask.vehicleBatteryPct` ausente e `Battery.chargeKnown: false` quando a moto não tem leitura de bateria. `GET /field-tasks?active=true&completedSince=`.
 
+## Chips do rastreador (`src/modules/sim-cards`, `docs/decisoes.md` 2026-11-05)
+
+- `GET /sim-cards` (`admin`, `operacao`, `suporte`; filtros `q` em ICCID/linha, `status`, `unlinked`), `POST /sim-cards` e `PATCH /sim-cards/{id}` (`admin`).
+- `vehicleId` no corpo = "o `Tracker` cuja `vehicleId` é esta". Vínculo e desvínculo (`vehicleId: null`) são feitos em transação; `SimCard.trackerId` é único.
+- `409 conflict`: ICCID repetido (P2002), moto sem rastreador, rastreador que já tem outro chip, chip já vinculado a outro rastreador (desvincule antes de mover). `404`: chip ou moto inexistente.
+- `Vehicle.simCard` (`SimCardSummary | null`) vem só para staff, lido de `tracker.simCard` em `VehiclesService.enrich()`.
+- Auditoria `sim_card.create`/`sim_card.update` sem ICCID nem número da linha (dado pessoal indireto).
+- `dev-reset-bench` desvincula os chips dos rastreadores apagados (o chip fica no estoque) e apaga o console das motos apagadas.
+
+## Console do rastreador (`src/modules/tracker-console`, `docs/decisoes.md` 2026-11-05)
+
+- `POST /vehicles/{id}/tracker-console` (`202`, só `admin`) e `GET` (histórico, `limit` 1-50, mais recentes primeiro). Só rastreador `relay_only` com IMEI; senão `409`.
+- Política (`console-policy.ts`, ALLOWLIST): `^[A-Za-z0-9,.\-_:]{1,99}#$`; `STATUS`/`PARAM`/`WHERE`/`VERSION`/`GPRSSET` só sem vírgula e `APN`/`SERVER`/`TIMER` sem vírgula = `read`; `TIMER,<5–60>,<10–3600>#` = `change` (outros argumentos → "Intervalos permitidos: 5–60 s em movimento e 10–3600 s parado."); `APN`/`SERVER` com vírgula e `RESET#` = `connection` (os dois últimos exigem `confirm: true`). Todo o resto → `400` "Comando não permitido pelo console."; `RELAY`/`DYD`/`HFYD`/`STOP`/`RESUME` → "Use Bloquear/Desbloquear da ficha da moto." (o console nunca corta nem libera o relé). Os argumentos mantêm a caixa.
+- Fluxo: grava `TrackerConsoleCommand` `pending`, publica `{comando_id, acao:'console', texto}` (`IotGateway.publishConsole`); a ponte responde com `console_resposta`/`console_falha` em `eventos`; `TelemetryService.deviceEvent` emite `EV.TRACKER_CONSOLE_EVENT` (nunca `iot.device-event`, sem alerta) e o service casa pelo `comando_id` + `thingName` (só se ainda `pending`). Resposta guardada truncada em 1000 caracteres.
+- Um `pending` por moto (outro envio → `409`; serializado por `pg_advisory_xact_lock` via `$queryRaw`); pendente há mais de 90 s vira `failed`/`timeout`, avaliado ao enviar e ao listar (sem cron).
+- `409` com bloqueio/desbloqueio (`VehicleCommand` `lock`/`unlock` `pending`/`in_progress` criado há até 5 min) em andamento; `409` para `change`/`connection` com aluguel aberto ou reserva em uso (leitura liberada).
+- `console_falha` vem da ponte: não é sinal de vida (sem `noteHeard`/reconexão em `TelemetryService`); só `console_resposta` conta.
+- `statusReport` (`status-report.ts`) só quando o texto é `STATUS#` e a resposta é reconhecida.
+- Auditoria `tracker_console.send` com `{risk, keyword}`, sem o texto. Logs só com ids/`thingName`/`risk`/`kind`, nunca texto nem resposta.
+- Housekeeping diário apaga `TrackerConsoleCommand` com mais de 90 dias (lotes de 5000).
+
 ## Regras que nunca mudam
 
 - Nenhum `speedLimitKmh` fora de 0..32 é aceito (DTO → 400 `speed-limit-out-of-range`; serviço de comandos revalida; `CHECK` no banco).

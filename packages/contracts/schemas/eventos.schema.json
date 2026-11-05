@@ -9,10 +9,21 @@
   "properties": {
     "tipo": {
       "type": "string",
-      "enum": ["queda", "violacao", "bateria_critica", "movimento_sem_aluguel"],
-      "description": "queda: acelerômetro detectou tombo; violacao: abertura do rastreador/corte de alimentação; bateria_critica: bateria de tração abaixo do limite; movimento_sem_aluguel: deslocamento com a moto travada"
+      "enum": ["queda", "violacao", "bateria_critica", "movimento_sem_aluguel", "console_resposta", "console_falha"],
+      "description": "queda: acelerômetro detectou tombo; violacao: abertura do rastreador/corte de alimentação; bateria_critica: bateria de tração abaixo do limite; movimento_sem_aluguel: deslocamento com a moto travada; console_resposta: resposta do aparelho a um comando de console; console_falha: o comando de console não foi entregue ou não teve resposta"
     },
-    "timestamp": { "type": "string", "format": "date-time" }
+    "timestamp": { "type": "string", "format": "date-time" },
+    "comando_id": { "type": "string", "format": "uuid", "description": "TrackerConsoleCommand.id (console_resposta e console_falha)" },
+    "texto": { "type": "string", "description": "Resposta bruta do aparelho (console_resposta)" },
+    "motivo": { "type": "string", "enum": ["offline", "timeout", "erro"], "description": "Motivo da falha (console_falha): offline = aparelho sem conexão (nada fica na fila); timeout = sem resposta no prazo; erro = falha ao enviar" }
   },
-  "examples": [{ "tipo": "queda", "timestamp": "2026-10-21T15:00:00.000Z" }]
+  "allOf": [
+    { "if": { "properties": { "tipo": { "const": "console_resposta" } }, "required": ["tipo"] }, "then": { "required": ["comando_id", "texto"] } },
+    { "if": { "properties": { "tipo": { "const": "console_falha" } }, "required": ["tipo"] }, "then": { "required": ["comando_id", "motivo"] } }
+  ],
+  "examples": [
+    { "tipo": "queda", "timestamp": "2026-10-21T15:00:00.000Z" },
+    { "tipo": "console_resposta", "timestamp": "2026-11-05T12:00:00.000Z", "comando_id": "6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a11", "texto": "STATUS#" },
+    { "tipo": "console_falha", "timestamp": "2026-11-05T12:00:00.000Z", "comando_id": "6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a11", "motivo": "offline" }
+  ]
 }

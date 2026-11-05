@@ -1,6 +1,8 @@
-import type { DeviceEventType } from '../../common/events';
+import type { DeviceEventType, TrackerConsoleEvent } from '../../common/events';
 import { MAX_SPEED_KMH } from '../../common/enums';
 import type { ReportedState } from './shadow-transport';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Contrato MQTT (`packages/contracts/mqtt.md` e `packages/contracts/schemas/*.schema.json`).
@@ -97,6 +99,18 @@ export function parseTelemetry(raw: unknown): TelemetryMessage | null {
     ...(hasSatellites ? { satelites: satelites as number } : {}),
   };
 }
+
+/** `console_resposta` / `console_falha` (resposta do aparelho a um comando de console). `null` se não for um desses ou estiver inválido. */
+export function parseConsoleEvent(raw: unknown): Omit<TrackerConsoleEvent, 'thingName'> | null {
+  if (!isObj(raw)) return null;
+  const { tipo, timestamp, comando_id, texto, motivo } = raw;
+  if (!isIso(timestamp) || typeof comando_id !== 'string' || !UUID_RE.test(comando_id)) return null;
+  if (tipo === 'console_resposta') return typeof texto === 'string' ? { comandoId: comando_id, kind: 'resposta', texto } : null;
+  if (tipo === 'console_falha') return motivo === 'offline' || motivo === 'timeout' || motivo === 'erro' ? { comandoId: comando_id, kind: 'falha', motivo } : null;
+  return null;
+}
+
+export const isConsoleEventType = (tipo: unknown): boolean => tipo === 'console_resposta' || tipo === 'console_falha';
 
 export function parseDeviceEvent(raw: unknown): DeviceEventMessage | null {
   if (!isObj(raw)) return null;

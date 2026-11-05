@@ -13,6 +13,8 @@ import { AuditController } from './modules/audit/audit.controller';
 import { AuthGuard } from './modules/auth/auth.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { CommandsModule } from './modules/commands/commands.module';
+import { SimCardsModule } from './modules/sim-cards/sim-cards.module';
+import { TrackerConsoleModule } from './modules/tracker-console/tracker-console.module';
 import { CustomersController } from './modules/customers/customers.controller';
 import { FieldTasksModule } from './modules/field-tasks/field-tasks.module';
 import { HealthController } from './modules/health/health.controller';
@@ -69,6 +71,8 @@ import { HousekeepingModule } from './modules/housekeeping/housekeeping.module';
     // Domínio.
     AuthModule.register(),
     CommandsModule,
+    SimCardsModule,
+    TrackerConsoleModule,
     VehiclesModule,
     ZonesModule,
     PricingModule,

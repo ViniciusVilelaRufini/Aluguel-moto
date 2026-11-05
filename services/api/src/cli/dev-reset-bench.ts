@@ -194,6 +194,8 @@ export const RESET_STEPS: readonly ResetStep[] = [
   // ── frota ──
   { model: 'MaintenanceTask', action: 'delete', where: (c) => ({ vehicleId: { not: c.keepVehicleId } }), note: 'manutenções das motos apagadas' },
   { model: 'VehicleCommand', action: 'delete', where: (c) => ({ vehicleId: { not: c.keepVehicleId } }), note: 'comandos das motos apagadas (o histórico da bancada fica)' },
+  { model: 'TrackerConsoleCommand', action: 'delete', where: (c) => ({ vehicleId: { not: c.keepVehicleId } }), note: 'console do rastreador das motos apagadas (FK restrita; o da bancada fica)' },
+  { model: 'SimCard', action: 'update', where: (c) => ({ tracker: { is: { AND: [otherVehicle('vehicleId')(c), NOT_GT06] } } }), data: { trackerId: null }, note: 'chips dos rastreadores apagados voltam ao estoque (o chip em si fica)' },
   { model: 'BatteryMovement', action: 'delete', where: (c) => ({ batteryId: { in: c.batteryIds } }), note: 'histórico das baterias apagadas' },
   { model: 'Battery', action: 'delete', where: (c) => ({ id: { in: c.batteryIds } }), note: 'baterias instaladas nas motos apagadas' },
   {
@@ -218,6 +220,8 @@ export const MODEL_POLICY: Record<Prisma.ModelName, { fate: 'delete' | 'partial'
   RestrictionEntry: { fate: 'keep', reason: 'lista de restrição de CPF (configuração antifraude)' },
   Vehicle: { fate: 'partial', reason: 'só a moto --keep fica' },
   Tracker: { fate: 'partial', reason: 'o da bancada e os GT06 (desvinculados) ficam; os outros das motos apagadas saem' },
+  SimCard: { fate: 'update', reason: 'chip fica no estoque; só o vínculo aos rastreadores apagados é desfeito' },
+  TrackerConsoleCommand: { fate: 'partial', reason: 'saem só os das motos apagadas; o histórico da bancada fica' },
   Battery: { fate: 'partial', reason: 'saem só as instaladas nas motos apagadas; galpão/estação/van/bancada ficam' },
   BatteryMovement: { fate: 'partial', reason: 'histórico das baterias que ficam é mantido' },
   Zone: { fate: 'keep', reason: 'cercas' },
