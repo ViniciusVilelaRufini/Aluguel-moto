@@ -64,6 +64,7 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(CouponPage.serializer)
       ..add(CouponValidation.serializer)
       ..add(CoverageItem.serializer)
+      ..add(CreateSimCardRequest.serializer)
       ..add(CurrentRental.serializer)
       ..add(CurrentReservation.serializer)
       ..add(Customer.serializer)
@@ -240,9 +241,14 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(RevenueReport.serializer)
       ..add(RevenueRow.serializer)
       ..add(SendCommandRequest.serializer)
+      ..add(SendTrackerConsoleRequest.serializer)
       ..add(ServiceUnlockRequest.serializer)
       ..add(ServiceVehicleStatus.serializer)
       ..add(SharedLocation.serializer)
+      ..add(SimCard.serializer)
+      ..add(SimCardList.serializer)
+      ..add(SimCardStatus.serializer)
+      ..add(SimCardSummary.serializer)
       ..add(SpeedLimiterCheck.serializer)
       ..add(StaffGroup.serializer)
       ..add(StaffUser.serializer)
@@ -285,7 +291,14 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(TopUpStatus.serializer)
       ..add(Track.serializer)
       ..add(TrackPoint.serializer)
+      ..add(TrackerConsoleCommand.serializer)
+      ..add(TrackerConsoleFailReason.serializer)
+      ..add(TrackerConsoleList.serializer)
+      ..add(TrackerConsoleRisk.serializer)
+      ..add(TrackerConsoleStatus.serializer)
       ..add(TrackerControlMode.serializer)
+      ..add(TrackerStatusReport.serializer)
+      ..add(UpdateSimCardRequest.serializer)
       ..add(UploadContentType.serializer)
       ..add(UploadRequest.serializer)
       ..add(ValidationIssue.serializer)
@@ -541,6 +554,9 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(RevenueRow)]),
           () => ListBuilder<RevenueRow>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(SimCard)]),
+          () => ListBuilder<SimCard>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(StaffGroup)]),
           () => ListBuilder<StaffGroup>())
       ..addBuilderFactory(
@@ -622,6 +638,10 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(TrackPoint)]),
           () => ListBuilder<TrackPoint>())
+      ..addBuilderFactory(
+          const FullType(
+              BuiltList, const [const FullType(TrackerConsoleCommand)]),
+          () => ListBuilder<TrackerConsoleCommand>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(ValidationIssue)]),
           () => ListBuilder<ValidationIssue>())

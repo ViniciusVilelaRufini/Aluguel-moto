@@ -70,6 +70,7 @@ import 'package:volti_api/src/model/coupon_input.dart';
 import 'package:volti_api/src/model/coupon_page.dart';
 import 'package:volti_api/src/model/coupon_validation.dart';
 import 'package:volti_api/src/model/coverage_item.dart';
+import 'package:volti_api/src/model/create_sim_card_request.dart';
 import 'package:volti_api/src/model/current_rental.dart';
 import 'package:volti_api/src/model/current_reservation.dart';
 import 'package:volti_api/src/model/customer.dart';
@@ -243,9 +244,14 @@ import 'package:volti_api/src/model/restriction_entry_page.dart';
 import 'package:volti_api/src/model/revenue_report.dart';
 import 'package:volti_api/src/model/revenue_row.dart';
 import 'package:volti_api/src/model/send_command_request.dart';
+import 'package:volti_api/src/model/send_tracker_console_request.dart';
 import 'package:volti_api/src/model/service_unlock_request.dart';
 import 'package:volti_api/src/model/service_vehicle_status.dart';
 import 'package:volti_api/src/model/shared_location.dart';
+import 'package:volti_api/src/model/sim_card.dart';
+import 'package:volti_api/src/model/sim_card_list.dart';
+import 'package:volti_api/src/model/sim_card_status.dart';
+import 'package:volti_api/src/model/sim_card_summary.dart';
 import 'package:volti_api/src/model/speed_limiter_check.dart';
 import 'package:volti_api/src/model/staff_group.dart';
 import 'package:volti_api/src/model/staff_user.dart';
@@ -289,7 +295,14 @@ import 'package:volti_api/src/model/top_up_request.dart';
 import 'package:volti_api/src/model/top_up_status.dart';
 import 'package:volti_api/src/model/track.dart';
 import 'package:volti_api/src/model/track_point.dart';
+import 'package:volti_api/src/model/tracker_console_command.dart';
+import 'package:volti_api/src/model/tracker_console_fail_reason.dart';
+import 'package:volti_api/src/model/tracker_console_list.dart';
+import 'package:volti_api/src/model/tracker_console_risk.dart';
+import 'package:volti_api/src/model/tracker_console_status.dart';
 import 'package:volti_api/src/model/tracker_control_mode.dart';
+import 'package:volti_api/src/model/tracker_status_report.dart';
+import 'package:volti_api/src/model/update_sim_card_request.dart';
 import 'package:volti_api/src/model/upload_content_type.dart';
 import 'package:volti_api/src/model/upload_request.dart';
 import 'package:volti_api/src/model/validation_issue.dart';
@@ -383,6 +396,7 @@ part 'serializers.g.dart';
   CouponPage,
   CouponValidation,
   CoverageItem,
+  CreateSimCardRequest,
   CurrentRental,
   CurrentReservation,
   Customer,
@@ -556,9 +570,14 @@ part 'serializers.g.dart';
   RevenueReport,
   RevenueRow,
   SendCommandRequest,
+  SendTrackerConsoleRequest,
   ServiceUnlockRequest,
   ServiceVehicleStatus,
   SharedLocation,
+  SimCard,
+  SimCardList,
+  SimCardStatus,
+  SimCardSummary,
   SpeedLimiterCheck,
   StaffGroup,
   StaffUser,
@@ -603,7 +622,14 @@ part 'serializers.g.dart';
   TopUpStatus,
   Track,
   TrackPoint,
+  TrackerConsoleCommand,
+  TrackerConsoleFailReason,
+  TrackerConsoleList,
+  TrackerConsoleRisk,
+  TrackerConsoleStatus,
   TrackerControlMode,
+  TrackerStatusReport,
+  UpdateSimCardRequest,
   UploadContentType,
   UploadRequest,
   ValidationIssue,
@@ -682,6 +708,10 @@ Serializers serializers = (_$serializers.toBuilder()
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Track)]),
         () => ListBuilder<Track>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(TrackerConsoleCommand)]),
+        () => ListBuilder<TrackerConsoleCommand>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Alert)]),
@@ -854,6 +884,10 @@ Serializers serializers = (_$serializers.toBuilder()
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(CustomerMaintenanceRequest)]),
         () => ListBuilder<CustomerMaintenanceRequest>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(SimCard)]),
+        () => ListBuilder<SimCard>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [

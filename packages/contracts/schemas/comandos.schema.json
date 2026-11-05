@@ -3,12 +3,31 @@
   "$id": "https://api.volti.com.br/schemas/mqtt/comandos.schema.json",
   "title": "Comando momentâneo",
   "description": "Publicado pelo servidor em motos/{thingName}/comandos para ações que não cabem no shadow (não têm estado). QoS 1.",
-  "type": "object",
-  "required": ["comando_id", "acao"],
-  "additionalProperties": false,
-  "properties": {
-    "comando_id": { "type": "string", "format": "uuid", "description": "VehicleCommand.id" },
-    "acao": { "type": "string", "enum": ["buzina"], "description": "buzina: buzina e pisca por 3 s" }
-  },
-  "examples": [{ "comando_id": "6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a10", "acao": "buzina" }]
+  "oneOf": [
+    {
+      "title": "Buzina",
+      "type": "object",
+      "required": ["comando_id", "acao"],
+      "additionalProperties": false,
+      "properties": {
+        "comando_id": { "type": "string", "format": "uuid", "description": "VehicleCommand.id" },
+        "acao": { "type": "string", "enum": ["buzina"], "description": "buzina: buzina e pisca por 3 s" }
+      }
+    },
+    {
+      "title": "Console do rastreador",
+      "type": "object",
+      "required": ["comando_id", "acao", "texto"],
+      "additionalProperties": false,
+      "properties": {
+        "comando_id": { "type": "string", "format": "uuid", "description": "TrackerConsoleCommand.id" },
+        "acao": { "type": "string", "enum": ["console"], "description": "console: a ponte envia `texto` ao rastreador (GT06, `custom` do Traccar) e devolve a resposta em eventos" },
+        "texto": { "type": "string", "minLength": 1, "maxLength": 100, "description": "Comando de texto do rastreador, ex.: STATUS#. Validado pela API (política do console)." }
+      }
+    }
+  ],
+  "examples": [
+    { "comando_id": "6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a10", "acao": "buzina" },
+    { "comando_id": "6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a11", "acao": "console", "texto": "STATUS#" }
+  ]
 }

@@ -6,6 +6,7 @@
 import 'package:volti_api/src/model/battery.dart';
 import 'package:volti_api/src/model/tracker_control_mode.dart';
 import 'package:volti_api/src/model/vehicle_service_info.dart';
+import 'package:volti_api/src/model/sim_card_summary.dart';
 import 'package:volti_api/src/model/vehicle_status.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
@@ -42,6 +43,7 @@ part 'vehicle.g.dart';
 /// * [gpsSatellites] - Satélites da última posição (`lat`/`lng`) recebida do rastreador. Ausente = desconhecido (rastreador que não informa, ou sem estado ao vivo). Abaixo de 5 = posição fraca: não confirma parada para a trava só relé; nas cercas só pode baixar o limite de zona (nunca sobe nem sai de zona restrita). Para cliente, vem só junto com a posição visível (mesma regra de `positionAt`; nunca com `locationHidden`).
 /// * [gpsSleep] - `true` = o rastreador reportou o rastreamento GPS desligado com a ignição desligada (modo de economia: sem posição nova até o GPS voltar, então a trava só relé não confirma a parada). `false` = GPS ligado ou ignição ligada. Ausente = desconhecido (sem status nos últimos 3 min, ou rastreador que não informa). Para cliente, vem só junto com a posição visível (mesma regra de `positionAt`; nunca com `locationHidden`).
 /// * [currentRentalId] - staff.
+/// * [simCard] - staff. Chip do rastreador da moto; `null` = sem chip vinculado.
 /// * [vehicleModelId]
 /// * [categoryLabel]
 /// * [pricePerMinuteCents]
@@ -161,6 +163,10 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   /// staff.
   @BuiltValueField(wireName: r'currentRentalId')
   String? get currentRentalId;
+
+  /// staff. Chip do rastreador da moto; `null` = sem chip vinculado.
+  @BuiltValueField(wireName: r'simCard')
+  SimCardSummary? get simCard;
 
   @BuiltValueField(wireName: r'vehicleModelId')
   String? get vehicleModelId;
@@ -403,6 +409,13 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
       yield serializers.serialize(
         object.currentRentalId,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.simCard != null) {
+      yield r'simCard';
+      yield serializers.serialize(
+        object.simCard,
+        specifiedType: const FullType.nullable(SimCardSummary),
       );
     }
     if (object.vehicleModelId != null) {
@@ -734,6 +747,14 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
           ) as String?;
           if (valueDes == null) continue;
           result.currentRentalId = valueDes;
+          break;
+        case r'simCard':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(SimCardSummary),
+          ) as SimCardSummary?;
+          if (valueDes == null) continue;
+          result.simCard.replace(valueDes);
           break;
         case r'vehicleModelId':
           final valueDes = serializers.deserialize(

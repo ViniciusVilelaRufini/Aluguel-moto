@@ -43,6 +43,8 @@ export const HAND_WRITTEN_CHECKS = [
   'Fee_amount_nonnegative', 'PricingPlan_prices_nonnegative', 'MinutePackage_price_nonnegative', 'VehicleModel_prices_nonnegative',
   'Coupon_percent_off_range', 'Coupon_amount_off_nonnegative', 'SwapStation_battery_counts_nonnegative', 'Battery_charge_pct_range',
   'Vehicle_battery_pct_range', 'Rental_cost_nonnegative',
+  // Chips e console do rastreador (migração 20261105100000_sim_cards_tracker_console).
+  'SimCard_iccid_digits', 'TrackerConsoleCommand_text_len',
 ];
 
 export async function assertHandWrittenSchema(prisma: PrismaClient): Promise<void> {
