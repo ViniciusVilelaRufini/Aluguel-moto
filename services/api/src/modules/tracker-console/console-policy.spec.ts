@@ -22,11 +22,21 @@ describe('classifyConsoleText', () => {
   it('só faz trim do texto', () => {
     expect(classifyConsoleText('  STATUS#  ')).toMatchObject({ ok: true, text: 'STATUS#' });
   });
-  it.each(['GMT,W,3,0#', 'FACTORY#', 'PWD,123#', 'format#', 'PASSWORD,1#'])('recusa %s', (t) => {
-    const r = classifyConsoleText(t);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toMatch(/\S/);
+  it.each(['PARAM#', 'WHERE#', 'VERSION#', 'GPRSSET#', 'APN#', 'SERVER#', 'TIMER#', 'where#'])('%s é leitura', (t) => {
+    expect(classifyConsoleText(t)).toMatchObject({ ok: true, risk: 'read' });
   });
+  it.each(['GMT,W,3,0#', 'FACTORY#', 'PWD,123#', 'format#', 'PASSWORD,1#', 'GPRSON,0#', 'STATUS,1#', 'WHERE,1#', 'RESET,1#', 'SOS,A,123#', 'FOO#'])(
+    'allowlist: recusa %s com o motivo genérico',
+    (t) => {
+      expect(classifyConsoleText(t)).toEqual({ ok: false, reason: 'Comando não permitido pelo console.' });
+    },
+  );
+  it.each(['RELAY,1#', 'relay,1#', 'Relay,0#', 'dyd#', 'DYD,000000#', 'HFYD#', 'hfyd,000000#', 'STOP#', 'RESUME#', 'resume#'])(
+    'relé/motor (%s) nunca pelo console: aponta para Bloquear/Desbloquear',
+    (t) => {
+      expect(classifyConsoleText(t)).toEqual({ ok: false, reason: 'Use Bloquear/Desbloquear da ficha da moto.' });
+    },
+  );
   it.each(['STATUS', 'STA TUS#', '', '<script>#', `${'A'.repeat(100)}#`, '#'])('recusa formato inválido %j', (t) => {
     expect(classifyConsoleText(t).ok).toBe(false);
   });

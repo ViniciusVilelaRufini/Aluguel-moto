@@ -68,8 +68,9 @@ describe('TrackerConsoleService', () => {
 
     it('texto recusado → 400 com o motivo', async () => {
       const { service } = setup();
-      await expect(service.send(VEHICLE_ID, { text: 'FACTORY#' }, admin)).rejects.toMatchObject({ detail: expect.stringContaining('FACTORY') });
+      await expect(service.send(VEHICLE_ID, { text: 'FACTORY#' }, admin)).rejects.toMatchObject({ detail: 'Comando não permitido pelo console.' });
       expect(await status(service.send(VEHICLE_ID, { text: 'FACTORY#' }, admin))).toBe(400);
+      await expect(service.send(VEHICLE_ID, { text: 'relay,1#', confirm: true }, admin)).rejects.toMatchObject({ detail: 'Use Bloquear/Desbloquear da ficha da moto.' });
     });
 
     it('rastreador speed_control, sem imei ou moto sem rastreador → 409', async () => {
