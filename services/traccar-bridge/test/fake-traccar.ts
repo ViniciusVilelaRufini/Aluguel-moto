@@ -19,8 +19,8 @@ export class FakeTraccar {
   readonly queued: Array<{ deviceId: number; type: string }> = [];
   /** `true` = o dispositivo não tem sessão no Traccar: sem `noQueue` responde 202 (enfileirado); com `noQueue`, 400. */
   queueCommands = false;
-  /** Status HTTP de `type: 'custom'` (console GT06): 200 enviado, 202 aparelho offline, 400 erro. */
-  customStatus = 200;
+  /** Status HTTP de erro forçado para qualquer comando (ex.: 500); `undefined` = segue `queueCommands`/`honorNoQueue`. */
+  commandFailStatus?: number;
   /** `false` imita um Traccar que ignora `noQueue` (enfileira mesmo assim). */
   honorNoQueue = true;
   /** Últimas posições mandadas no replay de cada conexão do WebSocket. */
@@ -115,7 +115,8 @@ export class FakeTraccar {
       const c = JSON.parse(body) as { deviceId: number; type: string; attributes?: Record<string, unknown> };
       this.commands.push({ deviceId: c.deviceId, type: c.type });
       this.commandBodies.push(c);
-      if (c.type === 'custom') return this.customStatus === 200 ? json(200, c) : void res.writeHead(this.customStatus).end('{}');
+      // Todo comando (motor ou `custom` do console) segue o mesmo modelo de sessão/fila do Traccar.
+      if (this.commandFailStatus) return void res.writeHead(this.commandFailStatus).end('{}');
       if (!this.queueCommands) return json(200, c);
       if (this.honorNoQueue && c.attributes?.noQueue === true) return void res.writeHead(400).end('Failed to send command');
       this.queued.push({ deviceId: c.deviceId, type: c.type });

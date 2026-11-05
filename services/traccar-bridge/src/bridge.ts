@@ -1,4 +1,4 @@
-import { ConsoleQueue, CONSOLE_TIMEOUT_MS, parseConsoleCommand } from './console';
+import { ConsoleQueue, CONSOLE_TIMEOUT_MS, isRelayConsoleText, parseConsoleCommand, replyMatches } from './console';
 import { FIXED_LIMIT_KMH, TOPICS, thingOf, type DeviceEventMessage, type ReportedState } from './contract';
 import { CUT_FRESH_MS, cutRefusal, parseDelta, planDeltaFor, planReconnect, type BridgeAction } from './delta';
 import { maskImei, silentLogger, type Logger } from './log';
@@ -16,8 +16,8 @@ export interface TraccarApi {
   ensureSession(): Promise<void>;
   /** `engineStop` exige sessão aberta e não faz login nem reenvia no 401; `engineResume` pode. */
   sendCommand(deviceId: number, type: 'engineStop' | 'engineResume'): Promise<'sent' | 'queued'>;
-  /** Comando de texto do console (`custom`, sempre `noQueue`): 202 = aparelho offline. */
-  sendCustom(deviceId: number, data: string): Promise<'sent' | 'offline'>;
+  /** Comando de texto do console (`custom`, sempre `noQueue`): 202 = enfileirado pelo Traccar (`queued`); 400 = sem sessão (`offline`). */
+  sendCustom(deviceId: number, data: string): Promise<'sent' | 'queued' | 'offline'>;
 }
 
 export interface Registry {
@@ -194,20 +194,51 @@ export class Bridge {
       this.log.warn({ msg: 'console_invalid', thingName: thing });
       return;
     }
+    // C1 (defesa em profundidade): relé/motor nunca pelo console, mesmo que a API deixe passar.
+    if (isRelayConsoleText(cmd.texto)) {
+      this.log.error({ msg: 'console_relay_refused', thingName: thing, comandoId: cmd.comandoId });
+      await this.consoleFail(thing, cmd.comandoId, 'erro');
+      return;
+    }
     const device = this.deviceOf(thing);
     if (!device) {
       this.log.warn({ msg: 'console_device_unknown', thingName: thing, comandoId: cmd.comandoId });
       await this.consoleFail(thing, cmd.comandoId, 'offline');
       return;
     }
-    // Entra na fila antes do envio: a resposta pode chegar antes de o POST voltar.
-    this.consoleQueue.add(thing, cmd.comandoId, this.now());
-    let sent: 'sent' | 'offline';
+    // I1: mesmo gate dos comandos de motor — sem `noQueue` garantido o Traccar guardaria o texto para a reconexão.
+    if (!this.noQueueOk && this.now() - this.lastVersionCheck >= VERSION_RECHECK_MS) await this.refreshServerVersion();
+    if (!this.noQueueOk) {
+      this.logLimited(`${thing}|console_refused|no_noqueue`, 'error', { msg: 'console_refused', thingName: thing, comandoId: cmd.comandoId, reason: 'traccar_no_noqueue' });
+      await this.consoleFail(thing, cmd.comandoId, 'erro');
+      return;
+    }
+    // I1: status conhecido e não online → offline sem chamar o Traccar.
+    const status = this.devices.get(device.id)?.status;
+    if (status !== undefined && status !== 'online') {
+      this.log.info({ msg: 'console_offline', thingName: thing, comandoId: cmd.comandoId });
+      await this.consoleFail(thing, cmd.comandoId, 'offline');
+      return;
+    }
+    // Entra na fila antes do envio: a resposta pode chegar antes de o POST voltar. M3: id já visto = reentrega, não reenvia.
+    if (!this.consoleQueue.add(thing, cmd.comandoId, this.now(), cmd.texto)) {
+      this.log.warn({ msg: 'console_duplicate_ignored', thingName: thing, comandoId: cmd.comandoId });
+      return;
+    }
+    let sent: 'sent' | 'queued' | 'offline';
     try {
       sent = await this.traccar.sendCustom(device.id, cmd.texto);
     } catch (err) {
       this.consoleQueue.remove(thing, cmd.comandoId);
       this.log.error({ msg: 'console_not_sent', thingName: thing, comandoId: cmd.comandoId, error: (err as Error).message });
+      await this.consoleFail(thing, cmd.comandoId, 'erro');
+      return;
+    }
+    if (sent === 'queued') {
+      // 202 = o Traccar guardou o texto para entregar na reconexão (ignorou o `noQueue`). Não há como tirá-lo da fila pela
+      // REST usada aqui: só alerta e falha o comando.
+      this.consoleQueue.remove(thing, cmd.comandoId);
+      this.log.error({ msg: 'console_queued_by_traccar', thingName: thing, comandoId: cmd.comandoId });
       await this.consoleFail(thing, cmd.comandoId, 'erro');
       return;
     }
@@ -227,8 +258,14 @@ export class Bridge {
     if (this.lastConsolePosition.get(thing) === positionId) return;
     // Comando de motor/relé em curso: um texto qualquer pode ser dele, não do console.
     if (this.mem(thing).pendingCommand) return;
-    const pending = this.consoleQueue.take(thing);
-    if (!pending) return;
+    const oldest = this.consoleQueue.peek(thing);
+    if (!oldest) return;
+    // M2: FIFO sem correlação; para leituras de resposta conhecida, a resposta tem de ser coerente com o texto enviado.
+    if (!replyMatches(oldest.texto, result)) {
+      this.log.warn({ msg: 'console_reply_unmatched', thingName: thing, comandoId: oldest.comandoId });
+      return;
+    }
+    const pending = this.consoleQueue.take(thing)!;
     this.lastConsolePosition.set(thing, positionId);
     this.log.info({ msg: 'console_reply', thingName: thing, comandoId: pending.comandoId });
     await this.publish(TOPICS.events(thing), { tipo: 'console_resposta', comando_id: pending.comandoId, texto: result, timestamp: new Date(this.now()).toISOString() }, 1);
@@ -539,16 +576,18 @@ export class Bridge {
     }
     const now = this.now();
     // Replay de conexão já saiu sem `result` em `p`: não é resposta nova.
+    // I2: com console pendente, uma resposta de texto sem o estado do relé pode ser do console — não é ack do comando de motor.
+    const consolePending = this.consoleQueue.has(thing);
     if (typeof p.attributes?.result === 'string') await this.routeConsoleReply(thing, p.id, p.attributes.result);
     const before = this.mem(thing);
-    let r = applyPosition(p, before, this.opts.battery, now);
+    let r = applyPosition(p, before, this.opts.battery, now, { consolePending });
     if (r.held === 'awaiting_battery') {
       const since = this.batteryWaitSince.get(thing) ?? now;
       this.batteryWaitSince.set(thing, since);
       if (now - since >= BATTERY_UNKNOWN_CAP_MS) {
         // Teto: sem leitura de bateria (ex.: J16 em conversor DC-DC) a moto não pode ficar sem telemetria para sempre.
         // `bateria_pct: 0` só na mensagem; a memória continua sem bateria conhecida.
-        const forced = applyPosition(p, { ...before, batteryPct: 0 }, this.opts.battery, now);
+        const forced = applyPosition(p, { ...before, batteryPct: 0 }, this.opts.battery, now, { consolePending });
         if (forced.telemetry) {
           // `bateria_conhecida: false` (contrato MQTT): o 0 é falta de leitura, não bateria vazia.
           r = { ...forced, telemetry: { ...forced.telemetry, bateria_conhecida: false }, memory: { ...forced.memory, batteryPct: r.memory.batteryPct } };

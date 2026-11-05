@@ -105,11 +105,25 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
 - `motos/{t}/comandos` com `acao: "buzina"` é ignorado (log `command_ignored_no_horn`).
 - **Console do GT06** (`acao: "console"`, `comando_id` + `texto` de 1 a 100): a ponte envia o texto, intacto (APN em minúsculas
   continua minúsculo), ao Traccar como `custom` com `attributes: { data, noQueue: true }` (`TraccarRest.sendCustom`) e guarda o
-  comando numa fila por moto (`src/console.ts`). Traccar com 202 = aparelho offline → `console_falha` `offline` na hora (nada
-  fica na fila); erro HTTP → `console_falha` `erro`. O aparelho responde como posição com `attributes.result`: texto que não
-  é de relé (`parseRelayReply` indefinido) vai ao pendente mais antigo como `console_resposta` (`comando_id`, `texto`); "RELAY n
-  OK" segue só pelo fluxo do relé e nunca consome um pendente. Sem resposta em 60 s (`CONSOLE_TIMEOUT_MS`, varredura a cada 5 s,
-  relógio injetável) → `console_falha` `timeout`. Eventos saem em `motos/{t}/eventos` (QoS 1). Payload inválido → log
+  comando numa fila por moto (`src/console.ts`). Antes de enviar (todas → `console_falha`, nada enviado):
+  - texto de relé/motor (`RELAY`, `DYD`, `HFYD`, `STOP`, `RESUME`, sem diferenciar caixa; `isRelayConsoleText`) → `erro` +
+    log `console_relay_refused` (defesa em profundidade: a allowlist da API já recusa; o console nunca corta nem libera o relé
+    fora do bloqueio seguro);
+  - mesmo gate de `noQueue` dos comandos de motor (Traccar ≥ 6.7.0; versão desconhecida = não) não satisfeito → `erro`
+    (log `console_refused`);
+  - status do dispositivo conhecido e diferente de `online` → `offline`.
+  Resposta do `POST /api/commands/send`: 200 = enviado; **202 = o Traccar ENFILEIROU** (ignorou o `noQueue`) → `console_falha`
+  `erro` + log de erro `console_queued_by_traccar` (não há helper para tirar da fila do Traccar: alertar); 400 = dispositivo sem
+  sessão → `offline`; outro erro HTTP → `erro`. `comando_id` já visto (pendente ou concluído; memória dos últimos 500) é
+  reentrega QoS 1: log `console_duplicate_ignored`, não reenvia. O aparelho responde como posição com `attributes.result`:
+  texto que não é de relé (`parseRelayReply` indefinido) vai ao pendente mais antigo como `console_resposta` (`comando_id`,
+  `texto`); "RELAY n OK" segue só pelo fluxo do relé e nunca consome um pendente. **Coerência mínima (FIFO sem correlação):**
+  se o pendente mais antigo é `STATUS#`, `WHERE#`, `PARAM#`, `APN#` ou `SERVER#`, a resposta precisa conter (sem diferenciar
+  caixa) `Battery:`, `Lati`/`Position`, `IMEI`, `APN` ou `SERVER`, respectivamente; senão não é atribuída (log
+  `console_reply_unmatched`, sem o texto) e o pendente segue esperando. Os demais comandos ficam no FIFO puro. Com comando de
+  console pendente, uma resposta sem estado do relé **não** conta como ack de `engineStop`/`engineResume` em curso
+  (`applyPosition(..., { consolePending })`). Sem resposta em 60 s (`CONSOLE_TIMEOUT_MS`, varredura a cada 5 s, relógio
+  injetável) → `console_falha` `timeout`. Eventos saem em `motos/{t}/eventos` (QoS 1). Payload inválido → log
   `console_invalid`, nada enviado. Os logs só levam `thingName` e `comandoId`, nunca o texto nem a resposta (podem conter
   localização). Replay de conexão (resposta antiga) nunca vira resposta de console.
 - **Registro** IMEI → thingName: `Tracker` com `controlMode = relay_only` (papel `volti_bridge`, só SELECT em 3 colunas), relido a

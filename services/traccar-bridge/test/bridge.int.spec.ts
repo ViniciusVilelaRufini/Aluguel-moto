@@ -304,7 +304,7 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     it('mesma posição com result reentregue → só uma console_resposta; o segundo pendente continua', async () => {
       c = await start();
       await sendConsole(c, CID, 'STATUS#');
-      await sendConsole(c, CID2, 'WHERE#');
+      await sendConsole(c, CID2, 'VERSION#');
       await waitFor(() => c.traccar.commands.length === 2);
       const pos = consoleReply(70, c.now.value, STATUS_REPLY);
       c.traccar.push({ positions: [pos] });
@@ -352,24 +352,107 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
       ]);
     });
 
-    it('aparelho offline (202 do Traccar) → console_falha offline na hora, sem pendente', async () => {
+    it('I1: Traccar enfileirou (202, ignora noQueue) → console_falha erro + log console_queued_by_traccar, sem pendente', async () => {
       c = await start();
-      c.traccar.customStatus = 202;
+      c.traccar.queueCommands = true;
+      c.traccar.honorNoQueue = false;
       await sendConsole(c, CID, 'STATUS#');
       await waitFor(() => consoleEvents(c).length === 1);
-      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'offline' });
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
       expect(validEvent(consoleEvents(c)[0])).toBe(true);
+      expect(c.logs.some((l) => l.msg === 'console_queued_by_traccar' && l.level === 'error')).toBe(true);
       c.traccar.push({ positions: [consoleReply(65, c.now.value, STATUS_REPLY)] });
       await sleep(50);
       expect(consoleEvents(c)).toHaveLength(1);
     });
 
-    it('erro do Traccar no envio → console_falha erro', async () => {
+    it('I1: dispositivo sem sessão no Traccar (400 com noQueue) → console_falha offline, nada na fila do Traccar', async () => {
       c = await start();
-      c.traccar.customStatus = 400;
+      c.traccar.queueCommands = true;
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'offline' });
+      expect(c.traccar.queued).toEqual([]);
+    });
+
+    it('I1: status conhecido offline → console_falha offline sem chamar o Traccar', async () => {
+      c = await start();
+      setStatus(c, 'offline');
+      await waitFor(() => c.logs.some((l) => l.msg === 'device_offline'));
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'offline' });
+      expect(c.traccar.commands).toEqual([]);
+    });
+
+    it('I1: Traccar < 6.7.0 (sem noQueue) → console_falha erro sem enviar', async () => {
+      c = await start({ version: '6.6' });
       await sendConsole(c, CID, 'STATUS#');
       await waitFor(() => consoleEvents(c).length === 1);
       expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
+      expect(c.traccar.commands).toEqual([]);
+    });
+
+    it('erro do Traccar no envio (500) → console_falha erro', async () => {
+      c = await start();
+      c.traccar.commandFailStatus = 500;
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
+    });
+
+    it.each(['RELAY,1#', 'relay,0#', 'dyd#', 'HFYD,000000#', 'Stop#', 'resume#'])('C1: texto de relé (%s) → console_falha erro, nunca enviado', async (texto) => {
+      c = await start();
+      await sendConsole(c, CID, texto);
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
+      expect(c.traccar.commands).toEqual([]);
+      expect(c.logs.some((l) => l.msg === 'console_relay_refused')).toBe(true);
+    });
+
+    it('M3: mesmo comando_id reentregue (QoS 1) → um só envio', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.logs.some((l) => l.msg === 'console_duplicate_ignored'));
+      expect(c.traccar.commands).toHaveLength(1);
+      c.traccar.push({ positions: [consoleReply(80, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      await sendConsole(c, CID, 'STATUS#'); // já concluído
+      await waitFor(() => c.logs.filter((l) => l.msg === 'console_duplicate_ignored').length === 2);
+      expect(c.traccar.commands).toHaveLength(1);
+    });
+
+    it('M2: resposta que não casa com STATUS# pendente não é atribuída (log sem texto); a coerente é', async () => {
+      c = await start();
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      c.traccar.push({ positions: [consoleReply(81, c.now.value, 'IMEI:860000000000901;TIMER:10;')] });
+      await waitFor(() => c.logs.some((l) => l.msg === 'console_reply_unmatched'));
+      expect(consoleEvents(c)).toEqual([]);
+      expect(JSON.stringify(c.logs.filter((l) => l.msg === 'console_reply_unmatched'))).not.toContain('TIMER');
+      c.traccar.push({ positions: [consoleReply(82, c.now.value, STATUS_REPLY)] });
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_resposta', comando_id: CID, texto: STATUS_REPLY });
+    });
+
+    it('I2: STATUS# pendente, engineStop enviado, resposta do STATUS chega → não é ack do engineStop (heartbeat dentro da carência não vale)', async () => {
+      c = await start();
+      c.traccar.push({ positions: [position({ id: 20, deviceId: 1, fixTime: iso(T0 - 2_000), serverTime: iso(T0 - 1_000), speed: 0 })] });
+      await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => c.traccar.commands.length === 1);
+      await sendDelta(c, { travada: true });
+      await waitFor(() => c.traccar.commands.length === 2);
+      const before = reportedTravada(c);
+      c.now.value += 1_000;
+      c.traccar.push({ positions: [consoleReply(83, c.now.value, STATUS_REPLY)] });
+      c.now.value += 1_000;
+      // Status ainda com o bit antigo, dentro da carência: só valeria se a resposta do STATUS tivesse sido tomada como ack.
+      c.traccar.push({ positions: [heartbeat(84, c.now.value, false)] });
+      await sleep(100);
+      expect(reportedTravada(c)).toEqual(before);
     });
 
     it('sem resposta em 60 s (relógio injetado) → console_falha timeout', async () => {

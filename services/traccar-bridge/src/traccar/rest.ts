@@ -91,15 +91,17 @@ export class TraccarRest {
 
   /**
    * Comando de texto do GT06 (console do painel): `custom` com `attributes.data`, sempre `noQueue`. 200 = enviado ao aparelho;
-   * 202 = aparelho sem sessão (offline); outro status → exceção.
+   * 202 = o Traccar ENFILEIROU (ignorou o `noQueue`; seria entregue na reconexão) → `queued`; 400 = dispositivo sem sessão
+   * (com `noQueue` o Traccar recusa em vez de enfileirar) → `offline`; outro status → exceção.
    */
-  async sendCustom(deviceId: number, data: string): Promise<'sent' | 'offline'> {
+  async sendCustom(deviceId: number, data: string): Promise<'sent' | 'queued' | 'offline'> {
     const res = await this.request('/api/commands/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deviceId, type: 'custom', attributes: { data, noQueue: true } }),
     });
-    if (res.status === 202) return 'offline';
+    if (res.status === 202) return 'queued';
+    if (res.status === 400) return 'offline';
     if (!res.ok) throw new Error(`traccar_command_failed_${res.status}`);
     return 'sent';
   }
