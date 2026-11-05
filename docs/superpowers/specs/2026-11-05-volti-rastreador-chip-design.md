@@ -60,18 +60,20 @@ Em 05/11 o J16 da VLT-0059 ficou ~5 h sem dados: o chip M2M da Algar exigia o AP
 - Ponte, antes de enviar (revisão final): texto de relé/motor → `console_falha` `erro` (defesa em profundidade); gate de
   `noQueue` (Traccar ≥ 6.7.0) não satisfeito → `erro`; status do dispositivo conhecido e não `online` → `offline`. Resposta
   do Traccar: 200 enviado; **202 = enfileirado** (o Traccar ignorou o `noQueue`) → `erro` + log `console_queued_by_traccar`;
-  400 (sem sessão) → `offline`; outro erro → `erro`. `comando_id` repetido (reentrega QoS 1) não reenvia. Coerência mínima
+  400 com corpo de dispositivo sem sessão (ou status conhecido não `online`) → `offline`; outro 400/erro → `erro`. `comando_id` repetido (reentrega QoS 1) não reenvia. Coerência mínima
   da resposta (FIFO sem correlação): `STATUS#` exige `Battery:`, `WHERE#` `Lati`/`Position`, `PARAM#` `IMEI`, `APN#` `APN`,
   `SERVER#` `SERVER`; senão a resposta não é atribuída (log `console_reply_unmatched`). Com console pendente, resposta sem
   estado do relé não é ack de `engineStop`/`engineResume`.
 - API (revisão final): `409` "Há um bloqueio/desbloqueio em andamento nesta moto." com `VehicleCommand` `lock`/`unlock`
-  `pending`/`in_progress`; `change`/`connection` com aluguel aberto → `409` "A moto está em aluguel; envie comandos de
-  configuração depois do fim do aluguel." (leitura liberada). `console_falha` (vem da ponte) não é sinal de vida do
+  `pending`/`in_progress` criado há até 5 min (prazo do lock 120 s + folga; linha antiga presa não trava o console);
+  `change`/`connection` com aluguel aberto ou reserva em uso → `409` "A moto está em aluguel ou reserva; envie comandos de
+  configuração depois do fim do aluguel ou da reserva." (leitura liberada). `console_falha` (vem da ponte) não é sinal de vida do
   rastreador; só `console_resposta` é.
 - API: um comando de console pendente por moto (409 se já houver); sem resposta em 90 s o registro vira `failed/timeout`.
 - Política do texto (API): 1–100 caracteres, termina em `#`, só `A-Z a-z 0-9 , . - _ : #`; palavra-chave = trecho antes da
   primeira vírgula ou do `#`, comparada em maiúsculas. **ALLOWLIST**: `STATUS`, `PARAM`, `WHERE`, `VERSION`, `GPRSSET` só sem
-  vírgula (`read`); `APN`, `SERVER`, `TIMER` sem vírgula (`read`); `TIMER` com vírgula (`change`); `APN`/`SERVER` com vírgula
+  vírgula (`read`); `APN`, `SERVER`, `TIMER` sem vírgula (`read`); `TIMER` com vírgula (`change`, só `TIMER,<5–60>,<10–3600>#` — senão "Intervalos permitidos: 5–60 s em movimento e
+  10–3600 s parado."); `APN`/`SERVER` com vírgula
   e `RESET` sem vírgula (`connection`). Qualquer outro é recusado com "Comando não permitido pelo console."; `RELAY`, `DYD`,
   `HFYD`, `STOP`, `RESUME` com "Use Bloquear/Desbloquear da ficha da moto.". `change` e `connection` exigem `confirm: true`.
   O painel espelha a allowlist só para mostrar o motivo antes de enviar.

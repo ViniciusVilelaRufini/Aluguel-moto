@@ -4,6 +4,12 @@ import type { TraccarDevice } from './types';
 export const TRACCAR_HTTP_TIMEOUT_MS = 10_000;
 
 /** API REST do Traccar (só rede interna, spec §6.5), com a sessão do usuário da ponte (cookie também usado no WebSocket). */
+/**
+ * Corpo do 400 de `POST /api/commands/send` para dispositivo sem sessão com `noQueue` (Traccar 6: "Failed to send command";
+ * variações com "not online"/"offline"). Outro 400 (comando inválido etc.) não é offline.
+ */
+export const NO_SESSION_RE = /failed to send command|not online|offline/i;
+
 export class TraccarRest {
   private cookie?: string;
 
@@ -91,8 +97,9 @@ export class TraccarRest {
 
   /**
    * Comando de texto do GT06 (console do painel): `custom` com `attributes.data`, sempre `noQueue`. 200 = enviado ao aparelho;
-   * 202 = o Traccar ENFILEIROU (ignorou o `noQueue`; seria entregue na reconexão) → `queued`; 400 = dispositivo sem sessão
-   * (com `noQueue` o Traccar recusa em vez de enfileirar) → `offline`; outro status → exceção.
+   * 202 = o Traccar ENFILEIROU (ignorou o `noQueue`; seria entregue na reconexão) → `queued`; 400 cujo corpo indica dispositivo
+   * sem sessão (`NO_SESSION_RE`: com `noQueue` o Traccar recusa em vez de enfileirar) → `offline`; outro 400 e demais status →
+   * exceção (a ponte ainda trata como `offline` se o status conhecido do aparelho não for `online`).
    */
   async sendCustom(deviceId: number, data: string): Promise<'sent' | 'queued' | 'offline'> {
     const res = await this.request('/api/commands/send', {
@@ -101,7 +108,7 @@ export class TraccarRest {
       body: JSON.stringify({ deviceId, type: 'custom', attributes: { data, noQueue: true } }),
     });
     if (res.status === 202) return 'queued';
-    if (res.status === 400) return 'offline';
+    if (res.status === 400 && NO_SESSION_RE.test(await res.text().catch(() => ''))) return 'offline';
     if (!res.ok) throw new Error(`traccar_command_failed_${res.status}`);
     return 'sent';
   }

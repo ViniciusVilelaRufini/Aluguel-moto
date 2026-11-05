@@ -113,8 +113,9 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
     (log `console_refused`);
   - status do dispositivo conhecido e diferente de `online` → `offline`.
   Resposta do `POST /api/commands/send`: 200 = enviado; **202 = o Traccar ENFILEIROU** (ignorou o `noQueue`) → `console_falha`
-  `erro` + log de erro `console_queued_by_traccar` (não há helper para tirar da fila do Traccar: alertar); 400 = dispositivo sem
-  sessão → `offline`; outro erro HTTP → `erro`. `comando_id` já visto (pendente ou concluído; memória dos últimos 500) é
+  `erro` + log de erro `console_queued_by_traccar` (não há helper para tirar da fila do Traccar: alertar); 400 cujo corpo indica
+  dispositivo sem sessão (`NO_SESSION_RE`: "Failed to send command", "not online", "offline") → `offline`; outro 400 ou erro
+  HTTP → `erro`, salvo se o status conhecido do aparelho deixou de ser `online` durante o envio (→ `offline`). `comando_id` já visto (pendente ou concluído; memória dos últimos 500) é
   reentrega QoS 1: log `console_duplicate_ignored`, não reenvia. O aparelho responde como posição com `attributes.result`:
   texto que não é de relé (`parseRelayReply` indefinido) vai ao pendente mais antigo como `console_resposta` (`comando_id`,
   `texto`); "RELAY n OK" segue só pelo fluxo do relé e nunca consome um pendente. **Coerência mínima (FIFO sem correlação):**

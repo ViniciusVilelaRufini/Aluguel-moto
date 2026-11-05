@@ -393,6 +393,24 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
       expect(c.traccar.commands).toEqual([]);
     });
 
+    it('N2: 400 sem indicar aparelho sem sessão (status online) → console_falha erro', async () => {
+      c = await start();
+      c.traccar.commandFailStatus = 400;
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'erro' });
+    });
+
+    it('N2: 400 genérico com o aparelho ficando offline durante o envio → console_falha offline', async () => {
+      c = await start();
+      c.traccar.commandFailStatus = 400;
+      c.traccar.commandDelayMs = 80;
+      c.traccar.onCommand = () => setStatus(c, 'offline');
+      await sendConsole(c, CID, 'STATUS#');
+      await waitFor(() => consoleEvents(c).length === 1);
+      expect(consoleEvents(c)[0]).toMatchObject({ tipo: 'console_falha', comando_id: CID, motivo: 'offline' });
+    });
+
     it('erro do Traccar no envio (500) → console_falha erro', async () => {
       c = await start();
       c.traccar.commandFailStatus = 500;

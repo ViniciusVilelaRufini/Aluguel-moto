@@ -230,8 +230,11 @@ export class Bridge {
       sent = await this.traccar.sendCustom(device.id, cmd.texto);
     } catch (err) {
       this.consoleQueue.remove(thing, cmd.comandoId);
-      this.log.error({ msg: 'console_not_sent', thingName: thing, comandoId: cmd.comandoId, error: (err as Error).message });
-      await this.consoleFail(thing, cmd.comandoId, 'erro');
+      // N2: erro HTTP com o aparelho sabidamente fora (caiu durante o envio) é `offline`; senão, `erro`.
+      const now = this.devices.get(device.id)?.status;
+      const motivo = now !== undefined && now !== 'online' ? 'offline' : 'erro';
+      this.log.error({ msg: 'console_not_sent', thingName: thing, comandoId: cmd.comandoId, error: (err as Error).message, motivo });
+      await this.consoleFail(thing, cmd.comandoId, motivo);
       return;
     }
     if (sent === 'queued') {

@@ -21,6 +21,10 @@ export class FakeTraccar {
   queueCommands = false;
   /** Status HTTP de erro forçado para qualquer comando (ex.: 500); `undefined` = segue `queueCommands`/`honorNoQueue`. */
   commandFailStatus?: number;
+  /** Chamado ao receber um comando, antes do atraso `commandDelayMs` (ex.: derrubar o aparelho no meio do envio). */
+  onCommand?: () => void;
+  /** Atraso (ms) da resposta de `POST /api/commands/send`. */
+  commandDelayMs = 0;
   /** `false` imita um Traccar que ignora `noQueue` (enfileira mesmo assim). */
   honorNoQueue = true;
   /** Últimas posições mandadas no replay de cada conexão do WebSocket. */
@@ -115,7 +119,10 @@ export class FakeTraccar {
       const c = JSON.parse(body) as { deviceId: number; type: string; attributes?: Record<string, unknown> };
       this.commands.push({ deviceId: c.deviceId, type: c.type });
       this.commandBodies.push(c);
-      // Todo comando (motor ou `custom` do console) segue o mesmo modelo de sessão/fila do Traccar.
+      this.onCommand?.();
+      if (this.commandDelayMs) await new Promise((r) => setTimeout(r, this.commandDelayMs));
+      // Todo comando (motor ou `custom` do console) segue o mesmo modelo de sessão/fila do Traccar. 400 do `noQueue` sem sessão
+      // traz o texto do Traccar ("Failed to send command"); `commandFailStatus` responde `{}`.
       if (this.commandFailStatus) return void res.writeHead(this.commandFailStatus).end('{}');
       if (!this.queueCommands) return json(200, c);
       if (this.honorNoQueue && c.attributes?.noQueue === true) return void res.writeHead(400).end('Failed to send command');
