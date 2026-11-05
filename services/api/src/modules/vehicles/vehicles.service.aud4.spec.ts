@@ -95,12 +95,52 @@ describe('Estoque de rastreadores: thingName com rastreador instalado', () => {
     });
     expect(prisma.tracker.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { vehicleId: VEHICLE_ID } }));
     expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    // Dentro da transação, depois da mesma trava consultiva da instalação.
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(prisma.tracker.findUnique.mock.invocationCallOrder[0]);
+    expect((prisma.$queryRaw.mock.calls[0] as unknown[]).slice(1)).toEqual([`tracker-install:${VEHICLE_ID}`]);
   });
 
   it('PATCH sem mudar thingName com rastreador instalado segue permitido', async () => {
     const { service, prisma } = setup();
     prisma.tracker.findUnique.mockResolvedValue({ id: 't-1' } as any);
     await service.update(operacao, VEHICLE_ID, { thingName: 'moto-0001', odometerKm: 10 } as any);
+    expect(prisma.vehicle.update).toHaveBeenCalled();
+  });
+});
+
+describe('Estoque de rastreadores: thingName de rastreador não vira thingName de moto', () => {
+  const MSG = 'Este identificador pertence a um rastreador; escolha outro.';
+  const byWhere = (prisma: any, owner: Record<string, unknown> | null) =>
+    prisma.tracker.findUnique.mockImplementation((async (a: any) => (a.where.thingName ? owner : null)) as any);
+
+  it('PATCH com thingName gt06-… → 409', async () => {
+    const { service, prisma } = setup();
+    await expect(service.update(operacao, VEHICLE_ID, { thingName: 'gt06-869890080273430' } as any)).rejects.toMatchObject({ status: 409, detail: MSG });
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+  });
+
+  it('PATCH com thingName de um rastreador (estoque ou outra moto) → 409', async () => {
+    const { service, prisma } = setup();
+    byWhere(prisma, { id: 't-9' });
+    await expect(service.update(operacao, VEHICLE_ID, { thingName: 'moto-0099' } as any)).rejects.toMatchObject({ status: 409, detail: MSG });
+    expect(prisma.tracker.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { thingName: 'moto-0099' } }));
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+  });
+
+  it('POST com thingName gt06-… ou de um rastreador → 409', async () => {
+    const { service, prisma } = setup();
+    prisma.vehicle.findFirst.mockResolvedValue(null);
+    await expect(service.create(operacao, { code: 'VLT-0099', thingName: 'gt06-869890080273430', model: 'X' } as any)).rejects.toMatchObject({ status: 409, detail: MSG });
+    byWhere(prisma, { id: 't-9' });
+    await expect(service.create(operacao, { code: 'VLT-0099', thingName: 'moto-0099', model: 'X' } as any)).rejects.toMatchObject({ status: 409, detail: MSG });
+    expect(prisma.vehicle.create).not.toHaveBeenCalled();
+  });
+
+  it('PATCH com thingName livre segue', async () => {
+    const { service, prisma } = setup();
+    byWhere(prisma, null);
+    await service.update(operacao, VEHICLE_ID, { thingName: 'moto-0099' } as any);
     expect(prisma.vehicle.update).toHaveBeenCalled();
   });
 });

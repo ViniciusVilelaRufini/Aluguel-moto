@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { Prisma, type CommandStatus, type TrackerConsoleCommand } from '@prisma/client';
+import { Prisma, type TrackerConsoleCommand } from '@prisma/client';
 import { EV, type TrackerConsoleEvent } from '../../common/events';
 import { badRequest, conflict, notFound } from '../../common/problem';
-import { hasInUseReservation, hasOpenRental } from '../../common/vehicle-in-use';
+import { engineCommandInFlight, hasInUseReservation, hasOpenRental } from '../../common/vehicle-in-use';
 import { IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -16,14 +16,6 @@ import type { SendTrackerConsoleDto } from './tracker-console.dto';
 export const CONSOLE_PENDING_TTL_MS = 90_000;
 /** A resposta do aparelho não tem limite no schema MQTT: guarda só o começo. */
 export const CONSOLE_RESPONSE_MAX = 1000;
-
-/** `VehicleCommand` ainda não final (`confirmed`/`failed` são finais). */
-const IN_FLIGHT_COMMAND: CommandStatus[] = ['pending', 'in_progress'];
-/**
- * N1: só lock/unlock criado há até isto conta como em andamento (prazo do lock só relé 120 s + folga). Linha antiga presa em
- * `pending`/`in_progress` (varredura atrasada) não trava o console para sempre.
- */
-export const ENGINE_COMMAND_IN_FLIGHT_MS = 5 * 60_000;
 
 const FAIL_REASON = { offline: 'offline', timeout: 'timeout', erro: 'error' } as const;
 
@@ -73,11 +65,7 @@ export class TrackerConsoleService {
       // Serializa envios da mesma moto (um `pending` por moto).
       await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`tracker-console:${vehicleId}`}))::text`;
       // I2: a resposta de texto do console confundiria a confirmação do relé de um bloqueio/desbloqueio em curso.
-      const engine = await tx.vehicleCommand.findFirst({
-        where: { vehicleId, type: { in: ['lock', 'unlock'] }, status: { in: IN_FLIGHT_COMMAND }, createdAt: { gte: new Date(Date.now() - ENGINE_COMMAND_IN_FLIGHT_MS) } },
-        select: { id: true },
-      });
-      if (engine) throw conflict('conflict', 'Há um bloqueio/desbloqueio em andamento nesta moto.');
+      if (await engineCommandInFlight(tx, vehicleId)) throw conflict('conflict', 'Há um bloqueio/desbloqueio em andamento nesta moto.');
       // M5/N5: configuração (change/connection) só fora de aluguel e de reserva em uso; leitura continua liberada.
       if (policy.risk !== 'read' && ((await hasOpenRental(tx, vehicleId)) || (await hasInUseReservation(tx, vehicleId)))) {
         throw conflict('conflict', 'A moto está em aluguel ou reserva; envie comandos de configuração depois do fim do aluguel ou da reserva.');

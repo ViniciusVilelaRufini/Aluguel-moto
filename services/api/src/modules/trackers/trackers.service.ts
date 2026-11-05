@@ -6,7 +6,7 @@ import { REDIS_STORE, type RedisStore } from '../../redis/redis-store';
 import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
 import { TRACKER_MODES, type TrackerModeLookup } from '../iot/tracker-mode';
-import { assertVehicleFreeForTrackerChange } from './install-guards';
+import { assertVehicleFreeForTrackerChange, lockVehicleTrackerChange } from './install-guards';
 import type { CreateTrackerDto, ListTrackersQuery } from './trackers.dto';
 import {
   imeiLast4, isStockable, STOCKABLE_WHERE, stockThingName, toTrackerDevice, TRACKER_DEVICE_INCLUDE, TRACKER_MODELS, type TrackerDeviceRow,
@@ -19,6 +19,14 @@ function uniqueTarget(err: unknown): string[] | null {
   const target = (err.meta as { target?: unknown } | undefined)?.target;
   return Array.isArray(target) ? target.map(String) : typeof target === 'string' ? [target] : [];
 }
+
+/**
+ * Moto sem sinal: o último sinal gravado era do rastreador que saiu. Só `lastSeenAt` (o `online` exibido exige `lastSeenAt`
+ * recente, `trackerOnline`): zerar o `online` do banco poderia prendê-lo em `false`, porque a presença do IoT (por thingName) não
+ * emite "voltou" se o aparelho novo falar antes da vigia marcar o antigo offline. A primeira mensagem do novo regrava
+ * `lastSeenAt` (`syncTrackerState` aceita `null`).
+ */
+const NO_SIGNAL = { lastSeenAt: null } as const;
 
 const NOT_GT06 = 'O rastreador desta moto não é um GT06 do estoque (tem certificado MQTT ou não tem IMEI); troque-o pelo script de provisionamento.';
 
@@ -84,7 +92,7 @@ export class TrackersService {
     try {
       const row = await this.prisma.$transaction(async (tx) => {
         // Serializa mudanças de rastreador da mesma moto e do mesmo aparelho.
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`tracker-install:${vehicleId}`}))::text`;
+        await lockVehicleTrackerChange(tx, vehicleId);
         await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`tracker-install:${trackerId}`}))::text`;
         const vehicle = await tx.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true, code: true, thingName: true } });
         if (!vehicle) throw notFound('Moto não encontrada.');
@@ -101,6 +109,8 @@ export class TrackersService {
           await this.audit.record({ actor, action: 'tracker.remove', entityType: 'Tracker', entityId: current.id, metadata: { imeiLast4: imeiLast4(current.imei), vehicleId } }, tx);
           swapped = current.id;
         }
+        // O sinal da moto era do aparelho anterior: o novo só aparece online depois de falar.
+        await tx.vehicle.update({ where: { id: vehicleId }, data: NO_SIGNAL });
         const installed = await tx.tracker.update({ where: { id: trackerId }, data: { thingName: vehicle.thingName, vehicleId }, include: TRACKER_DEVICE_INCLUDE });
         await this.audit.record({ actor, action: 'tracker.install', entityType: 'Tracker', entityId: trackerId, metadata: { imeiLast4: imeiLast4(tracker.imei), vehicleId } }, tx);
         return installed;
@@ -120,13 +130,14 @@ export class TrackersService {
   async remove(vehicleId: string, actor: Principal) {
     try {
       const row = await this.prisma.$transaction(async (tx) => {
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`tracker-install:${vehicleId}`}))::text`;
+        await lockVehicleTrackerChange(tx, vehicleId);
         const vehicle = await tx.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true, thingName: true } });
         if (!vehicle) throw notFound('Moto não encontrada.');
         const current = await tx.tracker.findUnique({ where: { vehicleId } });
         if (!current) throw notFound('Esta moto não tem rastreador.');
         if (!isStockable(current)) throw conflict('conflict', NOT_GT06);
         await assertVehicleFreeForTrackerChange(tx, this.redis, vehicleId, [vehicle.thingName, current.thingName]);
+        await tx.vehicle.update({ where: { id: vehicleId }, data: NO_SIGNAL });
         const stocked = await tx.tracker.update({ where: { id: current.id }, data: { thingName: stockThingName(current.imei), vehicleId: null }, include: TRACKER_DEVICE_INCLUDE });
         await this.audit.record({ actor, action: 'tracker.remove', entityType: 'Tracker', entityId: current.id, metadata: { imeiLast4: imeiLast4(current.imei), vehicleId } }, tx);
         return stocked;

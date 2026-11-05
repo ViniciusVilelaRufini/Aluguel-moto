@@ -107,7 +107,7 @@ export class UpdateSimCardDto {
   @IsUUID()
   vehicleId?: string | null;
 
-  /** Vincula (ou move) o chip a este rastreador; `null` desvincula. Com `vehicleId` junto → 400. */
+  /** Vincula o chip a este rastreador; `null` desvincula. Chip já em outro rastreador → 409 (desvincule antes). Com `vehicleId` junto → 400. */
   @nullable()
   @IsUUID()
   trackerId?: string | null;

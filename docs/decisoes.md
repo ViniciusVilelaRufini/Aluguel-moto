@@ -1405,4 +1405,11 @@ Spec: `docs/superpowers/specs/2026-11-05-volti-estoque-rastreadores-design.md`.
 5. **Chips.** `/sim-cards` aceita `trackerId`; ao remover o rastreador da moto o chip fica com o rastreador.
 6. **Console no painel de Motos.** Oculto para quem não é `admin`.
 
+**Revisão da Task 2 (API):**
+
+1. **Chip não muda de rastreador direto.** `UpdateSimCardRequest.trackerId` vincula ou desvincula (`null`); chip já em outro rastreador → `409` (desvincule antes), como o `vehicleId`. A descrição "vincula (ou move)" saiu do contrato (clientes regerados).
+2. **`thingName` da moto.** `PATCH /vehicles/{id}` confere "rastreador instalado" e grava o `thingName` na mesma transação, depois da mesma trava consultiva da instalação (`tracker-install:<moto>`). Cadastrar/editar moto com `thingName` que começa com `gt06-` ou que já é o `thingName` de algum `Tracker` (estoque ou outra moto) → `409` "Este identificador pertence a um rastreador; escolha outro.".
+3. **Sinal herdado.** Instalar/trocar/remover zera `Vehicle.lastSeenAt` (o `online` exibido exige sinal recente); o `online` do banco não é zerado, porque a presença do IoT (por `thingName`) poderia não emitir "voltou" e prendê-lo em `false`. Estoque e instalado usam a mesma janela (`IOT_OFFLINE_AFTER_MS`, padrão 180 s). A sobreposição do estado ao vivo (`iot:live:<thingName>`, Redis) na ficha da moto ainda mostra o último sinal do aparelho anterior até a vigia marcá-lo offline.
+4. **Regra única de lock/unlock em andamento.** `ENGINE_COMMAND_IN_FLIGHT_MS` e `engineCommandInFlight` moram em `common/vehicle-in-use.ts` (console e troca de rastreador).
+
 **Pendências.** Módulo `trackers` e telemetria (Tasks 2-3), ponte (Task 4) e painel (Task 5); até a Task 2, `contract-security.spec.ts` acusa as 4 rotas novas sem controller.

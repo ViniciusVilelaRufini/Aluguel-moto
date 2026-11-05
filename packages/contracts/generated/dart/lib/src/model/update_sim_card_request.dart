@@ -19,7 +19,7 @@ part 'update_sim_card_request.g.dart';
 /// * [status]
 /// * [notes]
 /// * [vehicleId]
-/// * [trackerId] - Vincula (ou move) o chip a este rastreador; `null` desvincula.
+/// * [trackerId] - Vincula o chip a este rastreador; `null` desvincula. Chip já em outro rastreador → `409` (desvincule antes).
 @BuiltValue()
 abstract class UpdateSimCardRequest
     implements Built<UpdateSimCardRequest, UpdateSimCardRequestBuilder> {
@@ -45,7 +45,7 @@ abstract class UpdateSimCardRequest
   @BuiltValueField(wireName: r'vehicleId')
   String? get vehicleId;
 
-  /// Vincula (ou move) o chip a este rastreador; `null` desvincula.
+  /// Vincula o chip a este rastreador; `null` desvincula. Chip já em outro rastreador → `409` (desvincule antes).
   @BuiltValueField(wireName: r'trackerId')
   String? get trackerId;
 

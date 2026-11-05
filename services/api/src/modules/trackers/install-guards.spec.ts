@@ -1,6 +1,6 @@
 import { ProblemException } from '../../common/problem';
 import { MemoryRedisStore } from '../../redis/redis-store';
-import { ENGINE_COMMAND_IN_FLIGHT_MS } from '../tracker-console/tracker-console.service';
+import { ENGINE_COMMAND_IN_FLIGHT_MS } from '../../common/vehicle-in-use';
 import { assertVehicleFreeForTrackerChange, pendingLockOn, vehicleInUseReason } from './install-guards';
 
 const VEHICLE_ID = '33333333-3333-4333-8333-333333333333';

@@ -25,6 +25,8 @@ import { assertVehicleNotInUse, IN_USE_RESERVATION_STATUSES, pendingLockKind, VE
 import { assertTaskActor } from '../field-tasks/task-actor';
 import type { SimCardSummaryRow } from '../sim-cards/sim-cards.mapper';
 import { toVehicle, toVehicleSummary, trackerOnline } from './vehicles.mapper';
+import { lockVehicleTrackerChange } from '../trackers/install-guards';
+import { TRACKER_STOCK_PREFIX } from '../trackers/trackers.mapper';
 import { depotsLeavingCharged, movement, recordMovements, type MovementInput } from '../batteries/battery-movements';
 
 /** Relações lidas junto com a moto (contrato v2: modelo do catálogo). */
@@ -37,6 +39,8 @@ const DB_WRITE_INTERVAL_MS = 30_000;
 export const LAST_SEEN_WRITE_INTERVAL_MS = 15_000;
 /** Precedência da trava do rastreador sobre a da telemetria: regra única em `lock-precedence.ts` (também no overlay do GET). */
 export { REPORTED_LOCK_PRECEDENCE_MS } from './lock-precedence';
+
+const THING_NAME_OF_TRACKER = 'Este identificador pertence a um rastreador; escolha outro.';
 
 /** Normaliza `VLT-0001`, `0001`, `1` ou `volti://v/VLT-0001` (URL-encoded) para `VLT-0001`. */
 export function parseVehicleCode(raw: string): string | null {
@@ -178,6 +182,7 @@ export class VehiclesService {
   async create(actor: Principal, dto: VehicleCreateDto) {
     const dup = await this.prisma.vehicle.findFirst({ where: { OR: [{ code: dto.code }, { thingName: dto.thingName }] } });
     if (dup) throw conflict('conflict', 'Já existe uma moto com este código ou rastreador.');
+    await this.assertThingNameFree(this.prisma, dto.thingName);
     const modelName = dto.vehicleModelId ? await this.modelName(dto.vehicleModelId) : undefined;
     // Cadastro no painel (docs/decisoes.md, 2026-10-25): com galpão a moto nasce `free` na posição dele (disponível para
     // retirada); sem galpão continua nascendo `maintenance`.
@@ -260,6 +265,12 @@ export class VehiclesService {
     return (await this.enrich([updated], true))[0];
   }
 
+  /** `thingName` de moto não pode ser o de um rastreador (do estoque `gt06-…` ou de outra moto): 409. */
+  private async assertThingNameFree(db: Pick<Prisma.TransactionClient, 'tracker'>, thingName: string): Promise<void> {
+    if (thingName.startsWith(TRACKER_STOCK_PREFIX)) throw conflict('conflict', THING_NAME_OF_TRACKER);
+    if (await db.tracker.findUnique({ where: { thingName }, select: { id: true } })) throw conflict('conflict', THING_NAME_OF_TRACKER);
+  }
+
   /** Galpão para cadastrar/transferir motos: inexistente → 404; inativo → 422 `depot-inactive`. */
   private async activeDepot(depotId: string) {
     const d = await this.prisma.depot.findUnique({ where: { id: depotId }, select: { id: true, lat: true, lng: true, active: true } });
@@ -293,10 +304,7 @@ export class VehiclesService {
     if (dto.thingName && dto.thingName !== v.thingName) {
       const dup = await this.prisma.vehicle.findUnique({ where: { thingName: dto.thingName } });
       if (dup) throw conflict('conflict', 'Este rastreador já está vinculado a outra moto.');
-      // Estoque de rastreadores: com rastreador instalado, o thingName é o do aparelho (ponte/MQTT); troca só removendo antes.
-      if (await this.prisma.tracker.findUnique({ where: { vehicleId: id }, select: { id: true } })) {
-        throw conflict('conflict', 'Esta moto tem rastreador instalado; remova o rastreador antes de mudar o identificador.');
-      }
+      if (dto.thingName.startsWith(TRACKER_STOCK_PREFIX)) throw conflict('conflict', THING_NAME_OF_TRACKER);
       // Auditoria run-4: trocar o rastreador com cliente na moto ou trava em curso deixaria o aluguel/trava falando com o thing errado.
       await assertVehicleNotInUse(this.prisma, id);
       for (const thing of [v.thingName, dto.thingName]) {
@@ -306,7 +314,17 @@ export class VehiclesService {
     const modelName = dto.vehicleModelId ? await this.modelName(dto.vehicleModelId) : undefined;
     const corrected = dto.odometerKm !== undefined || dto.usageHours !== undefined;
     const correction = corrected ? { previousOdometerKm: v.odometerKm, previousUsageHours: v.usageHours } : {};
+    const newThingName = dto.thingName && dto.thingName !== v.thingName ? dto.thingName : undefined;
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (newThingName) {
+        // Mesma trava consultiva da instalação de rastreador: não corre com um install/remover concorrente na moto.
+        await lockVehicleTrackerChange(tx, id);
+        // Estoque de rastreadores: com rastreador instalado, o thingName é o do aparelho (ponte/MQTT); troca só removendo antes.
+        if (await tx.tracker.findUnique({ where: { vehicleId: id }, select: { id: true } })) {
+          throw conflict('conflict', 'Esta moto tem rastreador instalado; remova o rastreador antes de mudar o identificador.');
+        }
+        await this.assertThingNameFree(tx, newThingName);
+      }
       const u = await tx.vehicle.update({ where: { id }, data: { ...dto, ...(modelName ? { model: modelName } : {}) }, include: VEHICLE_INCLUDE });
       await this.audit.record({ actor, action: 'vehicle.update', entityType: 'Vehicle', entityId: id, metadata: { ...dto, ...correction } }, tx as any);
       return u;

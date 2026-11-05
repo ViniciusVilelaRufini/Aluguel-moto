@@ -4559,7 +4559,7 @@ export interface components {
             vehicleId?: string | null;
             /**
              * Format: uuid
-             * @description Vincula (ou move) o chip a este rastreador; `null` desvincula.
+             * @description Vincula o chip a este rastreador; `null` desvincula. Chip já em outro rastreador → `409` (desvincule antes).
              */
             trackerId?: string | null;
         };

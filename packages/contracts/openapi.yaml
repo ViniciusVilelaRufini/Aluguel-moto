@@ -6740,7 +6740,7 @@ components:
         status: { $ref: '#/components/schemas/SimCardStatus' }
         notes: { type: [string, 'null'], maxLength: 500 }
         vehicleId: { type: [string, 'null'], format: uuid }
-        trackerId: { type: [string, 'null'], format: uuid, description: 'Vincula (ou move) o chip a este rastreador; `null` desvincula.' }
+        trackerId: { type: [string, 'null'], format: uuid, description: 'Vincula o chip a este rastreador; `null` desvincula. Chip já em outro rastreador → `409` (desvincule antes).' }
     SimCardList:
       type: object
       required: [items]

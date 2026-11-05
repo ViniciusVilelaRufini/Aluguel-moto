@@ -151,6 +151,8 @@ describe('TrackersService', () => {
       expect(prisma.tracker.update.mock.calls[0][0]).toMatchObject({ where: { id: TRACKER_ID }, data: { thingName: 'moto-0059', vehicleId: VEHICLE_ID } });
       expect(out).toMatchObject({ id: TRACKER_ID, installed: true, vehicleId: VEHICLE_ID, vehicleCode: 'VLT-0059', online: true });
       expect(modes.invalidate).toHaveBeenCalledWith(VEHICLE_ID);
+      // Sinal herdado zerado: o novo só aparece online depois de falar.
+      expect(prisma.vehicle.update).toHaveBeenCalledWith({ where: { id: VEHICLE_ID }, data: { lastSeenAt: null } });
     });
 
     it('moto com outro rastreador: o antigo volta ao estoque ANTES do novo assumir o thingName', async () => {
@@ -164,6 +166,7 @@ describe('TrackersService', () => {
       }) as any);
       await service.install(VEHICLE_ID, TRACKER_ID, operacao);
       expect(order).toEqual([`${OLD_TRACKER_ID}:gt06-${OLD_IMEI}:null`, `${TRACKER_ID}:moto-0059:${VEHICLE_ID}`]);
+      expect(prisma.vehicle.update).toHaveBeenCalledWith({ where: { id: VEHICLE_ID }, data: { lastSeenAt: null } });
       const actions = audit.record.mock.calls.map(([e]) => [e.action, e.entityId, e.metadata]);
       expect(actions).toEqual([
         ['tracker.remove', OLD_TRACKER_ID, { imeiLast4: '0059', vehicleId: VEHICLE_ID }],
@@ -177,6 +180,7 @@ describe('TrackersService', () => {
       const out = await service.install(VEHICLE_ID, TRACKER_ID, operacao);
       expect(out).toMatchObject({ id: TRACKER_ID, installed: true, vehicleId: VEHICLE_ID });
       expect(prisma.tracker.update).not.toHaveBeenCalled();
+      expect(prisma.vehicle.update).not.toHaveBeenCalled();
       expect(audit.record).not.toHaveBeenCalled();
     });
 
@@ -219,6 +223,7 @@ describe('TrackersService', () => {
       await arrange(s);
       expect((await problem(s.service.install(VEHICLE_ID, TRACKER_ID, operacao))).getStatus()).toBe(409);
       expect(s.prisma.tracker.update).not.toHaveBeenCalled();
+      expect(s.prisma.vehicle.update).not.toHaveBeenCalled();
       expect(s.audit.record).not.toHaveBeenCalled();
     });
 
@@ -250,6 +255,7 @@ describe('TrackersService', () => {
       expect(out).toMatchObject({ installed: false, vehicleId: null, simCard: { id: SIM_ID } });
       expect(audit.record.mock.calls[0][0]).toMatchObject({ action: 'tracker.remove', entityId: TRACKER_ID, metadata: { imeiLast4: '3430', vehicleId: VEHICLE_ID } });
       expect(modes.invalidate).toHaveBeenCalledWith(VEHICLE_ID);
+      expect(prisma.vehicle.update).toHaveBeenCalledWith({ where: { id: VEHICLE_ID }, data: { lastSeenAt: null } });
     });
 
     it('moto sem rastreador → 404; moto inexistente → 404', async () => {
@@ -294,24 +300,44 @@ describe('TrackersService', () => {
       expect(prisma.tracker.findMany.mock.calls[0][0]!.orderBy).toEqual({ createdAt: 'desc' });
     });
 
-    it('online pela moto quando instalado e pelo Tracker.lastSeenAt no estoque (≤180 s)', async () => {
+    it('online pela moto quando instalado e pelo Tracker.lastSeenAt no estoque (mesma janela de 180 s)', async () => {
       const { prisma, service } = setup();
       const ago = (ms: number) => new Date(NOW.getTime() - ms);
       prisma.tracker.findMany.mockResolvedValue([
         installedRow({ id: 'a', lastSeenAt: null, vehicle: { id: VEHICLE_ID, code: 'VLT-0059', online: true, lastSeenAt: ago(30_000) } }),
         installedRow({ id: 'b', lastSeenAt: ago(1_000), vehicle: { id: VEHICLE_ID, code: 'VLT-0059', online: true, lastSeenAt: ago(600_000) } }),
-        trackerRow({ id: 'c', lastSeenAt: ago(180_000) }),
-        trackerRow({ id: 'd', lastSeenAt: ago(181_000) }),
+        trackerRow({ id: 'c', lastSeenAt: ago(179_999) }),
+        trackerRow({ id: 'd', lastSeenAt: ago(180_000) }),
         trackerRow({ id: 'e', lastSeenAt: null }),
       ] as any);
       const { items } = await service.list({});
       expect(items.map((i) => [i.id, i.online, i.lastSeenAt])).toEqual([
         ['a', true, ago(30_000).toISOString()],
         ['b', false, ago(600_000).toISOString()],
-        ['c', true, ago(180_000).toISOString()],
-        ['d', false, ago(181_000).toISOString()],
+        ['c', true, ago(179_999).toISOString()],
+        ['d', false, ago(180_000).toISOString()],
         ['e', false, null],
       ]);
     });
+  });
+});
+
+describe('janela do online (IOT_OFFLINE_AFTER_MS)', () => {
+  const prev = process.env.IOT_OFFLINE_AFTER_MS;
+  afterEach(() => {
+    if (prev === undefined) delete process.env.IOT_OFFLINE_AFTER_MS;
+    else process.env.IOT_OFFLINE_AFTER_MS = prev;
+  });
+
+  it('estoque e instalado usam a mesma janela configurada', async () => {
+    process.env.IOT_OFFLINE_AFTER_MS = '60000';
+    const { prisma, service } = setup();
+    const ago = (ms: number) => new Date(NOW.getTime() - ms);
+    prisma.tracker.findMany.mockResolvedValue([
+      trackerRow({ id: 'stock', lastSeenAt: ago(90_000) }),
+      installedRow({ id: 'inst', vehicle: { id: VEHICLE_ID, code: 'VLT-0059', online: true, lastSeenAt: ago(90_000) } }),
+    ] as any);
+    const { items } = await service.list({});
+    expect(items.map((i) => i.online)).toEqual([false, false]);
   });
 });

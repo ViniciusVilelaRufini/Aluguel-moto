@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type CommandStatus } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from './enums';
 import { conflict } from './problem';
 import { RELAY_LOCK_PREFIX } from '../modules/iot/relay-lock.store';
@@ -49,4 +49,22 @@ export async function pendingLockKind(redis: Pick<RedisStore, 'exists' | 'hgetal
     if ((await redis.exists(`${prefix}:${thingName}`)) || (await redis.hgetall(`${prefix}:index`))[thingName] !== undefined) return what;
   }
   return null;
+}
+
+/**
+ * N1: só lock/unlock criado há até isto conta como em andamento (prazo do lock só relé 120 s + folga). Linha antiga presa em
+ * `pending`/`in_progress` (varredura atrasada) não trava para sempre. Usado pelo console do rastreador e pela troca de rastreador.
+ */
+export const ENGINE_COMMAND_IN_FLIGHT_MS = 5 * 60_000;
+
+/** `VehicleCommand` ainda não final (`confirmed`/`failed` são finais). */
+const IN_FLIGHT_COMMAND: CommandStatus[] = ['pending', 'in_progress'];
+
+/** `true` se há `lock`/`unlock` não final criado nos últimos `ENGINE_COMMAND_IN_FLIGHT_MS`. */
+export async function engineCommandInFlight(tx: Pick<Prisma.TransactionClient, 'vehicleCommand'>, vehicleId: string, now = Date.now()): Promise<boolean> {
+  const cmd = await tx.vehicleCommand.findFirst({
+    where: { vehicleId, type: { in: ['lock', 'unlock'] }, status: { in: IN_FLIGHT_COMMAND }, createdAt: { gte: new Date(now - ENGINE_COMMAND_IN_FLIGHT_MS) } },
+    select: { id: true },
+  });
+  return !!cmd;
 }
