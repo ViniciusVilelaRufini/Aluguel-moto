@@ -212,8 +212,11 @@ export class TelemetryService implements InboundHandler {
           return;
         }
         if (!(await this.vehicleIdOf(thingName))) return;
-        await this.gateway.live.load(thingName);
-        if (this.heard(thingName, this.clock.now())) await this.reconnect(thingName);
+        // I3: `console_falha` é produzido pela ponte (timeout/offline/erro), não pelo aparelho: não é sinal de vida.
+        if (consoleEv.kind === 'resposta') {
+          await this.gateway.live.load(thingName);
+          if (this.heard(thingName, this.clock.now())) await this.reconnect(thingName);
+        }
         this.logger.log({ msg: 'console_event', thingName, kind: consoleEv.kind });
         this.events.emit(EV.TRACKER_CONSOLE_EVENT, { thingName, ...consoleEv });
         return;

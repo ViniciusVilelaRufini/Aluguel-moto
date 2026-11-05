@@ -190,6 +190,21 @@ describe('TelemetryService', () => {
     ]);
   });
 
+  it('I3: console_falha é da ponte, não do aparelho: não é sinal de vida (sem noteHeard/reconexão); console_resposta é', async () => {
+    const { svc, gateway, clock, emitted } = setup();
+    const CMD = '6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a11';
+    const noteHeard = jest.spyOn(gateway.live, 'noteHeard');
+    const reconnected = jest.spyOn(gateway, 'onReconnected');
+    await svc.deviceEvent(T, { tipo: 'console_falha', timestamp: '2026-10-21T15:00:00.000Z', comando_id: CMD, motivo: 'timeout' });
+    await clock.advance(600_000);
+    await svc.deviceEvent(T, { tipo: 'console_falha', timestamp: '2026-10-21T15:10:00.000Z', comando_id: CMD, motivo: 'offline' });
+    expect(noteHeard).not.toHaveBeenCalled();
+    expect(reconnected).not.toHaveBeenCalled();
+    expect(emitted[EV.TRACKER_CONSOLE_EVENT]).toHaveLength(2);
+    await svc.deviceEvent(T, { tipo: 'console_resposta', timestamp: '2026-10-21T15:10:00.000Z', comando_id: CMD, texto: 'Battery:4.27V;' });
+    expect(noteHeard).toHaveBeenCalledTimes(1);
+  });
+
   it('a velocidade da telemetria alimenta a rampa: moto andando para abaixo de 3 → travada publicada', async () => {
     const { svc, gateway, transport, clock } = setup();
     await svc.telemetry(T, msg({ velocidade_kmh: 25 })); // primeira mensagem = reconexão: abre a graça de 10 s (revisão 5)
