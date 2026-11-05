@@ -13,6 +13,7 @@ import { GPS_SLEEP_LOCK_WARNING, addressView, batteryView, gpsView, positionView
 import { useNow } from '@/lib/use-now';
 import { RelayOnlyNotice } from './vehicles/RelayOnlyNotice';
 import { SimCardSection } from './tracker/SimCardSection';
+import { TrackerSection } from './trackers/TrackerSection';
 import { TrackerConsole } from './tracker/TrackerConsole';
 import { formatDateTime, timeAgo } from '@/lib/format';
 import { assertSpeedLimit } from '@/lib/speed-limit';
@@ -257,6 +258,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         <Alert tone="info" icon="Info">Seu perfil não envia comandos para a moto.</Alert>
       )}
 
+      <TrackerSection vehicleId={vehicleId} vehicleCode={v.code} groups={groups} />
       <SimCardSection vehicleId={vehicleId} simCard={v.simCard} groups={groups} />
       <TrackerConsole vehicleId={vehicleId} groups={groups} mode={mode} simApn={v.simCard?.apn ?? null} />
 

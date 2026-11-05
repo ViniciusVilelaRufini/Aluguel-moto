@@ -318,10 +318,21 @@ export function makeCounterState() {
 }
 
 export function makeSimCards(): S<'SimCard'>[] {
-  const base = { msisdn: null, carrier: 'Algar', apn: 'indica.algar.br', status: 'active' as const, notes: null, vehicleId: null, vehicleCode: null, createdAt: '2026-11-01T12:00:00.000Z', updatedAt: '2026-11-01T12:00:00.000Z' };
+  const base = { msisdn: null, carrier: 'Algar', apn: 'indica.algar.br', status: 'active' as const, notes: null, vehicleId: null, vehicleCode: null, trackerId: null, createdAt: '2026-11-01T12:00:00.000Z', updatedAt: '2026-11-01T12:00:00.000Z' };
   return [
     { ...base, id: 'sim-1', iccid: '8955171234567890123', msisdn: '+5511999990001' },
     { ...base, id: 'sim-2', iccid: '8955171234567890124' },
+  ];
+}
+
+/** Estoque de rastreadores: um instalado na primeira moto e dois no estoque (um deles sem sinal ainda). */
+export function makeTrackers(vehicles: { id: string; code: string }[]): S<'TrackerDevice'>[] {
+  const v = vehicles[0];
+  const base = { model: 'J16' as const, installed: false, vehicleId: null, vehicleCode: null, simCard: null, online: false, lastSeenAt: null, createdAt: '2026-11-01T12:00:00.000Z' };
+  return [
+    { ...base, id: 'trk-1', imei: '869890080273430', installed: true, vehicleId: v?.id ?? null, vehicleCode: v?.code ?? null, online: true, lastSeenAt: '2026-11-05T14:59:00.000Z' },
+    { ...base, id: 'trk-2', imei: '869890080273431', lastSeenAt: '2026-11-04T10:00:00.000Z' },
+    { ...base, id: 'trk-3', imei: '869890080273432' },
   ];
 }
 

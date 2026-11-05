@@ -12,6 +12,10 @@ const STATUS_LABEL: Record<S<'SimCardStatus'>, string> = { active: 'Ativo', susp
 const STATUS_TONE: Record<S<'SimCardStatus'>, 'success' | 'warning' | 'danger'> = { active: 'success', suspended: 'warning', cancelled: 'danger' };
 const STATUS_OPTIONS = (Object.keys(STATUS_LABEL) as S<'SimCardStatus'>[]).map((value) => ({ value, label: STATUS_LABEL[value] }));
 
+/** Formato do ICCID e da linha (mesmas regras do contrato), compartilhado com o assistente de rastreador. */
+export const SIM_ICCID_RE = /^[0-9]{18,22}$/;
+export const SIM_MSISDN_RE = /^\+?[0-9]{10,15}$/;
+
 /** Limite de `notes` no contrato (`SimCard.notes`, maxLength 500). */
 export const SIM_NOTES_MAX = 500;
 
@@ -118,8 +122,8 @@ export function SimFormModal({ title, initial, simId, vehicleId, onClose, onDone
   const savedNotes = simId ? (full.data?.items.find((s) => s.id === simId)?.notes ?? '') : '';
   const notesValue = notes ?? savedNotes;
   const [touched, setTouched] = useState(false);
-  const iccidOk = /^[0-9]{18,22}$/.test(iccid);
-  const msisdnOk = msisdn === '' || /^\+?[0-9]{10,15}$/.test(msisdn);
+  const iccidOk = SIM_ICCID_RE.test(iccid);
+  const msisdnOk = msisdn === '' || SIM_MSISDN_RE.test(msisdn);
   const carrierOk = carrier.trim().length >= 1 && carrier.trim().length <= 40;
   const notesOk = notesValue.trim().length <= SIM_NOTES_MAX;
   const valid = iccidOk && msisdnOk && carrierOk && notesOk;
