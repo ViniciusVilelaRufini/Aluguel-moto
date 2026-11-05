@@ -174,6 +174,55 @@ describe('Chips (SimCards)', () => {
     });
   });
 
+  describe('trackerId (rastreador do estoque)', () => {
+    it('create com trackerId vincula ao rastreador do estoque', async () => {
+      const { prisma, service } = setup();
+      prisma.tracker.findUnique.mockResolvedValue({ id: TRACKER_ID, vehicleId: null, simCard: null } as any);
+      prisma.simCard.create.mockImplementation((async (a: any) => withVehicle(simRow({ trackerId: a.data.trackerId }), false)) as any);
+      await service.create({ iccid: ICCID, carrier: 'Algar', trackerId: TRACKER_ID }, admin);
+      expect(prisma.tracker.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: TRACKER_ID } }));
+      expect(prisma.simCard.create.mock.calls[0][0].data).toMatchObject({ trackerId: TRACKER_ID });
+    });
+
+    it('create com trackerId inexistente -> 404; rastreador com chip -> 409', async () => {
+      const { prisma, service } = setup();
+      prisma.tracker.findUnique.mockResolvedValueOnce(null);
+      expect(await status(service.create({ iccid: ICCID, carrier: 'Algar', trackerId: TRACKER_ID }, admin))).toBe(404);
+      prisma.tracker.findUnique.mockResolvedValueOnce({ id: TRACKER_ID, simCard: { id: 'outro' } } as any);
+      expect(await status(service.create({ iccid: ICCID, carrier: 'Algar', trackerId: TRACKER_ID }, admin))).toBe(409);
+      expect(prisma.simCard.create).not.toHaveBeenCalled();
+    });
+
+    it('vehicleId + trackerId juntos -> 400 (create e update)', async () => {
+      const { prisma, service } = setup();
+      expect(await status(service.create({ iccid: ICCID, carrier: 'Algar', vehicleId: VEHICLE_ID, trackerId: TRACKER_ID }, admin))).toBe(400);
+      prisma.simCard.findUnique.mockResolvedValue(simRow() as any);
+      expect(await status(service.update(SIM_ID, { vehicleId: VEHICLE_ID, trackerId: TRACKER_ID }, admin))).toBe(400);
+      expect(prisma.simCard.create).not.toHaveBeenCalled();
+      expect(prisma.simCard.update).not.toHaveBeenCalled();
+    });
+
+    it('update com trackerId vincula; trackerId null desvincula', async () => {
+      const { prisma, service } = setup();
+      prisma.simCard.findUnique.mockResolvedValue(simRow() as any);
+      prisma.tracker.findUnique.mockResolvedValue({ id: TRACKER_ID, simCard: null } as any);
+      prisma.simCard.update.mockResolvedValue(withVehicle(simRow({ trackerId: TRACKER_ID }), false) as any);
+      await service.update(SIM_ID, { trackerId: TRACKER_ID }, admin);
+      expect(prisma.simCard.update.mock.calls[0][0].data).toMatchObject({ trackerId: TRACKER_ID });
+      prisma.simCard.findUnique.mockResolvedValue(simRow({ trackerId: TRACKER_ID }) as any);
+      await service.update(SIM_ID, { trackerId: null }, admin);
+      expect(prisma.simCard.update.mock.calls[1][0].data).toMatchObject({ trackerId: null });
+    });
+
+    it('update: chip em outro rastreador, trackerId novo -> 409', async () => {
+      const { prisma, service } = setup();
+      prisma.simCard.findUnique.mockResolvedValue(simRow({ trackerId: OTHER_TRACKER_ID }) as any);
+      prisma.tracker.findUnique.mockResolvedValue({ id: TRACKER_ID, simCard: null } as any);
+      expect(await status(service.update(SIM_ID, { trackerId: TRACKER_ID }, admin))).toBe(409);
+      expect(prisma.simCard.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('list', () => {
     it('aplica q (ICCID/linha), status e unlinked', async () => {
       const { prisma, service } = setup();

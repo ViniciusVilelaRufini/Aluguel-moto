@@ -64,9 +64,14 @@ export class CreateSimCardDto {
   @nullable()
   @IsUUID()
   vehicleId?: string | null;
+
+  /** Vincula o chip a este rastreador (estoque ou instalado). Com `vehicleId` junto → 400. */
+  @nullable()
+  @IsUUID()
+  trackerId?: string | null;
 }
 
-/** `UpdateSimCardRequest`: tudo opcional; `vehicleId: null` desvincula. */
+/** `UpdateSimCardRequest`: tudo opcional; `vehicleId: null` ou `trackerId: null` desvincula. */
 export class UpdateSimCardDto {
   @optional()
   @IsString()
@@ -101,4 +106,9 @@ export class UpdateSimCardDto {
   @nullable()
   @IsUUID()
   vehicleId?: string | null;
+
+  /** Vincula (ou move) o chip a este rastreador; `null` desvincula. Com `vehicleId` junto → 400. */
+  @nullable()
+  @IsUUID()
+  trackerId?: string | null;
 }

@@ -9,6 +9,7 @@
  * Modo de controle: a API guarda o modo por rastreador num cache de 60 s por processo (iot/tracker-mode.ts). Esta CLI roda em outro
  * processo e não o invalida: uma troca de modo vale em até 60 s. Moto com aluguel aberto ou reserva ativa/em entrega é recusada
  * (reprovisione com a moto livre; reconferido dentro da transação), e também moto com trava em andamento no Redis da API.
+ * Essas checagens de aluguel/reserva/trava são as mesmas da instalação pelo painel (`modules/trackers/install-guards.ts`).
  *
  * Ex-rastreador MQTT (Tracker com `certificateArn`): a CLI não fala com o IoT Core (sem dependência AWS) e recusa até o operador
  * revogar o certificado (comandos na mensagem de erro) e confirmar com `--certificate-revoked` — senão o certificado continuaria

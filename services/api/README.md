@@ -395,6 +395,16 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - `Vehicle.simCard` (`SimCardSummary | null`) vem só para staff, lido de `tracker.simCard` em `VehiclesService.enrich()`.
 - Auditoria `sim_card.create`/`sim_card.update` sem ICCID nem número da linha (dado pessoal indireto).
 - `dev-reset-bench` desvincula os chips dos rastreadores apagados (o chip fica no estoque) e apaga o console das motos apagadas.
+- `trackerId` no corpo vincula o chip direto a um rastreador (estoque ou instalado; inexistente → `404`). `vehicleId` e `trackerId` juntos → `400`.
+
+## Estoque de rastreadores (`src/modules/trackers`, `docs/decisoes.md` 2026-11-05 "Estoque de rastreadores")
+
+- `GET /trackers` (`admin`, `operacao`, `suporte`; filtros `q` por dígitos do IMEI, `installed`, `vehicleId`), `POST /trackers` (cadastrar no estoque), `PUT /vehicles/{id}/tracker` (instalar/trocar) e `DELETE /vehicles/{id}/tracker` (remover para o estoque) — `admin`, `operacao`.
+- Só rastreadores `relay_only` com IMEI e sem `certificateArn` (GT06/J16). Estoque: `thingName = gt06-<IMEI>` (`stockThingName`), sem moto; instalado: `thingName` da moto e `vehicleId`. `online` = último sinal há no máximo 180 s (instalado: `Vehicle.lastSeenAt`/`online`; estoque: `Tracker.lastSeenAt`).
+- Trocar: numa transação, o antigo volta a `gt06-<IMEI>` **antes** do novo assumir o `thingName` (único). Instalar o que já está na moto não grava nada (`200`). Remover mantém o chip no rastreador.
+- `409 vehicle-unavailable` (`install-guards.ts`, conferido dentro da transação): aluguel aberto, reserva ativa/em entrega, `lock`/`unlock` não final criado nos últimos 5 min (`ENGINE_COMMAND_IN_FLIGHT_MS`), trava em andamento no Redis em qualquer `thingName` envolvido. `409 conflict`: rastreador em outra moto ("Este rastreador está instalado na VLT-0060. Remova de lá primeiro."), moto com rastreador MQTT, IMEI repetido, chip já vinculado. As mesmas checagens de aluguel/reserva/Redis são usadas pela CLI (`provision-tracker.ts`/`provision-gt06.ts`), com as mensagens da CLI.
+- Instalar/remover invalida o cache de modo do rastreador da moto (`TRACKER_MODES`, exportado pelo `IotModule`). `PATCH /vehicles/{id}` com `thingName` diferente e rastreador instalado → `409`.
+- Auditoria `tracker.create`/`tracker.install`/`tracker.remove` com `metadata` só `{ imeiLast4, vehicleId? }`; logs só com ids.
 
 ## Console do rastreador (`src/modules/tracker-console`, `docs/decisoes.md` 2026-11-05)
 

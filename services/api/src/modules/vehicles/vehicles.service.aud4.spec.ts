@@ -84,3 +84,23 @@ describe('Auditoria run-4: trocar thingName com a moto em uso ou trava em curso'
     expect(prisma.vehicle.update).toHaveBeenCalled();
   });
 });
+
+describe('Estoque de rastreadores: thingName com rastreador instalado', () => {
+  it('PATCH com thingName diferente e rastreador instalado → 409, nada é gravado', async () => {
+    const { service, prisma } = setup();
+    prisma.tracker.findUnique.mockResolvedValue({ id: 't-1' } as any);
+    await expect(service.update(operacao, VEHICLE_ID, { thingName: 'moto-0099' } as any)).rejects.toMatchObject({
+      status: 409,
+      detail: 'Esta moto tem rastreador instalado; remova o rastreador antes de mudar o identificador.',
+    });
+    expect(prisma.tracker.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { vehicleId: VEHICLE_ID } }));
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+  });
+
+  it('PATCH sem mudar thingName com rastreador instalado segue permitido', async () => {
+    const { service, prisma } = setup();
+    prisma.tracker.findUnique.mockResolvedValue({ id: 't-1' } as any);
+    await service.update(operacao, VEHICLE_ID, { thingName: 'moto-0001', odometerKm: 10 } as any);
+    expect(prisma.vehicle.update).toHaveBeenCalled();
+  });
+});

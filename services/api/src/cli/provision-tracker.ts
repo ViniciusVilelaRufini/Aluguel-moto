@@ -3,17 +3,18 @@
  * para teste.
  */
 import type { Prisma } from '@prisma/client';
-import { hasInUseReservation, hasOpenRental, pendingLockKind } from '../common/vehicle-in-use';
+import { hasOpenRental } from '../common/vehicle-in-use';
+import { pendingLockOn, vehicleInUseReason } from '../modules/trackers/install-guards';
 import { IoRedisStore, type RedisStore } from '../redis/redis-store';
+
+const openRentalError = (code: string) => new Error(`A moto ${code} está com um aluguel aberto; reprovisione o rastreador com a moto fora de aluguel.`);
 
 /**
  * Reprovisionar troca o modo de controle (`speed_control` ↔ `relay_only`) e o caminho dos comandos: com aluguel aberto, um lock
  * de fim de aluguel ou de cerca poderia seguir o fluxo errado. Recusa antes de qualquer escrita (AWS, Traccar ou banco).
  */
 export async function assertNoOpenRental(tx: Pick<Prisma.TransactionClient, 'rental'>, vehicle: { id: string; code: string }): Promise<void> {
-  if (await hasOpenRental(tx, vehicle.id)) {
-    throw new Error(`A moto ${vehicle.code} está com um aluguel aberto; reprovisione o rastreador com a moto fora de aluguel.`);
-  }
+  if (await hasOpenRental(tx, vehicle.id)) throw openRentalError(vehicle.code);
 }
 
 /**
@@ -21,8 +22,10 @@ export async function assertNoOpenRental(tx: Pick<Prisma.TransactionClient, 'ren
  * seguiria o caminho do modo antigo. Recusa como o aluguel aberto.
  */
 export async function assertVehicleFreeForProvisioning(tx: Pick<Prisma.TransactionClient, 'rental' | 'reservation'>, vehicle: { id: string; code: string }): Promise<void> {
-  await assertNoOpenRental(tx, vehicle);
-  if (await hasInUseReservation(tx, vehicle.id)) {
+  // Mesma regra do painel (`install-guards.ts`): aluguel aberto primeiro, depois reserva ativa/em entrega.
+  const inUse = await vehicleInUseReason(tx, vehicle.id);
+  if (inUse === 'rental') throw openRentalError(vehicle.code);
+  if (inUse === 'reservation') {
     throw new Error(`A moto ${vehicle.code} tem uma reserva ativa ou em entrega; reprovisione o rastreador com a moto livre.`);
   }
 }
@@ -34,8 +37,8 @@ export async function assertVehicleFreeForProvisioning(tx: Pick<Prisma.Transacti
  * Erro de leitura propaga (falha fechada).
  */
 export async function assertNoPendingLock(redis: Pick<RedisStore, 'exists' | 'hgetall'>, thingName: string): Promise<void> {
-  const what = await pendingLockKind(redis, thingName);
-  if (what) throw new Error(`A moto ${thingName} tem uma trava em andamento na API (${what}); espere a trava terminar antes de reprovisionar o rastreador.`);
+  const pending = await pendingLockOn(redis, [thingName]);
+  if (pending) throw new Error(`A moto ${thingName} tem uma trava em andamento na API (${pending.kind}); espere a trava terminar antes de reprovisionar o rastreador.`);
 }
 
 /** Prazo do PING ao Redis da API no provisionamento. */

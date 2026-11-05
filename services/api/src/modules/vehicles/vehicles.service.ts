@@ -293,6 +293,10 @@ export class VehiclesService {
     if (dto.thingName && dto.thingName !== v.thingName) {
       const dup = await this.prisma.vehicle.findUnique({ where: { thingName: dto.thingName } });
       if (dup) throw conflict('conflict', 'Este rastreador já está vinculado a outra moto.');
+      // Estoque de rastreadores: com rastreador instalado, o thingName é o do aparelho (ponte/MQTT); troca só removendo antes.
+      if (await this.prisma.tracker.findUnique({ where: { vehicleId: id }, select: { id: true } })) {
+        throw conflict('conflict', 'Esta moto tem rastreador instalado; remova o rastreador antes de mudar o identificador.');
+      }
       // Auditoria run-4: trocar o rastreador com cliente na moto ou trava em curso deixaria o aluguel/trava falando com o thing errado.
       await assertVehicleNotInUse(this.prisma, id);
       for (const thing of [v.thingName, dto.thingName]) {
