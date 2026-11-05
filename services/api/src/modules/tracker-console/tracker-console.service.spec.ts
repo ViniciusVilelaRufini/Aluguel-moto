@@ -27,6 +27,7 @@ function setup() {
   prisma.trackerConsoleCommand.findFirst.mockResolvedValue(null);
   prisma.vehicleCommand.findFirst.mockResolvedValue(null);
   prisma.rental.findFirst.mockResolvedValue(null);
+  prisma.reservation.findFirst.mockResolvedValue(null);
   prisma.trackerConsoleCommand.create.mockImplementation((async (a: any) => row({ ...a.data })) as any);
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
   const iot = { publishConsole: jest.fn().mockResolvedValue(undefined) };
@@ -123,17 +124,40 @@ describe('TrackerConsoleService', () => {
       await expect(service.send(VEHICLE_ID, { text: 'STATUS#' }, admin)).rejects.toMatchObject({ detail: 'Há um bloqueio/desbloqueio em andamento nesta moto.' });
       expect(await status(service.send(VEHICLE_ID, { text: 'STATUS#' }, admin))).toBe(409);
       expect(prisma.vehicleCommand.findFirst).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { vehicleId: VEHICLE_ID, type: { in: ['lock', 'unlock'] }, status: { in: ['pending', 'in_progress'] } } }),
+        expect.objectContaining({ where: { vehicleId: VEHICLE_ID, type: { in: ['lock', 'unlock'] }, status: { in: ['pending', 'in_progress'] }, createdAt: { gte: expect.any(Date) } } }),
       );
       expect(prisma.trackerConsoleCommand.create).not.toHaveBeenCalled();
       expect(iot.publishConsole).not.toHaveBeenCalled();
+    });
+
+    it('N1: só lock/unlock criado nos últimos 5 min bloqueia (linha antiga presa não trava o console)', async () => {
+      const { prisma, service, iot } = setup();
+      const rows = [{ id: 'old', createdAt: new Date(now.getTime() - 10 * 60_000) }];
+      prisma.vehicleCommand.findFirst.mockImplementation((async (a: any) => rows.find((r) => r.createdAt >= a.where.createdAt.gte) ?? null) as any);
+      await service.send(VEHICLE_ID, { text: 'STATUS#' }, admin);
+      expect(iot.publishConsole).toHaveBeenCalledTimes(1);
+      expect((prisma.vehicleCommand.findFirst.mock.calls[0][0] as any).where.createdAt).toEqual({ gte: new Date(now.getTime() - 5 * 60_000) });
+      rows.push({ id: 'new', createdAt: new Date(now.getTime() - 60_000) });
+      expect(await status(service.send(VEHICLE_ID, { text: 'STATUS#' }, admin))).toBe(409);
+      expect(iot.publishConsole).toHaveBeenCalledTimes(1);
+    });
+
+    it('N5: change/connection com reserva em uso → 409 (aluguel ou reserva); leitura liberada', async () => {
+      const { prisma, service, iot } = setup();
+      prisma.reservation.findFirst.mockResolvedValue({ id: 'res1' } as any);
+      await expect(service.send(VEHICLE_ID, { text: 'APN,x.y#', confirm: true }, admin)).rejects.toMatchObject({
+        detail: 'A moto está em aluguel ou reserva; envie comandos de configuração depois do fim do aluguel ou da reserva.',
+      });
+      expect(prisma.reservation.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vehicleId: VEHICLE_ID, status: { in: ['active', 'handover'] } } }));
+      await service.send(VEHICLE_ID, { text: 'STATUS#' }, admin);
+      expect(iot.publishConsole).toHaveBeenCalledTimes(1);
     });
 
     it('M5: change/connection com aluguel aberto → 409; leitura continua liberada', async () => {
       const { prisma, service, iot } = setup();
       prisma.rental.findFirst.mockResolvedValue({ id: 'r1' } as any);
       await expect(service.send(VEHICLE_ID, { text: 'TIMER,30,3600#', confirm: true }, admin)).rejects.toMatchObject({
-        detail: 'A moto está em aluguel; envie comandos de configuração depois do fim do aluguel.',
+        detail: 'A moto está em aluguel ou reserva; envie comandos de configuração depois do fim do aluguel ou da reserva.',
       });
       expect(await status(service.send(VEHICLE_ID, { text: 'RESET#', confirm: true }, admin))).toBe(409);
       expect(prisma.rental.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vehicleId: VEHICLE_ID, status: { in: ['active', 'paused', 'ending'] } } }));

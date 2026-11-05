@@ -31,6 +31,15 @@ describe('classifyConsoleText', () => {
       expect(classifyConsoleText(t)).toEqual({ ok: false, reason: 'Comando não permitido pelo console.' });
     },
   );
+  it.each(['TIMER,10,10#', 'TIMER,30,3600#', 'TIMER,5,10#', 'TIMER,60,3600#', 'timer,15,600#'])('N3: %s dentro dos intervalos → change', (t) => {
+    expect(classifyConsoleText(t)).toMatchObject({ ok: true, keyword: 'TIMER', risk: 'change' });
+  });
+  it.each(['TIMER,3600,3600#', 'TIMER,2,10#', 'TIMER,10#', 'TIMER,61,10#', 'TIMER,10,9#', 'TIMER,10,3601#', 'TIMER,10,20,30#', 'TIMER,1.5,10#', 'TIMER,,10#', 'TIMER,a,10#'])(
+    'N3: %s fora dos intervalos → recusado',
+    (t) => {
+      expect(classifyConsoleText(t)).toEqual({ ok: false, reason: 'Intervalos permitidos: 5–60 s em movimento e 10–3600 s parado.' });
+    },
+  );
   it.each(['RELAY,1#', 'relay,1#', 'Relay,0#', 'dyd#', 'DYD,000000#', 'HFYD#', 'hfyd,000000#', 'STOP#', 'RESUME#', 'resume#'])(
     'relé/motor (%s) nunca pelo console: aponta para Bloquear/Desbloquear',
     (t) => {
