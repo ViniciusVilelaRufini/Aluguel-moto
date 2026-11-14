@@ -682,9 +682,9 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     expect(reportedTravada(c)).toEqual([true, true]);
   });
 
-  it('bateria desconhecida com corte conhecido: retida até 5 min, depois sai com bateria_pct 0 e log battery_unknown', async () => {
+  it('bateria desconhecida (nenhuma tensão recebida) com corte conhecido: retida até 5 min, depois sai com bateria_pct 0 e log battery_unknown', async () => {
     c = await start();
-    const dcdc = (id: number, at: number) => position({ id, deviceId: 1, fixTime: iso(at - 500), serverTime: iso(at), attributes: { blocked: false, ignition: false, rssi: 4, power: 12 } });
+    const dcdc = (id: number, at: number) => position({ id, deviceId: 1, fixTime: iso(at - 500), serverTime: iso(at), attributes: { blocked: false, ignition: false, rssi: 4 } });
     c.traccar.push({ positions: [dcdc(110, T0)] });
     await waitFor(() => c.logs.some((l) => l.msg === 'telemetry_held' && l.reason === 'awaiting_battery'));
     c.now.value = T0 + 30_000;
@@ -711,9 +711,32 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     expect(c.logs.filter((l) => l.msg === 'battery_unknown')).toEqual([{ level: 'warn', msg: 'battery_unknown', thingName: T }]);
   });
 
+  it('tensão fora da curva (J16 em conversor DC-DC, 12 V num pack de 72 V): sem espera de 5 min, sai na hora com bateria_conhecida false', async () => {
+    // Bancada 2026-11-14: depois de cada (re)conexão a telemetria ficava retida 5 min e a trava só relé falhava com did_not_stop.
+    c = await start();
+    const dcdc = (id: number, at: number, power?: number) =>
+      position({ id, deviceId: 1, fixTime: iso(at - 500), serverTime: iso(at), attributes: { blocked: false, ignition: false, rssi: 4, ...(power === undefined ? {} : { power }) } });
+    c.traccar.push({ positions: [dcdc(130, T0, 12)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    expect(out(c, `motos/${T}/telemetria`)[0]).toMatchObject({ bateria_pct: 0, bateria_conhecida: false, travada: false });
+    expect(c.logs.filter((l) => l.msg === 'telemetry_held')).toEqual([]);
+    // posição seguinte sem tensão (heartbeat/posição sem `power`): a leitura fora da curva já vista continua valendo
+    c.now.value = T0 + 10_000;
+    c.traccar.push({ positions: [dcdc(131, T0 + 10_000)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 2);
+    expect(out(c, `motos/${T}/telemetria`)[1]).toMatchObject({ bateria_pct: 0, bateria_conhecida: false });
+    expect(c.logs.filter((l) => l.msg === 'battery_unknown')).toEqual([{ level: 'warn', msg: 'battery_unknown', thingName: T }]);
+    // tensão do pack chega: bateria conhecida, o campo some
+    c.now.value = T0 + 20_000;
+    c.traccar.push({ positions: [dcdc(132, T0 + 20_000, 72)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 3);
+    expect(out(c, `motos/${T}/telemetria`)[2].bateria_pct).toBe(50);
+    expect(out(c, `motos/${T}/telemetria`)[2]).not.toHaveProperty('bateria_conhecida');
+  });
+
   it('log telemetry_held limitado: no máximo um por minuto por moto e motivo', async () => {
     c = await start();
-    const dcdc = (id: number, at: number) => position({ id, deviceId: 1, fixTime: iso(at - 500), serverTime: iso(at), attributes: { blocked: false, power: 12 } });
+    const dcdc = (id: number, at: number) => position({ id, deviceId: 1, fixTime: iso(at - 500), serverTime: iso(at), attributes: { blocked: false } });
     c.traccar.push({ positions: [dcdc(120, T0), dcdc(121, T0 + 1_000)] });
     await waitFor(() => c.logs.some((l) => l.msg === 'telemetry_held'));
     c.now.value = T0 + 30_000;
@@ -729,7 +752,7 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
 
   it('movimento travada com telemetria retida (bateria desconhecida) ainda gera movimento_sem_aluguel', async () => {
     c = await start();
-    const locked = (id: number, lat: number, at: number) => position({ id, deviceId: 1, fixTime: iso(at), serverTime: iso(at), latitude: lat, attributes: { blocked: true, power: 12 } });
+    const locked = (id: number, lat: number, at: number) => position({ id, deviceId: 1, fixTime: iso(at), serverTime: iso(at), latitude: lat, attributes: { blocked: true } });
     c.traccar.push({ positions: [locked(130, -23.5614, T0 - 2_000), locked(131, -23.5617, T0 - 1_000)] });
     await waitFor(() => out(c, `motos/${T}/eventos`).length === 1);
     expect(out(c, `motos/${T}/eventos`)).toEqual([{ tipo: 'movimento_sem_aluguel', timestamp: iso(T0 - 1_000) }]);

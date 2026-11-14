@@ -249,8 +249,8 @@ fusível). **Confirmar no manual do seu J16** se a saída do relé fecha para o 
   carregado** (20 células × 4,2 V) e tem picos; use conversor com entrada **até 100 V ou mais** (um de "até 80 V" não serve
   para 72 V). 48 V (~54,6 V cheio) e 60 V (~71,4 V cheio) têm mais folga. Fusível de 1–2 A logo na derivação do pack.
 - **J16 no DC-DC (12 V)** — mais simples e seguro para a bancada. Consequência conhecida: a "tensão externa" que o J16 mede é
-  12 V, não a do pack; a ponte não acha a bateria na curva e, depois de **5 min**, publica **bateria 0%** (log
-  `battery_unknown`). A moto pode sumir da busca do app (bateria 0%). Esperado neste modo.
+  12 V, não a do pack; a ponte não acha a bateria na curva e publica na hora **bateria 0%** com
+  `bateria_conhecida: false` (log `battery_unknown`; antes de 2026-11-14 esperava 5 min a cada reconexão, sem posições). A moto pode sumir da busca do app (bateria 0%). Esperado neste modo.
 - **J16 direto no pack** (para a bateria % funcionar): só se o manual do **seu** J16 confirmar entrada até pelo menos 90 V
   (há anúncios de "9–90 V DC" para o J16; **confirmar no manual do seu J16**), com fusível. Com pack de 72 V a margem é
   pequena. Peça ao controlador para ajustar `GT06_BATTERY_MODEL` (`48v`, `60v` ou `72v`) ao pack.
