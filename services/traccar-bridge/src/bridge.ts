@@ -6,7 +6,7 @@ import { applyPosition, currentBlocked, freshBlocked, gpsSleepOf, markCommandSen
 import type { MqttLike } from './mqtt';
 import type { TraccarDevice, TraccarEvent, TraccarPosition, TraccarSocketMessage } from './traccar/types';
 import { MIN_TRACCAR_NOQUEUE, supportsNoQueue } from './traccar/version';
-import type { BatteryModel } from './units';
+import { voltageToPct, type BatteryModel } from './units';
 
 export interface TraccarApi {
   devices(): Promise<TraccarDevice[]>;
@@ -102,6 +102,11 @@ export class Bridge {
   private readonly stopSentAt = new Map<string, number>();
   /** Desde quando a moto está com o corte conhecido e a bateria desconhecida (teto de retenção). */
   private readonly batteryWaitSince = new Map<string, number>();
+  /**
+   * Motos cuja última tensão (`power`) veio fora da curva do pack (ex.: J16 num conversor DC-DC de 12 V): a bateria não vai
+   * aparecer, então o teto de retenção não espera. É do hardware: sobrevive à reconexão (só `forget` e uma tensão válida apagam).
+   */
+  private readonly batteryUnreadable = new Set<string>();
   /** Último `reported.travada` publicado (valor e hora), para M5. */
   private readonly lastTravada = new Map<string, { value: boolean; at: number }>();
   /** Último `reported.gps_economia` publicado (valor e hora): sozinho só na mudança ou no máximo 1/min. */
@@ -598,6 +603,7 @@ export class Bridge {
     this.stopSentAt.delete(thing);
     this.stolen.delete(thing);
     this.batteryWaitSince.delete(thing);
+    this.batteryUnreadable.delete(thing);
     this.lastTravada.delete(thing);
     this.lastGpsSleep.delete(thing);
     this.alarmIds.delete(thing);
@@ -652,10 +658,17 @@ export class Bridge {
     if (typeof p.attributes?.result === 'string') await this.routeConsoleReply(thing, p.id, p.attributes.result);
     const before = this.mem(thing);
     let r = applyPosition(p, before, this.opts.battery, now, { consolePending });
+    const power = p.attributes?.power;
+    if (typeof power === 'number') {
+      if (voltageToPct(power, this.opts.battery) === null) this.batteryUnreadable.add(thing);
+      else this.batteryUnreadable.delete(thing);
+    }
     if (r.held === 'awaiting_battery') {
       const since = this.batteryWaitSince.get(thing) ?? now;
       this.batteryWaitSince.set(thing, since);
-      if (now - since >= BATTERY_UNKNOWN_CAP_MS) {
+      // Tensão fora da curva já vista (DC-DC): esperar 5 min não traz bateria e deixaria a trava só relé sem posições
+      // (did_not_stop depois de cada reconexão — bancada 2026-11-14).
+      if (this.batteryUnreadable.has(thing) || now - since >= BATTERY_UNKNOWN_CAP_MS) {
         // Teto: sem leitura de bateria (ex.: J16 em conversor DC-DC) a moto não pode ficar sem telemetria para sempre.
         // `bateria_pct: 0` só na mensagem; a memória continua sem bateria conhecida.
         const forced = applyPosition(p, { ...before, batteryPct: 0 }, this.opts.battery, now, { consolePending });

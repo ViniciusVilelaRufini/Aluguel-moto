@@ -33,9 +33,11 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   `relay_only` por `reported.travada: false` posterior ao pedido, nunca pela telemetria) ou sem bateria conhecida a telemetria
   fica retida (log `telemetry_held` com o motivo, no máximo 1/min por moto). Bit de corte desconhecido sem comando pendente
   (depois de uma (re)conexão sem status novo, ou nunca visto) **não** retém: a telemetria sai com `travada: false` (A4-6;
-  cercas, zonas e trajeto não ficam cegos se o firmware não mandar heartbeat em movimento). Com o corte conhecido e a bateria ainda desconhecida há 5 min (ex.:
-  J16 alimentado por conversor DC-DC), a telemetria sai com `bateria_pct: 0` **e `bateria_conhecida: false`** (log
-  `battery_unknown`; o 0 é falta de leitura, não bateria vazia). Com a bateria conhecida o campo não vai (ausente = `true`). Com `engineStop`
+  cercas, zonas e trajeto não ficam cegos se o firmware não mandar heartbeat em movimento). Com o corte conhecido e a bateria ainda desconhecida há 5 min
+  (nenhuma tensão recebida), ou **na hora** se a última tensão (`power`) veio fora da curva do pack (ex.: J16 alimentado por
+  conversor DC-DC de 12 V; vale também depois da reconexão, até chegar uma tensão válida), a telemetria sai com `bateria_pct: 0`
+  **e `bateria_conhecida: false`** (log `battery_unknown`; o 0 é falta de leitura, não bateria vazia). Sem isso, cada
+  (re)conexão deixava a moto 5 min sem posições e a trava só relé falhava com `did_not_stop`. Com a bateria conhecida o campo não vai (ausente = `true`). Com `engineStop`
   enviado e ainda sem status novo, ou com o bit recebido há mais de 90 s (firmware sem heartbeat em movimento), a telemetria
   **não** é retida: sai com `travada: false` (conservador — nunca confirma lock; a API não vê lacuna nem reconexão, e cercas e
   zonas continuam vendo a moto).
