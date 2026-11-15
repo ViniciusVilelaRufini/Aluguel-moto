@@ -103,8 +103,9 @@ export class Bridge {
   /** Desde quando a moto está com o corte conhecido e a bateria desconhecida (teto de retenção). */
   private readonly batteryWaitSince = new Map<string, number>();
   /**
-   * Motos cuja última tensão (`power`) veio fora da curva do pack (ex.: J16 num conversor DC-DC de 12 V): a bateria não vai
-   * aparecer, então o teto de retenção não espera. É do hardware: sobrevive à reconexão (só `forget` e uma tensão válida apagam).
+   * Motos sem leitura de bateria: a última tensão (`power`) veio fora da curva do pack (ex.: J16 num conversor DC-DC de 12 V)
+   * ou o teto de 5 min já passou uma vez sem tensão nenhuma (o J16 real não manda `power`). O teto não espera de novo. É do
+   * hardware: sobrevive à reconexão (só `forget` e uma tensão válida apagam).
    */
   private readonly batteryUnreadable = new Set<string>();
   /** Último `reported.travada` publicado (valor e hora), para M5. */
@@ -673,6 +674,8 @@ export class Bridge {
         // `bateria_pct: 0` só na mensagem; a memória continua sem bateria conhecida.
         const forced = applyPosition(p, { ...before, batteryPct: 0 }, this.opts.battery, now, { consolePending });
         if (forced.telemetry) {
+          // Aparelho que não manda tensão (J16 real: o GT06 não traz `power`): as próximas reconexões não esperam de novo.
+          this.batteryUnreadable.add(thing);
           // `bateria_conhecida: false` (contrato MQTT): o 0 é falta de leitura, não bateria vazia.
           r = { ...forced, telemetry: { ...forced.telemetry, bateria_conhecida: false }, memory: { ...forced.memory, batteryPct: r.memory.batteryPct } };
           this.logLimited(`${thing}|battery_unknown`, 'warn', { msg: 'battery_unknown', thingName: thing });
