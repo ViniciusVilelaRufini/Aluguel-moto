@@ -734,6 +734,27 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     expect(out(c, `motos/${T}/telemetria`)[2]).not.toHaveProperty('bateria_conhecida');
   });
 
+  it('aparelho que nunca manda tensão (J16 real, 2026-11-14): depois do primeiro teto de 5 min, a reconexão não espera de novo', async () => {
+    c = await start();
+    const noPower = (id: number, at: number) =>
+      position({ id, deviceId: 1, fixTime: iso(at - 500), serverTime: iso(at), attributes: { blocked: false, ignition: false, rssi: 4 } });
+    c.traccar.push({ positions: [noPower(140, T0)] });
+    await waitFor(() => c.logs.some((l) => l.msg === 'telemetry_held' && l.reason === 'awaiting_battery'));
+    c.now.value = T0 + BATTERY_UNKNOWN_CAP_MS;
+    c.traccar.push({ positions: [noPower(141, T0 + BATTERY_UNKNOWN_CAP_MS)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    // J16 desligado e religado: offline → online
+    setStatus(c, 'offline');
+    await waitFor(() => c.logs.some((l) => l.msg === 'device_offline'));
+    c.now.value = T0 + BATTERY_UNKNOWN_CAP_MS + 60_000;
+    setStatus(c, 'online');
+    await waitFor(() => c.logs.filter((l) => l.msg === 'device_online').length >= 1);
+    c.now.value = T0 + BATTERY_UNKNOWN_CAP_MS + 70_000;
+    c.traccar.push({ positions: [noPower(142, T0 + BATTERY_UNKNOWN_CAP_MS + 70_000)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 2);
+    expect(out(c, `motos/${T}/telemetria`)[1]).toMatchObject({ bateria_pct: 0, bateria_conhecida: false });
+  });
+
   it('log telemetry_held limitado: no máximo um por minuto por moto e motivo', async () => {
     c = await start();
     const dcdc = (id: number, at: number) => position({ id, deviceId: 1, fixTime: iso(at - 500), serverTime: iso(at), attributes: { blocked: false } });

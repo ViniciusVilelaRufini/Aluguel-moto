@@ -34,8 +34,9 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   fica retida (log `telemetry_held` com o motivo, no máximo 1/min por moto). Bit de corte desconhecido sem comando pendente
   (depois de uma (re)conexão sem status novo, ou nunca visto) **não** retém: a telemetria sai com `travada: false` (A4-6;
   cercas, zonas e trajeto não ficam cegos se o firmware não mandar heartbeat em movimento). Com o corte conhecido e a bateria ainda desconhecida há 5 min
-  (nenhuma tensão recebida), ou **na hora** se a última tensão (`power`) veio fora da curva do pack (ex.: J16 alimentado por
-  conversor DC-DC de 12 V; vale também depois da reconexão, até chegar uma tensão válida), a telemetria sai com `bateria_pct: 0`
+  (nenhuma tensão recebida; o J16 real não manda `power` pelo GT06), ou **na hora** se a última tensão (`power`) veio fora da
+  curva do pack (ex.: J16 num conversor DC-DC de 12 V) ou se o teto já passou uma vez para esta moto (a marca sobrevive à
+  reconexão, até chegar uma tensão válida; reiniciar a ponte zera), a telemetria sai com `bateria_pct: 0`
   **e `bateria_conhecida: false`** (log `battery_unknown`; o 0 é falta de leitura, não bateria vazia). Sem isso, cada
   (re)conexão deixava a moto 5 min sem posições e a trava só relé falhava com `did_not_stop`. Com a bateria conhecida o campo não vai (ausente = `true`). Com `engineStop`
   enviado e ainda sem status novo, ou com o bit recebido há mais de 90 s (firmware sem heartbeat em movimento), a telemetria
